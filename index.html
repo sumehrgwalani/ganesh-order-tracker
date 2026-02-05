@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ganesh International Order Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+const { useState } = React;
+
+// Lucide icons as SVG components
+const Icon = ({ name, size = 20, className = "" }) => {
+  const icons = {
+    Home: <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>,
+    FileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></>,
+    Mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>,
+    Package: <><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></>,
+    Users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+    Bell: <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>,
+    Settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+    Plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    MapPin: <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></>,
+    ChevronRight: <polyline points="9 18 15 12 9 6"/>,
+    ChevronDown: <polyline points="6 9 12 15 18 9"/>,
+    Search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    Filter: <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>,
+    RefreshCw: <><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></>,
+    Clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    X: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+    Trash2: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></>,
+    ArrowRight: <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+    Save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
+    Paperclip: <><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></>,
+    ExternalLink: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>,
+  };
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {icons[name]}
+    </svg>
+  );
+};
+
+// Order lifecycle stages
+const ORDER_STAGES = [
+  { id: 1, name: 'Order Confirmed', shortName: 'PO Sent', description: 'Purchase Order received/sent', color: 'blue' },
+  { id: 2, name: 'Proforma Issued', shortName: 'PI Issued', description: 'Proforma Invoice issued', color: 'indigo' },
+  { id: 3, name: 'Artwork Approved', shortName: 'Artwork OK', description: 'Complete when email says "ARTWORK IS OK"', color: 'purple' },
+  { id: 4, name: 'Quality Check', shortName: 'QC Done', description: 'QC from Hansel Fernandez or J B Boda', color: 'pink' },
+  { id: 5, name: 'Schedule Confirmed', shortName: 'Scheduled', description: 'Vessel schedule confirmed', color: 'orange' },
+  { id: 6, name: 'Draft Documents', shortName: 'Docs OK', description: 'Complete when "DOCUMENTS OK" received', color: 'yellow' },
+  { id: 7, name: 'Final Documents', shortName: 'Final Docs', description: 'Final document copies sent', color: 'teal' },
+  { id: 8, name: 'DHL Shipped', shortName: 'DHL Sent', description: 'DHL tracking number shared', color: 'green' },
+];
+
+// Known contacts with correct names from emails
+const CONTACTS = {
+  'calidad@eguillem.com': { name: 'Mª Carmen Martínez', company: 'PESCADOS E.GUILLEM', role: 'Dpto. Calidad', initials: 'CM', color: 'bg-purple-500' },
+  'oscargarcia@eguillem.com': { name: 'Oscar García', company: 'PESCADOS E.GUILLEM', role: 'Compras', initials: 'OG', color: 'bg-blue-500' },
+  'eguillem@eguillem.com': { name: 'Salva', company: 'PESCADOS E.GUILLEM', role: 'Buyer', initials: 'SA', color: 'bg-cyan-500' },
+  'nilaexport@nilaseafoods.com': { name: 'Nila Exports', company: 'Nila Seafoods Pvt Ltd', role: 'Supplier', initials: 'NE', color: 'bg-green-500' },
+  'info@nilaseafoods.com': { name: 'Selwin Chandran', company: 'Nila Seafoods Pvt Ltd', role: 'Managing Director', initials: 'SC', color: 'bg-emerald-500' },
+  'ganeshintnlmumbai@gmail.com': { name: 'Santosh Laxman Satope', company: 'Ganesh International', role: 'Operations', initials: 'SS', color: 'bg-orange-500' },
+  'hanselfernandez@hotmail.com': { name: 'Hansel Fernandez', company: 'Independent Inspector', role: 'QC Inspector', initials: 'HF', color: 'bg-red-500' },
+  'jbbvrl@jbbodamail.com': { name: 'J B Boda Veraval', company: 'J B Boda Group', role: 'Marine Surveyors', initials: 'JB', color: 'bg-teal-500' },
+  'jbbpor@jbbodamail.com': { name: 'J B Boda Porbandar', company: 'J B Boda Group', role: 'Marine Surveyors', initials: 'JP', color: 'bg-teal-600' },
+  'asflab@amulyaseafoods.com': { name: 'Chandran', company: 'Amulya Seafoods', role: 'Supplier', initials: 'CH', color: 'bg-indigo-500' },
+  'rohit@vendor.com': { name: 'Rohit Khetalpar', company: 'Vendor', role: 'Supplier', initials: 'RK', color: 'bg-amber-500' },
+  'jjseafoods@gmail.com': { name: 'JJ Seafoods', company: 'JJ Seafoods Pvt Ltd', role: 'Supplier', initials: 'JJ', color: 'bg-rose-500' },
+  'silversea@gmail.com': { name: 'Silver Sea Foods', company: 'Silver Sea Foods', role: 'Supplier', initials: 'SS', color: 'bg-slate-500' },
+};
+
+// Get contact info from email string
+const getContactInfo = (emailStr) => {
+  if (!emailStr) return { name: 'Unknown', initials: 'UN', color: 'bg-gray-400', company: '', role: '' };
+  const emailLower = emailStr.toLowerCase();
+  for (const [key, value] of Object.entries(CONTACTS)) {
+    if (emailLower.includes(key)) return value;
+  }
+  const match = emailStr.match(/^"?([^"<]+)"?\s*<?/);
+  const name = match ? match[1].trim() : emailStr.split('@')[0];
+  const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  return { name, initials, color: 'bg-gray-500', company: '', role: '' };
+};
+
+// Real order data with detailed email history
+const initialOrders = [
+  {
+    id: 'GI/PO/25-26/3043',
+    poNumber: 'PO 3043',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Frozen Seafood',
+    specs: 'New Order',
+    from: 'India',
+    to: 'Spain',
+    date: '5th Feb 2026',
+    currentStage: 1,
+    supplier: 'Rohit Khetalpar',
+    history: [
+      { stage: 1, timestamp: '2026-02-05T09:00:00Z', from: '"Rohit Khetalpar" <rohit@vendor.com>', to: 'Ganesh International', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3043', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached the new Purchase Order.\n\nPO Number: GI/PO/25-26/3043\n\nKindly confirm receipt and process at the earliest.\n\nThanking you,\nBest regards,\nRohit Khetalpar', hasAttachment: true, attachments: ['PO_3043.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3042',
+    poNumber: 'PO 3042',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Squid Whole IQF',
+    specs: '8th Container - Nila',
+    from: 'India',
+    to: 'Spain',
+    date: '4th Feb 2026',
+    currentStage: 2,
+    supplier: 'Nila Exports',
+    history: [
+      { stage: 1, timestamp: '2026-02-01T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Nila Exports', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the PO for the 8th container shipment to Pescados.\n\nPO Number: GI/PO/25-26/3042\n\nKindly confirm and proceed.\n\nThanking you,\nBest regards,\nSANTOSH LAXMAN SATOPE\nGanesh International', hasAttachment: true, attachments: ['PO_3042.pdf'] },
+      { stage: 2, timestamp: '2026-02-04T10:30:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'RE: PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER - Proforma Invoice', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Proforma Invoice for the 8th container.\n\nInvoice No: 3000250128\nReference: PO GI/PO/25-26/3042\n\nKindly confirm and proceed with artwork.\n\nThanking you,\nNila Exports\nNila Seafoods Pvt Ltd', hasAttachment: true, attachments: ['PI_3000250128.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3039',
+    poNumber: 'PO 3039',
+    piNumber: 'GI/PI/25-26/I02048',
+    company: 'PESCADOS E.GUILLEM',
+    brand: 'MORALES',
+    product: 'Calamar Troceado',
+    specs: 'Printed bag - JJ SEAFOODS',
+    from: 'India',
+    to: 'Spain',
+    date: '3rd Feb 2026',
+    currentStage: 3,
+    supplier: 'JJ SEAFOODS',
+    artworkStatus: 'needs_correction',
+    history: [
+      { stage: 1, timestamp: '2026-01-28T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'JJ SEAFOODS', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3039', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached PO for Calamar Troceado.\n\nPO Number: GI/PO/25-26/3039\n\nKindly confirm.\n\nThanking you,\nSANTOSH LAXMAN SATOPE', hasAttachment: true, attachments: ['PO_3039.pdf'] },
+      { stage: 2, timestamp: '2026-01-30T11:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: PO 3039 - PI GI/PI/25-26/I02048', body: 'Dear Sumehr,\n\nPI attached for your reference.\n\nPI Number: GI/PI/25-26/I02048\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.', hasAttachment: true, attachments: ['PI_I02048.pdf'] },
+      { stage: 3, timestamp: '2026-02-03T15:45:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'RE: NEED ARTWORK APPROVAL - PI GI/PI/25-26/I02048 - PO 3039 - JJ SEAFOODS', body: 'Dear Santosh,\n\nThe artwork NEEDS CORRECTION.\n\nPlease check the following and resend:\n- Label positioning needs adjustment\n- Font size on ingredients list\n- Barcode placement\n\nBest regards.\n\nMª Carmen Martínez\nDpto. Calidad\nwww.eguillem.com\nT 961 218 844', hasAttachment: false }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3037',
+    poNumber: 'PO 3037',
+    piNumber: 'GI/PI/25-26/I02046',
+    company: 'PESCADOS E.GUILLEM',
+    brand: 'EGUILLEM',
+    product: 'Baby Squid Finger Laid',
+    specs: '200/300 - RAUNAQ',
+    from: 'India',
+    to: 'Valencia, Spain',
+    date: '3rd Feb 2026',
+    currentStage: 2,
+    supplier: 'RAUNAQ',
+    history: [
+      { stage: 1, timestamp: '2026-01-29T09:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'RAUNAQ', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3037 - Baby Squid Finger Laid', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached PO for Baby Squid Finger Laid 200/300.\n\nPO Number: GI/PO/25-26/3037\n\nKindly confirm.\n\nThanking you,\nSANTOSH LAXMAN SATOPE\nGanesh International', hasAttachment: true, attachments: ['PO_3037.pdf'] },
+      { stage: 2, timestamp: '2026-02-01T14:30:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: PO 3037 - BABY SQUID FINGER LAID - PI GI/PI/25-26/I02046', body: 'Dear Sumehr,\n\nPlease find attached Proforma Invoice.\n\nPI Number: GI/PI/25-26/I02046\nProduct: Baby Squid Finger Laid 200/300\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.\nDpto. Compras', hasAttachment: true, attachments: ['PI_I02046.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3038',
+    poNumber: 'PO 3038',
+    piNumber: 'GI/PI/25-26/I02047',
+    company: 'PESCADOS E.GUILLEM',
+    brand: 'EGUILLEM',
+    product: 'Calamar Troceado',
+    specs: '20/40 6X1 20% - RAUNAQ',
+    from: 'India',
+    to: 'Valencia, Spain',
+    date: '4th Feb 2026',
+    currentStage: 3,
+    supplier: 'RAUNAQ',
+    history: [
+      { stage: 1, timestamp: '2026-01-28T10:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'RAUNAQ Supplier', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3038', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached the Purchase Order for Calamar Troceado 20/40 6X1 20%.\n\nPO Number: GI/PO/25-26/3038\nProduct: Calamar Troceado\nQuantity: As per attached PO\nDelivery: As per schedule\n\nKindly confirm receipt and send PI at the earliest.\n\nThanking you,\nBest regards,\n\nSANTOSH LAXMAN SATOPE\nGanesh International\nOffice no. 226, 2nd Floor, Arun Chambers\nTardeo Road, Mumbai 400034', hasAttachment: true, attachments: ['PO_3038.pdf'] },
+      { stage: 2, timestamp: '2026-01-30T14:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02047 - PO 3038', body: 'Dear Sumehr,\n\nPlease find attached the Proforma Invoice for your order.\n\nPI Number: GI/PI/25-26/I02047\nReference: PO 3038\nProduct: Calamar Troceado 20/40 6X1 20%\n\nPlease confirm and proceed with artwork submission.\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.\nDpto. Compras', hasAttachment: true, attachments: ['PI_I02047.pdf'] },
+      { stage: 3, timestamp: '2026-02-04T17:15:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'RE: NEED ARTWORK APPROVAL - PI GI/PI/25-26/I02047 - PO 3038 - RAUNAQ', body: 'Dear Santosh,\n\nThe artworks of EGUILLEM BRAND are OK.\n\nREMINDER: send us artworks of OLIVER BRAND and BAUTISMAR BRAND with changes to recheck before printing.\n\nBest regards.\n\nMª Carmen Martínez\nDpto. Calidad\nwww.eguillem.com\nT 961 218 844\nF 961 218 888\nE-MAIL: calidad@eguillem.com\n\nEste correo electrónico procede de PESCADOS E.GUILLEM S.A.', hasAttachment: false }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3035',
+    poNumber: 'PO 3035',
+    piNumber: 'GI/PI/25-26/I02044',
+    company: 'PESCADOS E.GUILLEM',
+    brand: 'MORALES',
+    product: 'Frozen Squid Whole',
+    specs: '100/UP - RAUNAQ',
+    from: 'India',
+    to: 'Valencia, Spain',
+    date: '4th Feb 2026',
+    currentStage: 3,
+    supplier: 'RAUNAQ',
+    history: [
+      { stage: 1, timestamp: '2026-01-25T09:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'RAUNAQ', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3035', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached Purchase Order for Frozen Squid Whole 100/UP.\n\nPO Number: GI/PO/25-26/3035\n\nKindly confirm.\n\nThanking you,\nBest regards,\nSANTOSH LAXMAN SATOPE\nGanesh International', hasAttachment: true, attachments: ['PO_3035.pdf'] },
+      { stage: 2, timestamp: '2026-01-27T11:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02044 - PO 3035', body: 'Dear Sumehr,\n\nPlease find attached the Proforma Invoice.\n\nPI Number: GI/PI/25-26/I02044\nReference: PO 3035\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.', hasAttachment: true, attachments: ['PI_I02044.pdf'] },
+      { stage: 3, timestamp: '2026-02-04T16:22:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'RE: NEED ARTWORK APPROVAL - PI- GI/PI/25-26/I02044 - PO 3035 - RAUNAQ', body: 'Dear Santosh,\n\nThe artworks are OK.\n\nBest regards.\n\nMª Carmen Martínez\nDpto. Calidad\nwww.eguillem.com\nT 961 218 844\nF 961 218 888\nE-MAIL: calidad@eguillem.com', hasAttachment: false }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3026',
+    poNumber: 'PO 3026',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Squid Whole IQF',
+    specs: 'Invoice 3000250117',
+    from: 'Cochin, India',
+    to: 'Spain',
+    date: '3rd Feb 2026',
+    currentStage: 8,
+    supplier: 'Nila Exports',
+    awbNumber: null,
+    history: [
+      { stage: 1, timestamp: '2026-01-10T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Nila Exports', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3026', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached PO for Squid Whole IQF.\n\nPO Number: GI/PO/25-26/3026\n\nKindly confirm.\n\nThanking you,\nBest regards,\nSANTOSH LAXMAN SATOPE\nGanesh International', hasAttachment: true, attachments: ['PO_3026.pdf'] },
+      { stage: 2, timestamp: '2026-01-12T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'RE: PO GI/PO/25-26/3026 - Proforma Invoice', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached Proforma Invoice for your order.\n\nInvoice No: 3000250117\nReference: PO GI/PO/25-26/3026\n\nKindly confirm and proceed.\n\nThanking you,\nNila Exports\nNila Seafoods Pvt Ltd', hasAttachment: true, attachments: ['PI_3000250117.pdf'] },
+      { stage: 3, timestamp: '2026-01-15T14:00:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: 'Ganesh International', subject: 'RE: ARTWORK APPROVAL - PO 3026', body: 'Dear Santosh,\n\nThe artworks are OK.\n\nBest regards.\n\nMª Carmen Martínez\nDpto. Calidad', hasAttachment: false },
+      { stage: 4, timestamp: '2026-01-18T09:00:00Z', from: 'Hansel Fernandez <hanselfernandez@hotmail.com>', to: 'Ganesh International, Nila Exports', subject: 'INSPECTION REPORT - PO 3026 - Invoice 3000250117', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached the inspection photos and report for:\n\nPO: GI/PO/25-26/3026\nInvoice: 3000250117\nProduct: Squid Whole IQF\n\nInspection Result: APPROVED\n\nAll parameters within acceptable limits. Quality approved for shipment.\n\nBest regards,\nHansel Fernandez\nQC Inspector', hasAttachment: true, attachments: ['Inspection_Report_3026.pdf', 'Photos_3026.zip'] },
+      { stage: 5, timestamp: '2026-01-22T11:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'VESSEL SCHEDULE == GI/PO/25-26/3026 == SHIPMENT DETAILS', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find below vessel schedule details:\n\nVessel: MSC ROSA M\nVoyage: 123N\nETD Cochin: 25-JAN-2026\nETA Valencia: 10-FEB-2026\n\nContainer: MSCU1234567\nSeal: AB123456\n\nKindly confirm.\n\nThanking you,\nNila Exports', hasAttachment: false },
+      { stage: 6, timestamp: '2026-01-28T15:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: DRAFT DOCUMENT == GI/PO/25-26/3026', body: 'Dear Sumehr,\n\nDocuments OK.\n\nPlease proceed with final copies.\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.', hasAttachment: false },
+      { stage: 7, timestamp: '2026-01-31T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: '== DOCUMENT == GI/PO/25-26/3026 == FINAL COPIES', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached final documents:\n\n1. Bill of Lading - MEDUWP096292\n2. Commercial Invoice\n3. Packing List\n4. Certificate of Origin\n5. Health Certificate\n\nKindly check and confirm.\n\nThanking you,\nNila Exports', hasAttachment: true, attachments: ['BL_MEDUWP096292.pdf', 'Invoice_3000250117.pdf', 'PackingList.pdf', 'COO.pdf', 'HealthCert.pdf'] },
+      { stage: 8, timestamp: '2026-02-03T18:08:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'RE: PESCADOS 04tH CONTAINER INS PHOTOS AND REPORT == 3000250117 == SHIPMENT DETAILS == GI/PO/25-26/3026 == DRAFT DOCUMENT = DOCUMENT == DHL DETAILS == TELEX RELEASE', body: 'Dear Sir/Madam,\n\nGood day!\n\nPlease find below the telex release message received from the liner for your reference.\n\n//QUOTE//\n\nGood day,\n\nWe confirmed, Telex Release for B/L MEDUWP096292 has been arranged.\n\nThe cargo can be released at destination port without presentation of original Bill of Lading.\n\n//UNQUOTE//\n\nThis is for your kind information.\n\nThanking you,\nBest regards,\nNila Exports\nNila Seafoods Pvt Ltd', hasAttachment: true, attachments: ['TelexRelease_MEDUWP096292.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3027',
+    poNumber: 'PO 3027',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Vannamei PUD Blanched',
+    specs: '31/40 - 6340 Kgs',
+    from: 'India',
+    to: 'Spain',
+    date: '2nd Feb 2026',
+    currentStage: 8,
+    supplier: 'Nila Exports',
+    awbNumber: '1016613850',
+    history: [
+      { stage: 1, timestamp: '2026-01-08T07:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Nila Exports', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3027', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached PO for Vannamei PUD Blanched 31/40.\n\nPO Number: GI/PO/25-26/3027\nQuantity: 6340 Kgs\n\nKindly confirm.\n\nThanking you,\nBest regards,\nSANTOSH LAXMAN SATOPE', hasAttachment: true, attachments: ['PO_3027.pdf'] },
+      { stage: 2, timestamp: '2026-01-10T09:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'RE: PO 3027 - Proforma Invoice', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPI attached for your reference.\n\nInvoice No: 3000250122\n\nThanking you,\nNila Exports', hasAttachment: true, attachments: ['PI_3000250122.pdf'] },
+      { stage: 3, timestamp: '2026-01-13T12:00:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: 'Ganesh International', subject: 'RE: ARTWORK - PO 3027', body: 'Dear Santosh,\n\nArtworks are OK.\n\nBest regards.\nMª Carmen Martínez\nDpto. Calidad', hasAttachment: false },
+      { stage: 4, timestamp: '2026-01-16T08:00:00Z', from: 'J B Boda <jbbvrl@jbbodamail.com>', to: 'Ganesh International, Nila Exports', subject: 'INSPECTION REPORT - PO 3027 - Invoice 3000250122', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached inspection report and photos.\n\nPO: GI/PO/25-26/3027\nProduct: Vannamei PUD Blanched 31/40\nQuantity: 6340 Kgs\n\nInspection Result: PASSED\n\nAll quality parameters satisfactory.\n\nBest regards,\nJ B Boda & Co\nMarine Surveyors & Loss Assessors', hasAttachment: true, attachments: ['JBBoda_Report_3027.pdf', 'Inspection_Photos.zip'] },
+      { stage: 5, timestamp: '2026-01-20T14:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'VESSEL SCHEDULE == PO 3027 == SHIPMENT DETAILS', body: 'Dear Sir/Madam,\n\nVessel booking confirmed.\n\nVessel: MAERSK SELETAR\nVoyage: 205E\nETD: 23-JAN-2026\nETA: 08-FEB-2026\n\nThanking you,\nNila Exports', hasAttachment: false },
+      { stage: 6, timestamp: '2026-01-25T16:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: DRAFT DOCUMENT == PO 3027', body: 'Dear Sumehr,\n\nDocuments OK.\n\nBest regards,\nOscar García', hasAttachment: false },
+      { stage: 7, timestamp: '2026-01-29T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: '== DOCUMENT == PO 3027 == FINAL COPIES', body: 'Dear Sir/Madam,\n\nFinal documents attached.\n\n1. Bill of Lading\n2. Commercial Invoice\n3. Packing List\n\nThanking you,\nNila Exports', hasAttachment: true, attachments: ['BL_3027.pdf', 'Invoice_3027.pdf', 'PL_3027.pdf'] },
+      { stage: 8, timestamp: '2026-02-02T18:25:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'RE: NEW PURCHASE ORDER - PO GI/PO/25-26/3027 - PO 3027 == VESSEL SCHEDULE == SHIPMENT DTAILS == 3000250122 == DRAFT DOCUMENT == DOCUMENT == DHL DETAILS', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find below DHL courier AWB details:\n\nDIRECT TO BUYER: 1016613850\nDate: 31.01.2026\n\nDocuments sent:\n- Original Bill of Lading (3 sets)\n- Commercial Invoice\n- Packing List\n- Certificate of Origin\n- Health Certificate\n\nThis is for your kind information.\n\nThanking you,\nBest regards,\nNila Exports\nNila Seafoods Pvt Ltd', hasAttachment: true, attachments: ['DHL_Receipt_1016613850.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3034',
+    poNumber: 'PO 3034',
+    piNumber: 'GI/PI/25-26/I02043',
+    company: 'PESCADOS E.GUILLEM',
+    brand: 'MORALES',
+    product: 'Calamar Troceado',
+    specs: 'Printed bag - JJ SEAFOOD',
+    from: 'India',
+    to: 'Spain',
+    date: '3rd Feb 2026',
+    currentStage: 2,
+    supplier: 'JJ SEAFOOD',
+    history: [
+      { stage: 1, timestamp: '2026-01-30T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'JJ SEAFOOD', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3034', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached PO for Calamar Troceado printed bag.\n\nPO Number: GI/PO/25-26/3034\n\nKindly confirm.\n\nThanking you,\nBest regards,\nSANTOSH LAXMAN SATOPE\nGanesh International', hasAttachment: true, attachments: ['PO_3034.pdf'] },
+      { stage: 2, timestamp: '2026-02-01T10:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: PO 3034 - CALAMAR TROCEADO - PI GI/PI/25-26/I02043', body: 'Dear Sumehr,\n\nCALAMAR TROCEADO is with printed bag, not with rider.\n\nPlease find PI attached.\n\nPI Number: GI/PI/25-26/I02043\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.\nDpto. Compras', hasAttachment: true, attachments: ['PI_I02043.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3029',
+    poNumber: 'PO 3029',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Squid Whole IQF',
+    specs: '6th Container',
+    from: 'India',
+    to: 'Spain',
+    date: '1st Feb 2026',
+    currentStage: 6,
+    supplier: 'Nila Exports',
+    history: [
+      { stage: 1, timestamp: '2026-01-15T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Nila Exports', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3029', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPO attached for 6th container.\n\nPO Number: GI/PO/25-26/3029\n\nThanking you,\nSANTOSH LAXMAN SATOPE', hasAttachment: true, attachments: ['PO_3029.pdf'] },
+      { stage: 2, timestamp: '2026-01-17T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'RE: PO 3029 - PI 3000250120', body: 'Dear Sir/Madam,\n\nPI attached.\n\nInvoice No: 3000250120\n\nThanking you,\nNila Exports', hasAttachment: true, attachments: ['PI_3000250120.pdf'] },
+      { stage: 3, timestamp: '2026-01-19T14:00:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: 'Ganesh International', subject: 'RE: ARTWORK - PO 3029', body: 'Dear Santosh,\n\nArtworks OK.\n\nBest regards.\nMª Carmen Martínez', hasAttachment: false },
+      { stage: 4, timestamp: '2026-01-22T09:00:00Z', from: 'Hansel Fernandez <hanselfernandez@hotmail.com>', to: 'Ganesh International', subject: 'INSPECTION REPORT - PO 3029', body: 'Dear Sir,\n\nInspection completed. APPROVED.\n\nBest regards,\nHansel Fernandez\nQC Inspector', hasAttachment: true, attachments: ['QC_Report_3029.pdf'] },
+      { stage: 5, timestamp: '2026-01-25T11:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'VESSEL SCHEDULE == PO 3029', body: 'Dear Sir/Madam,\n\nVessel booking confirmed.\n\nVessel: MSC ANNA\nETD: 28-JAN-2026\nETA: 12-FEB-2026\n\nThanking you,\nNila Exports', hasAttachment: false },
+      { stage: 6, timestamp: '2026-02-01T15:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: DRAFT DOCUMENT == GI/PO/25-26/3029', body: 'Dear Sumehr,\n\nDraft documents received and reviewed.\n\nDOCUMENTS OK.\n\nPlease proceed with final copies.\n\nBest regards,\nOscar García\nPESCADOS E.GUILLEM S.A.', hasAttachment: false }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3028',
+    poNumber: 'PO 3028',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Vannamei HLSO',
+    specs: '16/20 - 5500 Kgs',
+    from: 'India',
+    to: 'Spain',
+    date: '31st Jan 2026',
+    currentStage: 7,
+    supplier: 'Nila Exports',
+    history: [
+      { stage: 1, timestamp: '2026-01-10T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Nila Exports', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3028', body: 'Dear Sir/Madam,\n\nPO for Vannamei HLSO 16/20.\n\nPO Number: GI/PO/25-26/3028\nQuantity: 5500 Kgs\n\nThanking you,\nSANTOSH LAXMAN SATOPE', hasAttachment: true, attachments: ['PO_3028.pdf'] },
+      { stage: 2, timestamp: '2026-01-12T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'RE: PO 3028 - PI 3000250118', body: 'Dear Sir/Madam,\n\nPI attached.\n\nThanking you,\nNila Exports', hasAttachment: true, attachments: ['PI_3000250118.pdf'] },
+      { stage: 3, timestamp: '2026-01-14T14:00:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: 'Ganesh International', subject: 'RE: ARTWORK - PO 3028', body: 'Artworks OK.\n\nMª Carmen Martínez', hasAttachment: false },
+      { stage: 4, timestamp: '2026-01-17T09:00:00Z', from: 'J B Boda <jbbvrl@jbbodamail.com>', to: 'Ganesh International', subject: 'QC REPORT - PO 3028', body: 'Dear Sir,\n\nInspection PASSED. Report attached.\n\nJ B Boda & Co', hasAttachment: true, attachments: ['JBBoda_3028.pdf'] },
+      { stage: 5, timestamp: '2026-01-20T11:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: 'Ganesh International', subject: 'VESSEL SCHEDULE == PO 3028', body: 'Vessel confirmed.\n\nVessel: MAERSK SELETAR\nETD: 23-JAN-2026\n\nNila Exports', hasAttachment: false },
+      { stage: 6, timestamp: '2026-01-26T15:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: DRAFT DOCUMENT == PO 3028', body: 'Documents OK.\n\nOscar García', hasAttachment: false },
+      { stage: 7, timestamp: '2026-01-31T10:00:00Z', from: 'Nila Exports <nilaexport@nilaseafoods.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: '== DOCUMENT == GI/PO/25-26/3028 == FINAL COPIES', body: 'Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached final documents:\n\n1. Bill of Lading - MEDUWP096305\n2. Commercial Invoice\n3. Packing List\n4. Certificate of Origin\n5. Health Certificate\n\nKindly check and confirm.\n\nThanking you,\nNila Exports\nNila Seafoods Pvt Ltd', hasAttachment: true, attachments: ['BL_MEDUWP096305.pdf', 'Invoice_3028.pdf', 'PackingList_3028.pdf', 'COO_3028.pdf', 'HealthCert_3028.pdf'] }
+    ]
+  },
+  {
+    id: 'GI/PO/25-26/3015',
+    poNumber: 'PO 3015',
+    company: 'PESCADOS E.GUILLEM',
+    product: 'Squid Rings',
+    specs: '40/60 - Silver Sea',
+    from: 'Porbandar, India',
+    to: 'Spain',
+    date: '15th Dec 2025',
+    currentStage: 8,
+    supplier: 'Silver Sea Foods',
+    awbNumber: '1016612890',
+    history: [
+      { stage: 1, timestamp: '2025-11-20T08:00:00Z', from: 'Ganesh International <ganeshintnlmumbai@gmail.com>', to: 'Silver Sea Foods', subject: 'NEW PURCHASE ORDER - PO GI/PO/25-26/3015', body: 'Dear Sir,\n\nPO for Squid Rings 40/60.\n\nPO Number: GI/PO/25-26/3015\n\nThanking you,\nSANTOSH LAXMAN SATOPE', hasAttachment: true, attachments: ['PO_3015.pdf'] },
+      { stage: 2, timestamp: '2025-11-22T10:00:00Z', from: 'Silver Sea Foods <silversea@gmail.com>', to: 'Ganesh International', subject: 'RE: PO 3015 - Proforma Invoice', body: 'Dear Sir,\n\nPI attached.\n\nSilver Sea Foods', hasAttachment: true, attachments: ['PI_3015.pdf'] },
+      { stage: 3, timestamp: '2025-11-25T14:00:00Z', from: '"Mª Carmen Martínez" <calidad@eguillem.com>', to: 'Ganesh International', subject: 'RE: ARTWORK - PO 3015', body: 'Artworks OK.\n\nMª Carmen Martínez', hasAttachment: false },
+      { stage: 4, timestamp: '2025-11-28T09:00:00Z', from: 'J B Boda Porbandar <jbbpor@jbbodamail.com>', to: 'Ganesh International', subject: 'INSPECTION REPORT - PO 3015 - J B BODA PORBANDAR', body: 'Dear Sir,\n\nGood day!\n\nPlease find attached QC report from J B Boda Porbandar office.\n\nProduct: Squid Rings 40/60\nInspection Result: APPROVED\n\nBest regards,\nJ B Boda & Co\nPorbandar Office', hasAttachment: true, attachments: ['JBBoda_Porbandar_3015.pdf', 'Inspection_Photos_3015.zip'] },
+      { stage: 5, timestamp: '2025-12-01T11:00:00Z', from: 'Silver Sea Foods <silversea@gmail.com>', to: 'Ganesh International', subject: 'VESSEL SCHEDULE == PO 3015', body: 'Vessel confirmed.\n\nETD: 05-DEC-2025\nETA: 20-DEC-2025\n\nSilver Sea Foods', hasAttachment: false },
+      { stage: 6, timestamp: '2025-12-08T15:00:00Z', from: '"Oscar | PESCADOS E.GUILLEM" <oscargarcia@eguillem.com>', to: 'Ganesh International', subject: 'RE: DRAFT DOCUMENT == PO 3015', body: 'Documents OK.\n\nOscar García', hasAttachment: false },
+      { stage: 7, timestamp: '2025-12-12T10:00:00Z', from: 'Silver Sea Foods <silversea@gmail.com>', to: 'Ganesh International', subject: '== DOCUMENT == PO 3015 == FINAL COPIES', body: 'Final documents attached.\n\nSilver Sea Foods', hasAttachment: true, attachments: ['BL_3015.pdf', 'Invoice_3015.pdf', 'PL_3015.pdf'] },
+      { stage: 8, timestamp: '2025-12-15T17:00:00Z', from: 'Silver Sea Foods <silversea@gmail.com>', to: '"Ganesh International" <ganeshintnlmumbai@gmail.com>', subject: 'DHL DETAILS == PO 3015 == AWB 1016612890', body: 'Dear Sir,\n\nGood Day!\n\nDHL courier dispatched.\n\nAWB Number: 1016612890\nDate: 15-DEC-2025\n\nDocuments sent:\n- Original Bill of Lading (3 sets)\n- Commercial Invoice\n- Packing List\n- Certificate of Origin\n- Health Certificate\n\nThanking you,\nSilver Sea Foods', hasAttachment: true, attachments: ['DHL_Receipt_1016612890.pdf'] }
+    ]
+  }
+];
+
+// Product inquiries
+const productInquiries = [
+  { product: 'Calamar Troceado 20/40', sizes: ['6X1 20% ESTRELLA POLAR - 10 tons'], total: '10 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR' },
+  { product: 'Puntilla Lavada y Congelada', total: '8 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR' },
+  { product: 'Squid Whole IQF', sizes: ['U/3 - 2900 Kgs @ 7.9 USD', '3/6 - 2160 Kgs @ 7.2 USD'], total: '6340 Kgs', from: 'Ocean Fresh GmbH' },
+];
+
+// Contact Avatar
+function ContactAvatar({ email, size = 'md' }) {
+  const contact = getContactInfo(email);
+  const sizeClasses = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-12 h-12 text-base' };
+  return (
+    <div className={`${sizeClasses[size]} ${contact.color} rounded-full flex items-center justify-center text-white font-medium flex-shrink-0`}>
+      {contact.initials}
+    </div>
+  );
+}
+
+// Expandable Email Card
+function ExpandableEmailCard({ entry, defaultExpanded = false }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const contact = getContactInfo(entry.from);
+  const formatTime = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className={`border rounded-xl transition-all ${expanded ? 'border-blue-300 shadow-md' : 'border-gray-200 hover:border-blue-200'} bg-white overflow-hidden`}>
+      <div className="p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-start gap-3">
+          <ContactAvatar email={entry.from} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-gray-800">{contact.name}</span>
+                {contact.role && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{contact.role}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{formatTime(entry.timestamp)}</span>
+                <Icon name="ChevronDown" size={16} className={`text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </div>
+            </div>
+            {contact.company && <p className="text-xs text-gray-500 mb-1">{contact.company}</p>}
+            <p className="text-sm text-gray-700 font-medium truncate">{entry.subject}</p>
+            {!expanded && <p className="text-sm text-gray-500 truncate mt-1">{entry.body?.split('\n')[0]}</p>}
+            <div className="flex items-center gap-3 mt-2">
+              {entry.hasAttachment && (
+                <span className="flex items-center gap-1 text-xs text-gray-400">
+                  <Icon name="Paperclip" size={12} />
+                  {entry.attachments?.length || 1} attachment{entry.attachments?.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-t border-gray-100">
+          <div className="px-4 py-3 bg-gray-50 text-xs space-y-1">
+            <p><span className="text-gray-500">From:</span> <span className="text-gray-700">{entry.from}</span></p>
+            {entry.to && <p><span className="text-gray-500">To:</span> <span className="text-gray-700">{entry.to}</span></p>}
+            <p><span className="text-gray-500">Date:</span> <span className="text-gray-700">{new Date(entry.timestamp).toLocaleString()}</span></p>
+            <p><span className="text-gray-500">Subject:</span> <span className="text-gray-700 font-medium">{entry.subject}</span></p>
+          </div>
+          <div className="p-4">
+            <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{entry.body}</pre>
+          </div>
+          {entry.attachments && entry.attachments.length > 0 && (
+            <div className="px-4 pb-4">
+              <p className="text-xs text-gray-500 mb-2 font-medium">Attachments:</p>
+              <div className="flex flex-wrap gap-2">
+                {entry.attachments.map((att, idx) => (
+                  <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-700 hover:bg-gray-200 cursor-pointer">
+                    <Icon name="Paperclip" size={12} /> {att} <Icon name="ExternalLink" size={10} className="text-gray-400" />
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact Email Preview
+function CompactEmailPreview({ entry, onClick }) {
+  const contact = getContactInfo(entry.from);
+  const formatTime = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="flex items-center gap-3 cursor-pointer" onClick={onClick}>
+      <ContactAvatar email={entry.from} size="sm" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-700">{contact.name}</span>
+          {contact.role && <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{contact.role}</span>}
+          <span className="text-xs text-gray-400">{formatTime(entry.timestamp)}</span>
+        </div>
+        <p className="text-xs text-gray-500 truncate">{entry.body?.split('\n').find(l => l.trim()) || entry.subject}</p>
+      </div>
+      {entry.hasAttachment && <Icon name="Paperclip" size={12} className="text-gray-400" />}
+    </div>
+  );
+}
+
+// Progress Bar
+function OrderProgressBar({ currentStage, totalStages = 8 }) {
+  const progress = ((currentStage - 1) / (totalStages - 1)) * 100;
+  return (
+    <div className="flex items-center w-full max-w-xs">
+      <div className="flex-1 relative">
+        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="absolute inset-0 flex justify-between items-center">
+          {Array.from({ length: totalStages }).map((_, index) => (
+            <div key={index} className={`w-2 h-2 rounded-full ${index < currentStage ? 'bg-blue-500' : 'bg-gray-300'}`} />
+          ))}
+        </div>
+      </div>
+      <span className="ml-3 text-xs font-medium text-gray-500">{currentStage}/{totalStages}</span>
+    </div>
+  );
+}
+
+// Clickable Stage Filter Component
+function StageFilter({ stages, orders, selectedStage, onStageSelect }) {
+  // Count orders at each stage
+  const stageCounts = stages.reduce((acc, stage) => {
+    acc[stage.id] = orders.filter(o => o.currentStage === stage.id).length;
+    return acc;
+  }, {});
+
+  const totalOrders = orders.length;
+
+  const getStageColors = (stageId, isSelected) => {
+    const colors = {
+      1: isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300',
+      2: isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300',
+      3: isSelected ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300',
+      4: isSelected ? 'bg-pink-600 text-white border-pink-600' : 'bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100 hover:border-pink-300',
+      5: isSelected ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 hover:border-orange-300',
+      6: isSelected ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300',
+      7: isSelected ? 'bg-teal-600 text-white border-teal-600' : 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100 hover:border-teal-300',
+      8: isSelected ? 'bg-green-600 text-white border-green-600' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:border-green-300',
+    };
+    return colors[stageId] || 'bg-gray-50 text-gray-700 border-gray-200';
+  };
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">ORDER LIFECYCLE STAGES</p>
+        {selectedStage && (
+          <button
+            onClick={() => onStageSelect(null)}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          >
+            <Icon name="X" size={12} />
+            Clear filter
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {/* All Orders button */}
+        <button
+          onClick={() => onStageSelect(null)}
+          className={`text-xs px-3 py-2 rounded-lg border-2 transition-all cursor-pointer flex items-center gap-2 ${
+            selectedStage === null
+              ? 'bg-gray-800 text-white border-gray-800'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+          }`}
+        >
+          <span className="font-medium">All</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-xs ${selectedStage === null ? 'bg-white/20' : 'bg-gray-200'}`}>
+            {totalOrders}
+          </span>
+        </button>
+
+        {/* Stage buttons */}
+        {stages.map((stage, i) => {
+          const isSelected = selectedStage === stage.id;
+          const count = stageCounts[stage.id];
+          const hasOrders = count > 0;
+
+          return (
+            <button
+              key={stage.id}
+              onClick={() => onStageSelect(stage.id)}
+              disabled={!hasOrders}
+              className={`text-xs px-3 py-2 rounded-lg border-2 transition-all cursor-pointer flex items-center gap-2 ${
+                hasOrders
+                  ? getStageColors(stage.id, isSelected)
+                  : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed opacity-60'
+              }`}
+              title={`${stage.description}${hasOrders ? ` (${count} order${count > 1 ? 's' : ''})` : ' (no orders)'}`}
+            >
+              <span className={`font-semibold ${isSelected ? 'text-white/80' : ''}`}>{i + 1}.</span>
+              <span className="font-medium">{stage.name}</span>
+              {hasOrders && (
+                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                  isSelected ? 'bg-white/30' : 'bg-white'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected stage info */}
+      {selectedStage && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex items-center gap-2">
+            <span className={`w-3 h-3 rounded-full bg-${ORDER_STAGES[selectedStage-1]?.color || 'blue'}-500`}></span>
+            <span className="text-sm font-medium text-gray-700">
+              Showing {stageCounts[selectedStage]} order{stageCounts[selectedStage] !== 1 ? 's' : ''} at stage "{ORDER_STAGES[selectedStage-1]?.name}"
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1 ml-5">{ORDER_STAGES[selectedStage-1]?.description}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sidebar
+function Sidebar({ activeTab, setActiveTab, onSettingsClick }) {
+  const menuItems = [
+    { icon: 'Home', label: 'Dashboard', id: 'dashboard' },
+    { icon: 'FileText', label: 'Orders', id: 'orders' },
+    { icon: 'Mail', label: 'Inquiries', id: 'inquiries' },
+    { icon: 'Package', label: 'Products', id: 'products' },
+    { icon: 'Users', label: 'Contacts', id: 'contacts' },
+  ];
+  return (
+    <div className="w-16 bg-gray-900 flex flex-col items-center py-4 space-y-2">
+      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mb-4">
+        <span className="text-white font-bold text-sm">GI</span>
+      </div>
+      <div className="flex-1 space-y-2">
+        {menuItems.map((item) => (
+          <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <Icon name={item.icon} size={20} />
+            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">{item.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2 pt-4 border-t border-gray-800">
+        <button className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative">
+          <Icon name="Bell" size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
+        </button>
+        <button onClick={onSettingsClick} className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl"><Icon name="Settings" size={20} /></button>
+      </div>
+    </div>
+  );
+}
+
+// Header
+function Header({ searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick }) {
+  const formatLastSync = (ts) => {
+    if (!ts) return 'Never';
+    const diff = Math.floor((new Date() - new Date(ts)) / 60000);
+    if (diff < 1) return 'Just now';
+    if (diff < 60) return `${diff}m ago`;
+    return `${Math.floor(diff / 60)}h ago`;
+  };
+  return (
+    <div className="bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center">
+      <div className="flex items-center gap-4">
+        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+          <span className="text-white font-bold text-sm">GI</span>
+        </div>
+        <span className="text-xl font-semibold text-gray-800">Ganesh International - Order Tracker</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          <input type="text" placeholder="Search orders..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64" />
+        </div>
+        <button onClick={onSyncClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg ${isSyncing ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          <Icon name="RefreshCw" size={16} className={isSyncing ? 'animate-spin' : ''} />
+          <span className="text-sm">{isSyncing ? 'Syncing...' : 'Sync'}</span>
+        </button>
+        <div className="flex items-center gap-1 text-xs text-gray-400"><Icon name="Clock" size={12} /><span>{formatLastSync(lastSync)}</span></div>
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700">Ganesh Intl</button>
+        <div className="relative"><Icon name="Bell" size={20} className="text-gray-500" /><span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">3</span></div>
+        <div className="w-10 h-10 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex items-center justify-center"><span className="text-white font-medium text-sm">S</span></div>
+      </div>
+    </div>
+  );
+}
+
+// Stats Card
+function StatsCard({ title, value, highlight, onClick, trend, icon }) {
+  return (
+    <div onClick={onClick} className={`p-5 rounded-2xl cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 ${highlight ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white' : 'bg-white border border-gray-100'}`}>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className={`text-sm font-medium ${highlight ? 'text-blue-100' : 'text-gray-500'}`}>{title}</p>
+          <p className="text-3xl font-bold mt-2">{value}</p>
+          {trend && <p className={`text-xs mt-2 ${highlight ? 'text-blue-200' : 'text-green-600'}`}>{trend}</p>}
+        </div>
+        {highlight && <button className="bg-white/20 p-2 rounded-xl hover:bg-white/30"><Icon name="Plus" size={18} /></button>}
+      </div>
+      <p className={`text-sm mt-3 font-medium ${highlight ? 'text-blue-100' : 'text-blue-600'}`}>View All →</p>
+    </div>
+  );
+}
+
+// Page Header Component
+function PageHeader({ title, subtitle, onBack, actions }) {
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-4 mb-2">
+        {onBack && (
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <Icon name="ChevronRight" size={20} className="rotate-180 text-gray-500" />
+          </button>
+        )}
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
+          {subtitle && <p className="text-gray-500 mt-1">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex gap-2">{actions}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ============ ORDERS PAGE ============
+function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }) {
+  const [filterStage, setFilterStage] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const activeOrders = orders.filter(o => o.currentStage < 8);
+
+  const filteredOrders = activeOrders.filter(order => {
+    const matchesSearch = !searchTerm ||
+      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.product.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStage = filterStage === null || order.currentStage === filterStage;
+    return matchesSearch && matchesStage;
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Active Orders"
+        subtitle={`${activeOrders.length} orders in progress`}
+        onBack={onBack}
+        actions={
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span>
+          </button>
+        }
+      />
+
+      {/* Search and Filter Bar */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1">
+            <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search by PO number, company, or product..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <select
+            value={filterStage || ''}
+            onChange={(e) => setFilterStage(e.target.value ? parseInt(e.target.value) : null)}
+            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Stages</option>
+            {ORDER_STAGES.slice(0, 7).map(stage => (
+              <option key={stage.id} value={stage.id}>{stage.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Stage Progress Overview */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+        <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-3">Order Pipeline</p>
+        <div className="flex gap-2">
+          {ORDER_STAGES.slice(0, 7).map((stage, i) => {
+            const count = activeOrders.filter(o => o.currentStage === stage.id).length;
+            return (
+              <div key={stage.id} className="flex-1 text-center">
+                <div className={`h-2 rounded-full mb-2 ${count > 0 ? `bg-${stage.color}-500` : 'bg-gray-200'}`}></div>
+                <p className="text-xs font-medium text-gray-700">{stage.shortName}</p>
+                <p className={`text-lg font-bold ${count > 0 ? `text-${stage.color}-600` : 'text-gray-300'}`}>{count}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Orders List */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="space-y-0">
+          {filteredOrders.length > 0 ? (
+            filteredOrders.map(order => (
+              <OrderRow
+                key={order.id}
+                order={order}
+                onClick={() => setSelectedOrder(order)}
+                expanded={expandedOrder === order.id}
+                onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+              />
+            ))
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <Icon name="Package" size={48} className="mx-auto mb-4 text-gray-300" />
+              <p className="font-medium">No orders found</p>
+              <p className="text-sm mt-1">Try adjusting your search or filter</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ COMPLETED ORDERS PAGE ============
+function CompletedPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const completedOrders = orders.filter(o => o.currentStage === 8);
+
+  const filteredOrders = completedOrders.filter(order => {
+    return !searchTerm ||
+      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.product.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Completed Orders"
+        subtitle={`${completedOrders.length} orders successfully delivered`}
+        onBack={onBack}
+      />
+
+      {/* Stats Summary */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white">
+          <p className="text-green-100 text-sm">Total Completed</p>
+          <p className="text-3xl font-bold mt-1">{completedOrders.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">This Month</p>
+          <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => new Date(o.history[o.history.length-1]?.timestamp) > new Date(Date.now() - 30*24*60*60*1000)).length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">With DHL</p>
+          <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => o.awbNumber).length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">Telex Release</p>
+          <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => o.history.some(h => h.body?.toLowerCase().includes('telex'))).length}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+        <div className="relative">
+          <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search completed orders..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* Completed Orders List */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="space-y-0">
+          {filteredOrders.length > 0 ? (
+            filteredOrders.map(order => (
+              <div key={order.id} className="bg-green-50 rounded-xl border border-green-100 p-4 mb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Icon name="CheckCircle" size={20} className="text-green-600" />
+                      <span className="font-mono text-sm text-gray-600 font-medium">{order.id}</span>
+                      <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-green-100 text-green-700">Delivered</span>
+                      {order.awbNumber && <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded font-mono">AWB: {order.awbNumber}</span>}
+                    </div>
+                    <div className="flex items-center gap-6 text-sm">
+                      <span className="text-gray-700 font-medium">{order.company}</span>
+                      <span className="text-gray-500">{order.product}</span>
+                      <span className="text-gray-400">{order.supplier}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">{order.date}</p>
+                    <p className="text-xs text-gray-400 mt-1">{order.from} → {order.to}</p>
+                  </div>
+                  <button
+                    onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                    className="ml-4 p-2 hover:bg-green-100 rounded-lg transition-colors"
+                  >
+                    <Icon name="ChevronDown" size={16} className={`text-green-600 transition-transform ${expandedOrder === order.id ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+                {expandedOrder === order.id && (
+                  <div className="mt-4 pt-4 border-t border-green-200">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Delivery Timeline</p>
+                    <div className="space-y-2">
+                      {order.history.slice(-3).reverse().map((entry, idx) => (
+                        <ExpandableEmailCard key={idx} entry={entry} defaultExpanded={idx === 0} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <Icon name="CheckCircle" size={48} className="mx-auto mb-4 text-gray-300" />
+              <p className="font-medium">No completed orders found</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ INQUIRIES PAGE ============
+function InquiriesPage({ onBack }) {
+  const [activeTab, setActiveTab] = useState('received');
+
+  const receivedInquiries = [
+    { id: 'INQ-001', product: 'Calamar Troceado 20/40', sizes: ['6X1 20% ESTRELLA POLAR - 10 tons'], total: '10 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR', date: '4th Feb 2026', status: 'pending', priority: 'high' },
+    { id: 'INQ-002', product: 'Puntilla Lavada y Congelada', total: '8 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR', date: '3rd Feb 2026', status: 'pending', priority: 'medium' },
+    { id: 'INQ-003', product: 'Squid Whole IQF', sizes: ['U/3 - 2900 Kgs @ 7.9 USD', '3/6 - 2160 Kgs @ 7.2 USD'], total: '6340 Kgs', from: 'Ocean Fresh GmbH', date: '2nd Feb 2026', status: 'responded', priority: 'high' },
+    { id: 'INQ-004', product: 'Vannamei HLSO', sizes: ['16/20 - 5000 Kgs', '21/25 - 3000 Kgs'], total: '8000 Kgs', from: 'SeaFood Europe', date: '1st Feb 2026', status: 'converted', priority: 'low' },
+  ];
+
+  const sentInquiries = [
+    { id: 'SINQ-001', product: 'Baby Squid 200/300', to: 'RAUNAQ', total: '15 tons', date: '3rd Feb 2026', status: 'awaiting' },
+    { id: 'SINQ-002', product: 'Squid Rings 40/60', to: 'Silver Sea Foods', total: '10 tons', date: '2nd Feb 2026', status: 'quoted' },
+    { id: 'SINQ-003', product: 'Cuttlefish Whole', to: 'Nila Exports', total: '8 tons', date: '31st Jan 2026', status: 'confirmed' },
+  ];
+
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      responded: 'bg-blue-50 text-blue-700 border-blue-200',
+      converted: 'bg-green-50 text-green-700 border-green-200',
+      awaiting: 'bg-orange-50 text-orange-700 border-orange-200',
+      quoted: 'bg-purple-50 text-purple-700 border-purple-200',
+      confirmed: 'bg-green-50 text-green-700 border-green-200',
+    };
+    return colors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
+  };
+
+  const getPriorityColor = (priority) => {
+    const colors = { high: 'bg-red-500', medium: 'bg-yellow-500', low: 'bg-green-500' };
+    return colors[priority] || 'bg-gray-500';
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Product Inquiries"
+        subtitle="Manage incoming and outgoing product inquiries"
+        onBack={onBack}
+        actions={
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Inquiry</span>
+          </button>
+        }
+      />
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">Pending</p>
+          <p className="text-3xl font-bold mt-1 text-yellow-600">{receivedInquiries.filter(i => i.status === 'pending').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">Responded</p>
+          <p className="text-3xl font-bold mt-1 text-blue-600">{receivedInquiries.filter(i => i.status === 'responded').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">Converted to Orders</p>
+          <p className="text-3xl font-bold mt-1 text-green-600">{receivedInquiries.filter(i => i.status === 'converted').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-gray-500 text-sm">Sent Inquiries</p>
+          <p className="text-3xl font-bold mt-1 text-gray-800">{sentInquiries.length}</p>
+        </div>
+      </div>
+
+      {/* Tab Switcher */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-6">
+        <button
+          onClick={() => setActiveTab('received')}
+          className={`px-4 py-2 text-sm rounded-md transition-all ${activeTab === 'received' ? 'bg-white text-gray-800 shadow-sm font-medium' : 'text-gray-600 hover:text-gray-800'}`}
+        >
+          Received ({receivedInquiries.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('sent')}
+          className={`px-4 py-2 text-sm rounded-md transition-all ${activeTab === 'sent' ? 'bg-white text-gray-800 shadow-sm font-medium' : 'text-gray-600 hover:text-gray-800'}`}
+        >
+          Sent ({sentInquiries.length})
+        </button>
+      </div>
+
+      {/* Inquiries List */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        {activeTab === 'received' ? (
+          <div className="space-y-3">
+            {receivedInquiries.map(inq => (
+              <div key={inq.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className={`w-2 h-12 rounded-full ${getPriorityColor(inq.priority)}`}></div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs text-gray-400">{inq.id}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${getStatusColor(inq.status)}`}>{inq.status}</span>
+                    </div>
+                    <p className="font-medium text-gray-800">{inq.product}</p>
+                    {inq.brand && <p className="text-xs text-purple-600">{inq.brand}</p>}
+                    {inq.sizes && inq.sizes.map((s, j) => <p key={j} className="text-xs text-gray-500">{s}</p>)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-800">{inq.total}</p>
+                  <p className="text-xs text-gray-500">From: {inq.from}</p>
+                  <p className="text-xs text-gray-400 mt-1">{inq.date}</p>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <button className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-white">View</button>
+                  {inq.status === 'pending' && (
+                    <button className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700">Respond</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sentInquiries.map(inq => (
+              <div key={inq.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-xs text-gray-400">{inq.id}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${getStatusColor(inq.status)}`}>{inq.status}</span>
+                  </div>
+                  <p className="font-medium text-gray-800">{inq.product}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-800">{inq.total}</p>
+                  <p className="text-xs text-gray-500">To: {inq.to}</p>
+                  <p className="text-xs text-gray-400 mt-1">{inq.date}</p>
+                </div>
+                <button className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-white ml-4">View</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ CONTACTS PAGE ============
+function ContactsPage({ onBack }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const contactsList = Object.entries(CONTACTS).map(([email, data]) => ({
+    email,
+    ...data,
+    category: data.role.toLowerCase().includes('supplier') ? 'suppliers' :
+              data.role.toLowerCase().includes('inspector') || data.role.toLowerCase().includes('surveyor') ? 'inspectors' :
+              data.role.toLowerCase().includes('buyer') || data.role.toLowerCase().includes('compras') || data.role.toLowerCase().includes('calidad') ? 'buyers' : 'other'
+  }));
+
+  const filteredContacts = contactsList.filter(contact => {
+    const matchesSearch = !searchTerm ||
+      contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || contact.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const categories = [
+    { id: 'all', label: 'All Contacts', count: contactsList.length },
+    { id: 'buyers', label: 'Buyers', count: contactsList.filter(c => c.category === 'buyers').length },
+    { id: 'suppliers', label: 'Suppliers', count: contactsList.filter(c => c.category === 'suppliers').length },
+    { id: 'inspectors', label: 'Inspectors', count: contactsList.filter(c => c.category === 'inspectors').length },
+  ];
+
+  return (
+    <div>
+      <PageHeader
+        title="Contacts"
+        subtitle={`${contactsList.length} contacts in your network`}
+        onBack={onBack}
+        actions={
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Contact</span>
+          </button>
+        }
+      />
+
+      {/* Category Tabs */}
+      <div className="flex gap-2 mb-6">
+        {categories.map(cat => (
+          <button
+            key={cat.id}
+            onClick={() => setSelectedCategory(cat.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              selectedCategory === cat.id
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {cat.label} ({cat.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+        <div className="relative">
+          <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search contacts by name, company, or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* Contacts Grid */}
+      <div className="grid grid-cols-3 gap-4">
+        {filteredContacts.map((contact, idx) => (
+          <div key={idx} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-blue-200 transition-all cursor-pointer">
+            <div className="flex items-start gap-4">
+              <div className={`w-12 h-12 ${contact.color} rounded-full flex items-center justify-center text-white font-medium`}>
+                {contact.initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 truncate">{contact.name}</p>
+                <p className="text-sm text-gray-500 truncate">{contact.company}</p>
+                <span className="inline-block text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded mt-1">{contact.role}</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                <Icon name="Mail" size={12} /> {contact.email}
+              </p>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">View</button>
+              <button className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">Email</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filteredContacts.length === 0 && (
+        <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
+          <Icon name="Users" size={48} className="mx-auto mb-4 text-gray-300" />
+          <p className="font-medium text-gray-500">No contacts found</p>
+          <p className="text-sm text-gray-400 mt-1">Try adjusting your search</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ PRODUCTS PAGE ============
+function ProductsPage({ orders, onBack }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  // Extract unique products from orders
+  const productsList = [
+    { id: 1, name: 'Calamar Troceado', category: 'squid', specs: '20/40 6X1 20%', suppliers: ['RAUNAQ', 'JJ SEAFOODS'], orders: 3, image: '🦑' },
+    { id: 2, name: 'Squid Whole IQF', category: 'squid', specs: 'Various sizes', suppliers: ['Nila Exports', 'Silver Sea Foods'], orders: 5, image: '🦑' },
+    { id: 3, name: 'Baby Squid Finger Laid', category: 'squid', specs: '200/300', suppliers: ['RAUNAQ'], orders: 1, image: '🦑' },
+    { id: 4, name: 'Squid Rings', category: 'squid', specs: '40/60', suppliers: ['Silver Sea Foods'], orders: 1, image: '🦑' },
+    { id: 5, name: 'Vannamei PUD Blanched', category: 'shrimp', specs: '31/40', suppliers: ['Nila Exports'], orders: 2, image: '🦐' },
+    { id: 6, name: 'Vannamei HLSO', category: 'shrimp', specs: '16/20, 21/25', suppliers: ['Nila Exports'], orders: 1, image: '🦐' },
+    { id: 7, name: 'Puntilla Lavada y Congelada', category: 'squid', specs: 'Washed & Frozen', suppliers: ['Multiple'], orders: 0, image: '🦑' },
+    { id: 8, name: 'Cuttlefish Whole', category: 'cuttlefish', specs: 'Various sizes', suppliers: ['Nila Exports'], orders: 0, image: '🐙' },
+  ];
+
+  const categories = [
+    { id: 'all', label: 'All Products' },
+    { id: 'squid', label: 'Squid' },
+    { id: 'shrimp', label: 'Shrimp' },
+    { id: 'cuttlefish', label: 'Cuttlefish' },
+  ];
+
+  const filteredProducts = productsList.filter(product => {
+    const matchesSearch = !searchTerm ||
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.specs.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Products"
+        subtitle={`${productsList.length} products in catalog`}
+        onBack={onBack}
+        actions={
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Product</span>
+          </button>
+        }
+      />
+
+      {/* Category Tabs */}
+      <div className="flex gap-2 mb-6">
+        {categories.map(cat => (
+          <button
+            key={cat.id}
+            onClick={() => setSelectedCategory(cat.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              selectedCategory === cat.id
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+        <div className="relative">
+          <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* Products Grid */}
+      <div className="grid grid-cols-4 gap-4">
+        {filteredProducts.map(product => (
+          <div key={product.id} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-blue-200 transition-all cursor-pointer">
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-2">{product.image}</div>
+              <p className="font-medium text-gray-800">{product.name}</p>
+              <p className="text-xs text-gray-500 mt-1">{product.specs}</p>
+            </div>
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex justify-between text-xs mb-2">
+                <span className="text-gray-500">Active Orders</span>
+                <span className={`font-bold ${product.orders > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{product.orders}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Suppliers</span>
+                <span className="font-medium text-gray-700">{product.suppliers.length}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">Details</button>
+              <button className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">New Order</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Order Row with expandable email history
+function OrderRow({ order, onClick, expanded, onToggleExpand }) {
+  const isCompleted = order.currentStage === 8;
+  const lastUpdate = order.history[order.history.length - 1];
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all mb-3">
+      <div className="p-4 cursor-pointer" onClick={onClick}>
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="font-mono text-sm text-gray-600 font-medium">{order.id}</span>
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${isCompleted ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+                {ORDER_STAGES[order.currentStage - 1]?.shortName}
+              </span>
+              {order.brand && <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded">{order.brand}</span>}
+            </div>
+            <OrderProgressBar currentStage={order.currentStage} />
+          </div>
+          <div className="text-center px-6 border-l border-gray-100 min-w-[140px]">
+            <p className="font-medium text-gray-800 truncate text-sm">{order.company}</p>
+            {order.supplier && <p className="text-xs text-gray-400">{order.supplier}</p>}
+          </div>
+          <div className="text-right px-6 border-l border-gray-100 min-w-[180px]">
+            <p className="font-medium text-gray-800 text-sm">{order.product}</p>
+            <p className="text-xs text-gray-500 truncate">{order.specs}</p>
+          </div>
+          <div className="text-right px-6 border-l border-gray-100 min-w-[140px]">
+            <p className="text-xs text-gray-500">{order.from} → {order.to}</p>
+            {order.awbNumber && <p className="text-xs text-blue-600 font-mono mt-1">AWB: {order.awbNumber}</p>}
+          </div>
+          <div className="text-right pl-6 text-xs text-gray-500 min-w-[100px]">{order.date}</div>
+          <Icon name="ChevronRight" className="ml-4 text-gray-300" size={20} />
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-50">
+          <CompactEmailPreview entry={lastUpdate} onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} />
+          <button onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+            <Icon name="ChevronDown" size={14} className={`transform transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            {expanded ? 'Hide' : 'Show'} email history ({order.history.length} emails)
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-100">
+          <div className="mt-4 space-y-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Email History</p>
+            {[...order.history].reverse().map((entry, idx) => (
+              <ExpandableEmailCard key={idx} entry={entry} defaultExpanded={idx === 0} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Dashboard Content (extracted for cleaner code)
+function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, setSelectedOrder }) {
+  return (
+    <>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome, Sumehr</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
+      <div className="grid grid-cols-5 gap-4 mb-8">
+        <StatsCard title="Active Orders" value={stats.active} highlight onClick={() => setActiveTab('orders')} trend="+2 this week" />
+        <StatsCard title="Completed" value={stats.completed} onClick={() => setActiveTab('completed')} />
+        <StatsCard title="Inquiries" value={stats.inquiries} onClick={() => setActiveTab('inquiries')} />
+        <StatsCard title="Contacts" value={stats.contacts} onClick={() => setActiveTab('contacts')} />
+        <StatsCard title="Products" value={stats.products} onClick={() => setActiveTab('products')} />
+      </div>
+      <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-800">
+            {selectedStage ? `Orders at "${ORDER_STAGES[selectedStage-1]?.name}"` : 'Active Orders'}
+            <span className="ml-2 text-sm font-normal text-gray-500">({filteredOrders.length} orders)</span>
+          </h2>
+          <div className="flex gap-2">
+            <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"><Icon name="Filter" size={16} /><span className="text-sm">Filter</span></button>
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
+          </div>
+        </div>
+
+        {/* Clickable Stage Filter */}
+        <StageFilter
+          stages={ORDER_STAGES}
+          orders={orders}
+          selectedStage={selectedStage}
+          onStageSelect={setSelectedStage}
+        />
+
+        <div className="space-y-0">
+          {filteredOrders.length > 0 ? (
+            filteredOrders.map(order => (
+              <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} />
+            ))
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <Icon name="Package" size={48} className="mx-auto mb-4 text-gray-300" />
+              <p className="font-medium">No orders found</p>
+              <p className="text-sm mt-1">
+                {selectedStage
+                  ? `No orders at stage "${ORDER_STAGES[selectedStage-1]?.name}"`
+                  : 'Create a new order to get started'
+                }
+              </p>
+              {selectedStage && (
+                <button
+                  onClick={() => setSelectedStage(null)}
+                  className="mt-4 text-blue-600 hover:text-blue-700 font-medium text-sm"
+                >
+                  Clear filter to see all orders
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          <h3 className="font-semibold text-gray-800 mb-4">Active Shipments</h3>
+          <div className="bg-gradient-to-br from-blue-50 via-green-50 to-blue-50 rounded-xl h-64 flex items-center justify-center">
+            <div className="text-center"><Icon name="MapPin" className="mx-auto text-blue-500 mb-3" size={40} /><p className="text-gray-600 font-medium">Shipment Routes</p><p className="text-sm text-gray-400 mt-1">India → Spain</p></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          <div className="flex justify-between items-center mb-4"><h3 className="font-semibold text-gray-800">Product Inquiries</h3><div className="flex gap-1 bg-gray-100 rounded-lg p-1"><button className="px-3 py-1.5 text-sm text-gray-600 rounded-md">Sent</button><button className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md">Received</button></div></div>
+          <div className="space-y-3 max-h-56 overflow-y-auto">
+            {productInquiries.map((inq, i) => (<div key={i} className="flex justify-between items-start p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setActiveTab('inquiries')}><div><p className="font-medium text-gray-800">{inq.product}</p>{inq.brand && <p className="text-xs text-purple-600 mt-1">{inq.brand}</p>}{inq.sizes && inq.sizes.map((s, j) => <p key={j} className="text-xs text-gray-500">{s}</p>)}</div><div className="text-right"><p className="font-bold text-gray-800">{inq.total}</p><p className="text-xs text-gray-500">From: {inq.from}</p><button className="mt-2 px-3 py-1 text-xs border border-gray-300 rounded-lg hover:bg-white">Respond</button></div></div>))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Main App
+function GaneshIntlOrderTracker() {
+  const [orders, setOrders] = useState(initialOrders);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [expandedOrder, setExpandedOrder] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStage, setSelectedStage] = useState(null);
+  const [lastSync, setLastSync] = useState(new Date().toISOString());
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Filter orders by search term AND selected stage
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.product.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStage = selectedStage === null || order.currentStage === selectedStage;
+
+    return matchesSearch && matchesStage;
+  });
+
+  const stats = { active: orders.filter(o => o.currentStage < 8).length, completed: orders.filter(o => o.currentStage === 8).length, inquiries: productInquiries.length, contacts: Object.keys(CONTACTS).length, products: 8 };
+
+  const handleSync = () => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); setLastSync(new Date().toISOString()); }, 2000); };
+
+  // Render the current page based on activeTab
+  const renderPage = () => {
+    switch(activeTab) {
+      case 'orders':
+        return (
+          <OrdersPage
+            orders={orders}
+            expandedOrder={expandedOrder}
+            setExpandedOrder={setExpandedOrder}
+            setSelectedOrder={setSelectedOrder}
+            onBack={() => setActiveTab('dashboard')}
+          />
+        );
+      case 'completed':
+        return (
+          <CompletedPage
+            orders={orders}
+            expandedOrder={expandedOrder}
+            setExpandedOrder={setExpandedOrder}
+            setSelectedOrder={setSelectedOrder}
+            onBack={() => setActiveTab('dashboard')}
+          />
+        );
+      case 'inquiries':
+        return <InquiriesPage onBack={() => setActiveTab('dashboard')} />;
+      case 'contacts':
+        return <ContactsPage onBack={() => setActiveTab('dashboard')} />;
+      case 'products':
+        return <ProductsPage orders={orders} onBack={() => setActiveTab('dashboard')} />;
+      default:
+        return (
+          <DashboardContent
+            orders={orders}
+            stats={stats}
+            setActiveTab={setActiveTab}
+            filteredOrders={filteredOrders}
+            selectedStage={selectedStage}
+            setSelectedStage={setSelectedStage}
+            expandedOrder={expandedOrder}
+            setExpandedOrder={setExpandedOrder}
+            setSelectedOrder={setSelectedOrder}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onSettingsClick={() => setShowSettings(true)} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} />
+        <main className="flex-1 overflow-auto p-6">
+          {renderPage()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<GaneshIntlOrderTracker />);
+    </script>
+</body>
+</html>
