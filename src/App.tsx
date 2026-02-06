@@ -26,13 +26,14 @@ function App() {
   const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder } = useOrders(orgId);
   const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
-  // Use database data if available, fall back to hardcoded data
-  const isDbReady = orgId && !contactsLoading && !ordersLoading;
-  const contacts = isDbReady && Object.keys(dbContacts).length > 0 ? dbContacts : FALLBACK_CONTACTS;
-  const orders = isDbReady && dbOrders.length > 0 ? dbOrders : initialOrders;
-  const productInquiries = isDbReady && dbInquiries.length > 0 ? dbInquiries : fallbackInquiries;
+  // When authenticated with DB, always use DB data (even if empty = fresh account)
+  // Only fall back to hardcoded sample data when DB is not connected (e.g. GitHub Pages demo)
+  const isDbReady = !!(orgId && !contactsLoading && !ordersLoading);
+  const contacts = isDbReady ? dbContacts : FALLBACK_CONTACTS;
+  const orders = isDbReady ? dbOrders : initialOrders;
+  const productInquiries = isDbReady ? dbInquiries : fallbackInquiries;
 
-  // Local orders state for fallback mode
+  // Local orders state for fallback/demo mode (no DB)
   const [localOrders, setLocalOrders] = useState<Order[]>(initialOrders);
   const activeOrders = isDbReady ? orders : localOrders;
   const setOrders = isDbReady ? setDbOrders : setLocalOrders;
@@ -79,7 +80,7 @@ function App() {
     completed: activeOrders.filter(o => o.currentStage === 8).length,
     inquiries: productInquiries.length,
     contacts: Object.keys(contacts).length,
-    products: dbProducts.length > 0 ? dbProducts.length : 8,
+    products: isDbReady ? dbProducts.length : 8,
   };
 
   const handleSync = async () => {
