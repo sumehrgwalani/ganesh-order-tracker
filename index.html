@@ -1091,7 +1091,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   });
 
   const [lineItems, setLineItems] = useState([
-    { product: '', grade: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }
+    { product: '', size: '', glaze: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }
   ]);
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
@@ -1216,9 +1216,18 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           productName = productName.replace(/\s+wc/i, ' Whole Cleaned');
         }
 
+        // Auto-add "Frozen" prefix for seafood and french fries (unless already present)
+        const seafoodKeywords = ['cuttlefish', 'squid', 'octopus', 'shrimp', 'prawn', 'fish', 'seafood', 'vannamei', 'lobster', 'crab', 'mussel', 'clam', 'scallop', 'anchovy', 'sardine', 'tuna', 'salmon', 'cod', 'hake', 'sole', 'skewer'];
+        const friesKeywords = ['fries', 'french fries', 'potato', 'wedges'];
+        const productLower = productName.toLowerCase();
+        const needsFrozen = [...seafoodKeywords, ...friesKeywords].some(kw => productLower.includes(kw));
+        if (needsFrozen && !productLower.startsWith('frozen')) {
+          productName = 'Frozen ' + productName;
+        }
+
         currentBlock = {
           product: productName,
-          grade: '',
+          size: '',
           glaze: '',
           kilos: '',
           pricePerKg: '',
@@ -1238,7 +1247,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         const qtyPriceMatch = line.match(/(\d+)\s*MT\s+(U\/\d+|\d+\/\d+)?\s*\$?([\d.]+)?/i);
         if (qtyPriceMatch) {
           currentBlock.kilos = (parseFloat(qtyPriceMatch[1]) * 1000).toString(); // MT to kg
-          if (qtyPriceMatch[2]) currentBlock.grade = qtyPriceMatch[2];
+          if (qtyPriceMatch[2]) currentBlock.size = qtyPriceMatch[2];
           if (qtyPriceMatch[3]) currentBlock.pricePerKg = qtyPriceMatch[3];
         }
 
@@ -1251,8 +1260,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
         // Size/Talla (Talla 20/40 or just 20/40)
         const sizeMatch = line.match(/(?:talla\s+)?(\d+\/\d+|U\/\d+|\d+\/UP)/i);
-        if (sizeMatch && !currentBlock.grade) {
-          currentBlock.grade = sizeMatch[1];
+        if (sizeMatch && !currentBlock.size) {
+          currentBlock.size = sizeMatch[1];
         }
 
         // Packing (6x1 kilo bolsa con rider, 10 kilo Granel)
@@ -1325,14 +1334,15 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     const newLineItems = productBlocks.map(block => {
       const kilos = parseFloat(block.kilos) || 0;
       const price = parseFloat(block.pricePerKg) || 0;
-      // Combine glaze, notes into grade if applicable
-      let gradeStr = block.grade;
-      if (block.glaze) gradeStr = gradeStr ? `${gradeStr} (${block.glaze})` : block.glaze;
-      if (block.notes) gradeStr = gradeStr ? `${gradeStr} - ${block.notes}` : block.notes;
+      // Include notes in size if present, default to "Assorted" if no size specified
+      let sizeStr = block.size || '';
+      if (block.notes) sizeStr = sizeStr ? `${sizeStr} - ${block.notes}` : block.notes;
+      if (!sizeStr) sizeStr = 'Assorted';
 
       return {
         product: block.product,
-        grade: gradeStr,
+        size: sizeStr,
+        glaze: block.glaze || '',
         cases: '',
         kilos: block.kilos,
         pricePerKg: block.pricePerKg,
@@ -1341,9 +1351,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       };
     });
 
-    // Update state
+    // Update state with recalculated values (cases, adjusted kilos, totals)
     if (newLineItems.length > 0) {
-      setLineItems(newLineItems);
+      setLineItems(recalculateAllLineItems(newLineItems));
     }
 
     // Get combined product description
@@ -1385,24 +1395,100 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     .filter(([_, c]) => c.role === 'Buyer')
     .map(([email, c]) => ({ email, ...c }));
 
-  // Calculate line item total
-  const calculateTotal = (item) => {
-    const kilos = parseFloat(item.kilos) || 0;
-    const price = parseFloat(item.pricePerKg) || 0;
-    return (kilos * price).toFixed(2);
+  // Parse packing to extract kg per carton (e.g., "6x1 kg" = 6, "10 kg Bulk" = 10)
+  const parsePackingKg = (packing) => {
+    if (!packing) return null;
+    const packingLower = packing.toLowerCase();
+
+    // Pattern: 6x1 kg, 6X1 kg, 6x1kg, 10x1 = multiplied (6*1=6, 10*1=10)
+    const multiplyMatch = packing.match(/(\d+)\s*[xX]\s*(\d+)\s*(?:kg|kilo)?/i);
+    if (multiplyMatch) {
+      return parseInt(multiplyMatch[1]) * parseInt(multiplyMatch[2]);
+    }
+
+    // Pattern: 10 kg Bulk, 6 kilo = direct kg
+    const directMatch = packing.match(/(\d+)\s*(?:kg|kilo)/i);
+    if (directMatch) {
+      return parseInt(directMatch[1]);
+    }
+
+    return null;
   };
 
-  // Update line item
+  // Calculate cases, adjusted kilos, and total
+  const calculateLineItem = (item) => {
+    const inputKilos = parseFloat(item.kilos) || 0;
+    const price = parseFloat(item.pricePerKg) || 0;
+    const kgPerCarton = parsePackingKg(item.packing);
+
+    let cases = item.cases ? parseInt(item.cases) : 0;
+    let adjustedKilos = inputKilos;
+
+    // If we have packing info and kilos, calculate cases and adjust kilos
+    if (kgPerCarton && inputKilos > 0) {
+      // Calculate cases (round up to ensure we have enough)
+      cases = Math.ceil(inputKilos / kgPerCarton);
+      // Adjust kilos to match whole cartons
+      adjustedKilos = cases * kgPerCarton;
+    }
+
+    // Calculate total (rounded to 2 decimal places)
+    const total = (adjustedKilos * price).toFixed(2);
+
+    return {
+      cases: cases || '',
+      adjustedKilos: adjustedKilos,
+      total: total
+    };
+  };
+
+  // Update line item with smart calculations
   const updateLineItem = (index, field, value) => {
     const updated = [...lineItems];
     updated[index][field] = value;
-    updated[index].total = calculateTotal(updated[index]);
+
+    // Recalculate when kilos, packing, or price changes
+    if (field === 'kilos' || field === 'packing' || field === 'pricePerKg') {
+      const calculated = calculateLineItem(updated[index]);
+      updated[index].cases = calculated.cases;
+      // Only adjust kilos if packing is set and we're not directly editing kilos
+      if (field !== 'kilos' && parsePackingKg(updated[index].packing)) {
+        updated[index].kilos = calculated.adjustedKilos;
+      }
+      updated[index].total = calculated.total;
+    }
+
+    // If cases is manually edited, recalculate kilos
+    if (field === 'cases') {
+      const cases = parseInt(value) || 0;
+      const kgPerCarton = parsePackingKg(updated[index].packing);
+      if (kgPerCarton && cases > 0) {
+        updated[index].kilos = cases * kgPerCarton;
+        const price = parseFloat(updated[index].pricePerKg) || 0;
+        updated[index].total = (updated[index].kilos * price).toFixed(2);
+      }
+    }
+
     setLineItems(updated);
+  };
+
+  // Recalculate all line items (used after parsing)
+  const recalculateAllLineItems = (items) => {
+    return items.map(item => {
+      const calculated = calculateLineItem(item);
+      const kgPerCarton = parsePackingKg(item.packing);
+      return {
+        ...item,
+        cases: calculated.cases,
+        kilos: kgPerCarton ? calculated.adjustedKilos : item.kilos,
+        total: calculated.total
+      };
+    });
   };
 
   // Add line item
   const addLineItem = () => {
-    setLineItems([...lineItems, { product: '', grade: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }]);
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }]);
   };
 
   // Remove line item
@@ -1412,9 +1498,10 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     }
   };
 
-  // Calculate grand total
+  // Calculate grand totals
   const grandTotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total || 0), 0).toFixed(2);
   const totalKilos = lineItems.reduce((sum, item) => sum + (parseFloat(item.kilos) || 0), 0);
+  const totalCases = lineItems.reduce((sum, item) => sum + (parseInt(item.cases) || 0), 0);
 
   // Handle supplier selection
   const handleSupplierChange = (email) => {
@@ -1477,7 +1564,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       poNumber: poData.poNumber.split('/').pop(), // e.g., "EG-001" or "3044"
       company: poData.buyer,
       product: poData.product || lineItems.map(i => i.product).filter(p => p).join(', '),
-      specs: lineItems.map(i => `${i.grade || ''} ${i.packing || ''}`.trim()).filter(s => s).join(', '),
+      specs: lineItems.map(i => `${i.size || ''} ${i.glaze ? `(${i.glaze})` : ''} ${i.packing || ''}`.trim()).filter(s => s).join(', '),
       from: 'India',
       to: poData.destination || poData.buyerBank || 'Spain',
       date: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -1694,8 +1781,10 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border border-gray-300 px-3 py-2 text-left">Product</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left">Grade/Spec</th>
+                    <th className="border border-gray-300 px-3 py-2 text-left">Size</th>
+                    <th className="border border-gray-300 px-3 py-2 text-left">Glaze</th>
                     <th className="border border-gray-300 px-3 py-2 text-left">Packing</th>
+                    <th className="border border-gray-300 px-3 py-2 text-right">Cases</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Kilos</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Price/Kg<br/><span className="text-xs">CFR {poData.destination || '___'}</span></th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Total (USD)</th>
@@ -1705,15 +1794,18 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.grade || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2">{item.glaze || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.pricePerKg ? `$${item.pricePerKg}` : '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right font-medium">{item.total > 0 ? `$${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-3 py-2" colSpan="3">Total</td>
+                    <td className="border border-gray-300 px-3 py-2" colSpan="4">Total</td>
+                    <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalKilos}</td>
                     <td className="border border-gray-300 px-3 py-2"></td>
                     <td className="border border-gray-300 px-3 py-2 text-right">U.S. ${grandTotal}</td>
@@ -1902,27 +1994,35 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="grid grid-cols-3 gap-4 mb-4">
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Product Name</label>
                           <input type="text" value={item.product} onChange={(e) => updateLineItem(idx, 'product', e.target.value)} placeholder="e.g., Cuttlefish Whole Cleaned" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Grade / Specification</label>
-                          <input type="text" value={item.grade} onChange={(e) => updateLineItem(idx, 'grade', e.target.value)} placeholder="e.g., U/1 (25% Glaze)" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Size</label>
+                          <input type="text" value={item.size} onChange={(e) => updateLineItem(idx, 'size', e.target.value)} placeholder="e.g., U/1, 20/40" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Glaze</label>
+                          <input type="text" value={item.glaze} onChange={(e) => updateLineItem(idx, 'glaze', e.target.value)} placeholder="e.g., 25% Glaze" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
                         </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-3">
+                      <div className="grid grid-cols-5 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Packing</label>
-                          <input type="text" value={item.packing || ''} onChange={(e) => updateLineItem(idx, 'packing', e.target.value)} placeholder="e.g., 6x1 kg Bag with Rider" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                          <input type="text" value={item.packing || ''} onChange={(e) => updateLineItem(idx, 'packing', e.target.value)} placeholder="e.g., 6x1 kg" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Quantity (Kg)</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Cases</label>
+                          <input type="number" value={item.cases || ''} onChange={(e) => updateLineItem(idx, 'cases', e.target.value)} placeholder="Auto" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-right font-medium bg-blue-50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Total Kg</label>
                           <input type="number" value={item.kilos} onChange={(e) => updateLineItem(idx, 'kilos', e.target.value)} placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-right font-medium" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Price/Kg (USD)</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Price/Kg</label>
                           <input type="number" step="0.01" value={item.pricePerKg} onChange={(e) => updateLineItem(idx, 'pricePerKg', e.target.value)} placeholder="0.00" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-right" />
                         </div>
                         <div>
@@ -1939,7 +2039,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-lg">Grand Total</span>
                     <div className="text-right">
-                      <div className="text-blue-200 text-sm">{totalKilos} Kg</div>
+                      <div className="text-blue-200 text-sm">{totalCases} Cases | {totalKilos} Kg</div>
                       <div className="text-2xl font-bold">${grandTotal}</div>
                     </div>
                   </div>
@@ -2024,6 +2124,10 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Line Items</span>
                   <span className="font-medium">{lineItems.filter(i => i.product).length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total Cases</span>
+                  <span className="font-medium">{totalCases}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total Kilos</span>
