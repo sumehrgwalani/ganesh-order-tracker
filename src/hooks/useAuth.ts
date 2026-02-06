@@ -37,32 +37,44 @@ export function useAuth() {
 
   const fetchOrgId = async (userId: string) => {
     try {
-      const { data } = await supabase
+      // Use maybeSingle() instead of single() — returns null without throwing when no rows found
+      const { data: membership } = await supabase
         .from('organization_members')
         .select('organization_id')
         .eq('user_id', userId)
         .limit(1)
-        .single()
+        .maybeSingle()
 
-      if (data) {
-        setOrgId(data.organization_id)
+      if (membership) {
+        setOrgId(membership.organization_id)
       } else {
-        // New user - create org and membership
-        const { data: newOrg } = await supabase
+        // New user — create their organization and add them as owner
+        const { data: newOrg, error: orgError } = await supabase
           .from('organizations')
           .insert({ name: 'My Organization', slug: 'org-' + userId.slice(0, 8) })
           .select()
           .single()
 
+        if (orgError) {
+          console.error('Error creating organization:', orgError)
+          return
+        }
+
         if (newOrg) {
-          await supabase
+          const { error: memberError } = await supabase
             .from('organization_members')
             .insert({ organization_id: newOrg.id, user_id: userId, role: 'owner' })
+
+          if (memberError) {
+            console.error('Error creating membership:', memberError)
+            return
+          }
+
           setOrgId(newOrg.id)
         }
       }
     } catch (err) {
-      console.error('Error fetching org:', err)
+      console.error('Error in fetchOrgId:', err)
     } finally {
       setLoading(false)
     }
