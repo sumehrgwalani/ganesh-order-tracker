@@ -395,15 +395,16 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
                 {isExpanded && (
                   <div className="border-t border-gray-100">
                     {companyContacts.map((contact, idx) => (
-                      <div key={contact.id} className={`p-4 flex items-center justify-between ${idx > 0 ? 'border-t border-gray-50' : ''} hover:bg-gray-50 ${selectedEmails.has(contact.email) ? 'bg-blue-50' : ''}`}>
-                        <div className="flex items-center gap-3">
+                      <div key={contact.id} className={`p-4 grid grid-cols-[260px_1fr_auto] items-start gap-4 ${idx > 0 ? 'border-t border-gray-50' : ''} hover:bg-gray-50 ${selectedEmails.has(contact.email) ? 'bg-blue-50' : ''}`}>
+                        {/* Col 1: Checkbox + Avatar + Name (fixed width) */}
+                        <div className="flex items-center gap-3 overflow-hidden">
                           <input
                             type="checkbox"
                             checked={selectedEmails.has(contact.email)}
                             onChange={() => toggleSelectEmail(contact.email)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0 mt-1"
                           />
-                          <div className="relative">
+                          <div className="relative flex-shrink-0">
                             <div className={`w-10 h-10 ${contact.color} rounded-full flex items-center justify-center text-white font-medium text-sm`}>
                               {contact.initials}
                             </div>
@@ -418,20 +419,20 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
                             <p className="text-xs text-gray-500">{contact.role}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-6">
-                          <div className="text-right">
-                            <p className="text-sm text-gray-600 flex items-center gap-1"><Icon name="Mail" size={12} /> {displayEmail(contact.email)}</p>
-                            {contact.phone && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><PhoneIcon size={12} /> {contact.phone}</p>}
-                            {contact.address && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Icon name="MapPin" size={12} /> {contact.address}</p>}
-                          </div>
-                          <div className="flex gap-1">
-                            <button onClick={() => handleEditContact(contact)} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit">
-                              <Icon name="Settings" size={16} className="text-gray-400" />
-                            </button>
-                            <button onClick={() => handleDeleteContact(contact.id)} className="p-2 hover:bg-red-50 rounded-lg" title="Delete">
-                              <Icon name="Trash2" size={16} className="text-red-400" />
-                            </button>
-                          </div>
+                        {/* Col 2: Contact details — always starts at same position */}
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-sm text-gray-600 flex items-center gap-1.5"><Icon name="Mail" size={12} className="flex-shrink-0" /> <span className="truncate">{displayEmail(contact.email)}</span></p>
+                          {contact.phone && <p className="text-sm text-gray-500 flex items-center gap-1.5"><PhoneIcon size={12} className="flex-shrink-0" /> <span className="truncate">{contact.phone}</span></p>}
+                          {contact.address && <p className="text-sm text-gray-500 flex items-start gap-1.5"><Icon name="MapPin" size={12} className="flex-shrink-0 mt-0.5" /> <span className="break-words">{contact.address}</span></p>}
+                        </div>
+                        {/* Col 3: Action buttons */}
+                        <div className="flex gap-1 flex-shrink-0">
+                          <button onClick={() => handleEditContact(contact)} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit">
+                            <Icon name="Settings" size={16} className="text-gray-400" />
+                          </button>
+                          <button onClick={() => handleDeleteContact(contact.id)} className="p-2 hover:bg-red-50 rounded-lg" title="Delete">
+                            <Icon name="Trash2" size={16} className="text-red-400" />
+                          </button>
                         </div>
                       </div>
                     ))}
