@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Icon from '../components/Icon';
 import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
@@ -28,6 +28,21 @@ interface Props {
   onRefresh?: () => Promise<void>;
 }
 
+// Helper to convert ContactsMap to Contact[] — defined outside component for stability
+function mapToContacts(source: Record<string, any>): Contact[] {
+  return Object.entries(source).map(([email, data]: [string, any]) => ({
+    id: email,
+    email,
+    ...data,
+    phone: data.phone || '',
+    country: data.country || 'Unknown',
+    notes: data.notes || '',
+    category: data.role?.toLowerCase().includes('supplier') ? 'suppliers' :
+              data.role?.toLowerCase().includes('inspector') || data.role?.toLowerCase().includes('surveyor') ? 'inspectors' :
+              data.role?.toLowerCase().includes('buyer') || data.role?.toLowerCase().includes('compras') || data.role?.toLowerCase().includes('calidad') ? 'buyers' : 'other'
+  }));
+}
+
 function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -38,33 +53,22 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
 
-  // Helper to convert ContactsMap to Contact[]
-  const mapToContacts = (source: Record<string, any>): Contact[] => {
-    return Object.entries(source).map(([email, data]: any) => ({
-      id: email,
-      email,
-      ...data,
-      phone: data.phone || '',
-      country: data.country || 'Unknown',
-      notes: data.notes || '',
-      category: data.role?.toLowerCase().includes('supplier') ? 'suppliers' :
-                data.role?.toLowerCase().includes('inspector') || data.role?.toLowerCase().includes('surveyor') ? 'inspectors' :
-                data.role?.toLowerCase().includes('buyer') || data.role?.toLowerCase().includes('compras') || data.role?.toLowerCase().includes('calidad') ? 'buyers' : 'other'
-    }));
-  };
+  // Use a stable key (number of contacts) to detect when DB data actually changes
+  const dbContactsCount = dbContacts !== undefined ? Object.keys(dbContacts).length : -1;
 
-  // Use DB contacts when provided (even if empty = fresh account), otherwise fall back to hardcoded demo data
+  // Derive contacts from DB or fallback
   const [contacts, setContacts] = useState<Contact[]>(() => {
     const source = dbContacts !== undefined ? dbContacts : CONTACTS;
     return mapToContacts(source);
   });
 
-  // Update contacts when DB data finishes loading
+  // Sync local state when DB data changes (e.g. after import/refresh)
   useEffect(() => {
     if (dbContacts !== undefined) {
       setContacts(mapToContacts(dbContacts));
     }
-  }, [dbContacts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbContactsCount]);
 
   // Get unique companies and countries
   const companies = [...new Set(contacts.map(c => c.company))].sort();
