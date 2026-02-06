@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
@@ -58,6 +58,13 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
     const source = dbContacts !== undefined ? dbContacts : CONTACTS;
     return mapToContacts(source);
   });
+
+  // Update contacts when DB data finishes loading
+  useEffect(() => {
+    if (dbContacts !== undefined) {
+      setContacts(mapToContacts(dbContacts));
+    }
+  }, [dbContacts]);
 
   // Get unique companies and countries
   const companies = [...new Set(contacts.map(c => c.company))].sort();
