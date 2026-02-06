@@ -22,7 +22,7 @@ import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 
 function App() {
   const { session, user, loading: authLoading, orgId, signOut } = useAuth();
-  const { contacts: dbContacts, loading: contactsLoading, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
+  const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder } = useOrders(orgId);
   const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
@@ -152,6 +152,9 @@ function App() {
         return <ContactsPage
           onBack={() => setActiveTab('dashboard')}
           dbContacts={isDbReady ? dbContacts : undefined}
+          onAddContact={isDbReady ? addContact : undefined}
+          onUpdateContact={isDbReady ? updateContact : undefined}
+          onDeleteContact={isDbReady ? deleteContact : undefined}
           onBulkImport={isDbReady ? bulkUpsertContacts : undefined}
           onBulkDelete={isDbReady ? bulkDeleteContacts : undefined}
           onRefresh={isDbReady ? refetchContacts : undefined}

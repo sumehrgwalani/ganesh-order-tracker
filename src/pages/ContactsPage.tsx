@@ -25,6 +25,9 @@ interface Contact {
 interface Props {
   onBack: () => void;
   dbContacts?: ContactsMap;
+  onAddContact?: (formData: ContactFormData) => Promise<any>;
+  onUpdateContact?: (email: string, updates: Partial<Contact>) => Promise<void>;
+  onDeleteContact?: (email: string) => Promise<void>;
   onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; address?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
   onBulkDelete?: (emails: string[]) => Promise<void>;
   onRefresh?: () => Promise<void>;
@@ -50,7 +53,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
-function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefresh }: Props) {
+function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
@@ -128,23 +131,40 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
     ...countries.map(c => ({ id: c ?? '', label: c ?? 'Unknown', flag: (c && countryFlags[c]) || '🏳️' }))
   ];
 
-  const handleSaveContact = (contactData: ContactFormData) => {
-    const contact: Contact = {
-      id: editingContact?.id || contactData.email,
-      email: contactData.email,
-      name: contactData.name,
-      company: contactData.company,
-      role: contactData.role,
-      phone: contactData.phone || '',
-      country: 'Unknown',
-      category: contactData.category,
-      color: contactData.color,
-      initials: contactData.initials || '',
-    };
-    if (editingContact) {
-      setContacts(contacts.map(c => c.id === editingContact.id ? { ...contact, id: editingContact.id } : c));
-    } else {
-      setContacts([...contacts, contact]);
+  const handleSaveContact = async (contactData: ContactFormData) => {
+    try {
+      if (editingContact) {
+        // Update existing contact in Supabase
+        if (onUpdateContact) {
+          await onUpdateContact(editingContact.email, {
+            name: contactData.name,
+            company: contactData.company,
+            role: contactData.role || contactData.category || 'Supplier',
+            phone: contactData.phone || '',
+            address: contactData.address || '',
+            color: contactData.color,
+            initials: contactData.initials || contactData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
+          });
+          // Refetch to sync UI with DB
+          if (onRefresh) await onRefresh();
+        } else {
+          // Fallback: local-only update
+          const contact: Contact = { id: editingContact.id, email: contactData.email, name: contactData.name, company: contactData.company, role: contactData.role, phone: contactData.phone || '', country: editingContact.country || 'Unknown', category: contactData.category, color: contactData.color, initials: contactData.initials || '' };
+          setContacts(contacts.map(c => c.id === editingContact.id ? { ...contact, id: editingContact.id } : c));
+        }
+      } else {
+        // Add new contact to Supabase
+        if (onAddContact) {
+          await onAddContact(contactData);
+          if (onRefresh) await onRefresh();
+        } else {
+          // Fallback: local-only add
+          const contact: Contact = { id: contactData.email, email: contactData.email, name: contactData.name, company: contactData.company, role: contactData.role, phone: contactData.phone || '', country: 'Unknown', category: contactData.category, color: contactData.color, initials: contactData.initials || '' };
+          setContacts([...contacts, contact]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save contact:', err);
     }
     setShowModal(false);
     setEditingContact(null);
@@ -155,9 +175,19 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
     setShowModal(true);
   };
 
-  const handleDeleteContact = (contactId: string) => {
+  const handleDeleteContact = async (contactId: string) => {
     if (confirm('Are you sure you want to delete this contact?')) {
-      setContacts(contacts.filter(c => c.id !== contactId));
+      try {
+        // contactId is the email (used as id)
+        if (onDeleteContact) {
+          await onDeleteContact(contactId);
+          if (onRefresh) await onRefresh();
+        } else {
+          setContacts(contacts.filter(c => c.id !== contactId));
+        }
+      } catch (err) {
+        console.error('Failed to delete contact:', err);
+      }
     }
   };
 
