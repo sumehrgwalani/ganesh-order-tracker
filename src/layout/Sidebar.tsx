@@ -34,7 +34,7 @@ function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }: Sideb
         {menuItems.map((item) => (
           <button key={item.id} onClick={() => handleNavClick(item.id)} className={`p-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
             <Icon name={item.icon} size={20} />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">{item.label}</span>
+            <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">{item.label}</span>
           </button>
         ))}
       </div>

@@ -32,9 +32,11 @@ interface POLineItem {
   size: string;
   glaze: string;
   packing: string;
+  brand: string;
   cases: string | number;
   kilos: string | number;
   pricePerKg: string | number;
+  currency: string;
   total: string | number;
   [key: string]: string | number | boolean;
 }
@@ -49,10 +51,14 @@ interface PODataInternal extends POFormData {
   supplier: string;
   supplierEmail: string;
   product: string;
+  brand: string;
   buyer: string;
   buyerCode: string;
   destination: string;
+  deliveryTerms: string;
   commission: string;
+  overseasCommission: string;
+  overseasCommissionCompany: string;
   payment: string;
   packing: string;
   deliveryDate: string;
@@ -114,10 +120,14 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     supplier: '',
     supplierEmail: '',
     product: '',
+    brand: '',
     buyer: '',
     buyerCode: '',
     destination: '',
-    commission: '',
+    deliveryTerms: 'CFR',
+    commission: 'USD 0.05 per Kg',
+    overseasCommission: '',
+    overseasCommissionCompany: '',
     payment: '',
     packing: '',
     deliveryDate: '',
@@ -128,7 +138,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   });
 
   const [lineItems, setLineItems] = useState<POLineItem[]>([
-    { product: '', size: '', glaze: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }
+    { product: '', size: '', glaze: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
   ]);
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
@@ -380,9 +390,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         product: block.product,
         size: sizeStr,
         glaze: block.glaze || '',
+        brand: '',
         cases: '',
         kilos: block.kilos,
         pricePerKg: block.pricePerKg,
+        currency: 'USD',
         packing: block.packing,
         total: (kilos * price).toFixed(2)
       };
@@ -525,7 +537,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
   // Add line item
   const addLineItem = () => {
-    setLineItems([...lineItems, { product: '', size: '', glaze: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }]);
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
   };
 
   // Remove line item
@@ -540,29 +552,86 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   const totalKilos = lineItems.reduce((sum, item) => sum + (parseFloat((item.kilos as string) || '0') || 0), 0);
   const totalCases = lineItems.reduce((sum, item) => sum + (parseInt((item.cases as string) || '0') || 0), 0);
 
-  // Handle supplier selection
+  // Handle supplier selection - auto-fill payment from previous orders
   const handleSupplierChange = (email: string) => {
     const supplier = suppliers.find(s => s.email === email);
+    const supplierName = supplier?.name?.toLowerCase() || '';
+    const buyerCompany = poData.buyer?.toLowerCase() || '';
+
+    // Find last order with this supplier + buyer combo for payment terms
+    let autoPayment = '';
+    if (buyerCompany && supplierName) {
+      const matchingOrders = orders.filter(o =>
+        o.company?.toLowerCase().includes(buyerCompany) &&
+        o.supplier?.toLowerCase().includes(supplierName)
+      );
+      // If we find matching orders, we'd pull payment terms from them
+      // For now, common defaults based on supplier
+      if (matchingOrders.length > 0) {
+        autoPayment = 'LC at Sight'; // Default for most Indian seafood export
+      }
+    }
+
     setPOData({
       ...poData,
       supplierEmail: email,
-      supplier: supplier ? `${supplier.name} - ${supplier.company}` : ''
+      supplier: supplier ? `${supplier.name} - ${supplier.company}` : '',
+      payment: autoPayment || poData.payment,
     });
   };
 
-  // Handle buyer selection
+  // Handle buyer selection - with auto-fill from previous orders
   const handleBuyerChange = (email: string) => {
     const buyer = buyers.find(b => b.email === email);
     const buyerCompany = buyer ? buyer.company : '';
     const buyerCode = BUYER_CODES[buyerCompany] || buyerCompany.substring(0, 2).toUpperCase();
     const newPONumber = getNextPONumber(buyerCompany);
 
+    // Auto-fill destination based on known buyers
+    const buyerDestinations: Record<string, string> = {
+      'PESCADOS E.GUILLEM': 'Valencia, Spain',
+      'Pescados E Guillem': 'Valencia, Spain',
+      'Seapeix': 'Barcelona, Spain',
+      'Noriberica': 'Portugal',
+      'Ruggiero Seafood': 'Italy',
+      'Fiorital': 'Italy',
+      'Ferrittica': 'Italy',
+      'Compesca': 'Spain',
+      'Soguima': 'Spain',
+      'Mariberica': 'Spain',
+    };
+    const autoDestination = Object.entries(buyerDestinations).find(
+      ([key]) => buyerCompany.toLowerCase().includes(key.toLowerCase())
+    )?.[1] || '';
+
+    // Auto-fill shipment date (25 days from today)
+    const shipmentDate = new Date();
+    shipmentDate.setDate(shipmentDate.getDate() + 25);
+    const autoDeliveryDate = shipmentDate.toISOString().split('T')[0];
+
+    // Auto-fill payment terms from last order to this buyer's supplier
+    let autoPayment = '';
+    if (poData.supplierEmail) {
+      const supplierName = poData.supplier.split(' - ')[0]?.toLowerCase() || '';
+      const matchingOrders = orders.filter(o =>
+        o.company?.toLowerCase().includes(buyerCompany.toLowerCase()) &&
+        o.supplier?.toLowerCase().includes(supplierName)
+      );
+      if (matchingOrders.length > 0) {
+        // Look for payment info in the last matching order's history
+        // For now use a sensible default
+      }
+    }
+
     setPOData({
       ...poData,
       buyer: buyerCompany,
       buyerCode: buyerCode,
       buyerBank: buyer?.country || '',
-      poNumber: newPONumber
+      poNumber: newPONumber,
+      destination: autoDestination || poData.destination,
+      deliveryDate: autoDeliveryDate,
+      commission: poData.commission || 'USD 0.05 per Kg',
     });
   };
 
@@ -805,10 +874,18 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             <div className="mb-6">
               <p className="text-gray-700">Dear Sirs,</p>
               <p className="text-gray-700 mt-2">
-                We are pleased to confirm our Purchase Order with you for the Export of Frozen <span className="font-medium">{poData.product || '______________________'}</span>
-              </p>
-              <p className="text-gray-700">
-                to our principals namely <span className="font-medium">{poData.buyer || '______________________'}</span>
+                We are pleased to confirm our Purchase Order with you for the Export of{' '}
+                <span className="font-medium">
+                  {lineItems.filter(i => i.product).map((item, idx, arr) => {
+                    let desc = item.product;
+                    if (item.glaze) desc += ` ${item.glaze}`;
+                    if (idx < arr.length - 1) return desc + ', ';
+                    return desc;
+                  }).join('') || '______________________'}
+                </span>
+                {' '}to our Principals namely <span className="font-medium">M/s.{poData.buyer || '______________________'}</span>
+                {poData.destination && <>, <span className="font-medium">{poData.destination.toUpperCase()}</span></>}
+                {' '}under the following terms & conditions.
               </p>
             </div>
 
@@ -818,30 +895,34 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border border-gray-300 px-3 py-2 text-left">Product</th>
+                    <th className="border border-gray-300 px-3 py-2 text-left">Brand</th>
                     <th className="border border-gray-300 px-3 py-2 text-left">Size</th>
                     <th className="border border-gray-300 px-3 py-2 text-left">Glaze</th>
                     <th className="border border-gray-300 px-3 py-2 text-left">Packing</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Cases</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Kilos</th>
-                    <th className="border border-gray-300 px-3 py-2 text-right">Price/Kg<br/><span className="text-xs">CFR {poData.destination || '___'}</span></th>
-                    <th className="border border-gray-300 px-3 py-2 text-right">Total (USD)</th>
+                    <th className="border border-gray-300 px-3 py-2 text-right">Price/Kg<br/><span className="text-xs">{poData.deliveryTerms} {poData.destination || '___'}</span></th>
+                    <th className="border border-gray-300 px-3 py-2 text-right">
+                      {lineItems.some(i => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.glaze || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right">{item.pricePerKg ? `$${item.pricePerKg}` : '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right font-medium">{Number(item.total) > 0 ? `$${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right font-medium">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-3 py-2" colSpan={4}>Total</td>
+                    <td className="border border-gray-300 px-3 py-2" colSpan={5}>Total</td>
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalKilos}</td>
                     <td className="border border-gray-300 px-3 py-2"></td>
@@ -854,11 +935,13 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             {/* Terms Section */}
             <div className="space-y-2 text-sm text-gray-700 mb-6">
               <p><span className="font-medium">Total Value:</span> U.S. ${grandTotal}</p>
-              <p><span className="font-medium">Packing:</span> {poData.packing || 'As per standard'}</p>
+              <p><span className="font-medium">Packing:</span> {lineItems.map(i => i.packing).filter(p => p).join(', ') || 'As per standard'}</p>
               <p className="text-xs text-gray-500 ml-4">*We need a quality control of photos before loading</p>
               <p className="text-xs text-gray-500 ml-4">*Different colors Tapes for different products & Lots.</p>
-              <p><span className="font-medium">Delivery / Shipment:</span> {poData.deliveryDate ? formatDate(poData.deliveryDate) : '___________________'}</p>
+              <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>
+              <p><span className="font-medium">Shipment Date:</span> {poData.deliveryDate ? formatDate(poData.deliveryDate) : '___________________'}</p>
               <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'}</p>
+              {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
               <p><span className="font-medium">Payment:</span> {poData.payment || '___________________'}</p>
               <p><span className="font-medium">Variation:</span> +/- 5% in Quantity & Value</p>
               <p><span className="font-medium">Labelling Details:</span> As per previous. (pls send for approval)</p>
@@ -1031,10 +1114,14 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div className="grid grid-cols-4 gap-4 mb-4">
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Product Name</label>
                           <input type="text" value={item.product} onChange={(e) => updateLineItem(idx, 'product', e.target.value)} placeholder="e.g., Cuttlefish Whole Cleaned" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
+                          <input type="text" value={item.brand || ''} onChange={(e) => updateLineItem(idx, 'brand', e.target.value)} placeholder="e.g., MORALES" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Size</label>
@@ -1060,12 +1147,19 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Price/Kg</label>
-                          <input type="number" step="0.01" value={item.pricePerKg} onChange={(e) => updateLineItem(idx, 'pricePerKg', e.target.value)} placeholder="0.00" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-right" />
+                          <div className="flex items-center w-full border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-white overflow-hidden">
+                            <select value={item.currency || 'USD'} onChange={(e) => updateLineItem(idx, 'currency', e.target.value)} className="pl-2.5 pr-0 py-2.5 text-sm text-gray-500 bg-transparent border-none focus:ring-0 focus:outline-none cursor-pointer font-medium" style={{width: '30px', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none'}}>
+                              <option value="USD">$</option>
+                              <option value="EUR">€</option>
+                              <option value="GBP">£</option>
+                            </select>
+                            <input type="number" step="0.01" value={item.pricePerKg} onChange={(e) => updateLineItem(idx, 'pricePerKg', e.target.value)} placeholder="0.00" className="w-full min-w-0 px-1 py-2.5 bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-right" />
+                          </div>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Line Total</label>
                           <div className="w-full px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg text-sm text-right font-bold text-green-700">
-                            ${item.total || '0.00'}
+                            {(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}{item.total || '0.00'}
                           </div>
                         </div>
                       </div>
@@ -1092,8 +1186,16 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Destination (CFR)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Destination</label>
                   <input type="text" value={poData.destination} onChange={(e) => setPOData({...poData, destination: e.target.value})} placeholder="e.g., Valencia, Spain" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Terms</label>
+                  <select value={poData.deliveryTerms} onChange={(e) => setPOData({...poData, deliveryTerms: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="CFR">CFR (Cost & Freight)</option>
+                    <option value="CIF">CIF (Cost, Insurance & Freight)</option>
+                    <option value="FOB">FOB (Free on Board)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Delivery / Shipment Date</label>
@@ -1101,15 +1203,21 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Commission</label>
-                  <input type="text" value={poData.commission} onChange={(e) => setPOData({...poData, commission: e.target.value})} placeholder="e.g., 2%" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" value={poData.commission} onChange={(e) => setPOData({...poData, commission: e.target.value})} placeholder="e.g., USD 0.05 per Kg" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Overseas Commission</label>
+                  <input type="text" value={poData.overseasCommission} onChange={(e) => setPOData({...poData, overseasCommission: e.target.value})} placeholder="Leave blank if N/A" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                </div>
+                {poData.overseasCommission && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payable To (Company)</label>
+                  <input type="text" value={poData.overseasCommissionCompany} onChange={(e) => setPOData({...poData, overseasCommissionCompany: e.target.value})} placeholder="Company name for payment" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
                   <input type="text" value={poData.payment} onChange={(e) => setPOData({...poData, payment: e.target.value})} placeholder="e.g., LC at Sight" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Packing</label>
-                  <input type="text" value={poData.packing} onChange={(e) => setPOData({...poData, packing: e.target.value})} placeholder="e.g., 6 x 1 kg IQF" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Lote Number</label>
