@@ -1,10 +1,73 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, ReactNode, Dispatch, SetStateAction } from 'react';
 import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
 import { CONTACTS } from '../data/contacts';
 import { GILogo } from '../components/Logos';
+import type { ContactsMap, Order, LineItem, POFormData } from '../types';
 
-function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, onOrderCreated }) {
+interface Props {
+  onBack: () => void;
+  contacts?: ContactsMap;
+  orders?: Order[];
+  setOrders?: Dispatch<SetStateAction<Order[]>>;
+  onOrderCreated?: (order: Order) => void;
+}
+
+interface SupplierInfo {
+  email: string;
+  name: string;
+  company: string;
+  role: string;
+}
+
+interface BuyerInfo {
+  email: string;
+  company: string;
+  role: string;
+  country?: string;
+}
+
+interface POLineItem {
+  product: string;
+  size: string;
+  glaze: string;
+  packing: string;
+  cases: string | number;
+  kilos: string | number;
+  pricePerKg: string | number;
+  total: string | number;
+  [key: string]: string | number | boolean;
+}
+
+interface LineItemInternal extends LineItem {
+  total: number | string;
+}
+
+interface PODataInternal extends POFormData {
+  poNumber: string;
+  date: string;
+  supplier: string;
+  supplierEmail: string;
+  product: string;
+  buyer: string;
+  buyerCode: string;
+  destination: string;
+  commission: string;
+  payment: string;
+  packing: string;
+  deliveryDate: string;
+  loteNumber: string;
+  shippingMarks: string;
+  buyerBank: string;
+  notes: string;
+}
+
+interface Notification {
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+}
+
+function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, onOrderCreated }: Props) {
 
   // Get next PO number for a specific buyer
   const getNextPONumber = (buyerName = '') => {
@@ -64,29 +127,29 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     notes: '',
   });
 
-  const [lineItems, setLineItems] = useState([
+  const [lineItems, setLineItems] = useState<POLineItem[]>([
     { product: '', size: '', glaze: '', packing: '', cases: '', kilos: '', pricePerKg: '', total: 0 }
   ]);
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
   const [showPreview, setShowPreview] = useState(false);
-  const [notification, setNotification] = useState(null);
+  const [notification, setNotification] = useState<Notification | null>(null);
   const [showParser, setShowParser] = useState(true);
   const [rawInput, setRawInput] = useState('');
 
   // Natural language parser function - handles Spanish, abbreviations, multi-product
-  const parseNaturalLanguage = (text) => {
+  const parseNaturalLanguage = (text: string) => {
     if (!text.trim()) {
       setNotification({ type: 'error', message: 'Please paste some text to parse.' });
       setTimeout(() => setNotification(null), 3000);
       return;
     }
 
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l);
     const textLower = text.toLowerCase();
 
     // Buyer abbreviations mapping
-    const buyerAbbreviations = {
+    const buyerAbbreviations: Record<string, string> = {
       'eg': 'Pescados E Guillem',
       'pescados': 'Pescados E Guillem',
       'guillem': 'Pescados E Guillem',
@@ -101,7 +164,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     };
 
     // Supplier abbreviations mapping
-    const supplierAbbreviations = {
+    const supplierAbbreviations: Record<string, string> = {
       'silver': 'Silver Star',
       'nila': 'Nila',
       'raunaq': 'Raunaq/JJ',
@@ -116,7 +179,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     };
 
     // Spanish to English translations
-    const translations = {
+    const translations: Record<string, string> = {
       'glaseo': 'Glaze',
       'granel': 'Bulk',
       'bolsa': 'Bag',
@@ -137,7 +200,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     };
 
     // Product name translations
-    const productTranslations = {
+    const productTranslations: Record<string, string> = {
       'cuttlefish wc': 'Cuttlefish Whole Cleaned',
       'cuttlefish squid mix': 'Cuttlefish Squid Mix',
       'skewers': 'Seafood Skewers',
@@ -168,7 +231,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         line.length > 2;
 
       // Check for buyer/supplier line (usually at the end, short, has abbreviations)
-      const isBuyerSupplierLine = line.split(/\s+/).every(word => {
+      const isBuyerSupplierLine = line.split(/\s+/).every((word: string) => {
         const w = word.toLowerCase();
         return buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 3;
       }) && line.length < 30;
@@ -287,7 +350,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     let detectedSupplierEmail = '';
 
     // Check for abbreviations anywhere in text
-    const words = text.split(/[\s,]+/).map(w => w.toLowerCase());
+    const words = text.split(/[\s,]+/).map((w: string) => w.toLowerCase());
     for (const word of words) {
       if (buyerAbbreviations[word] && !detectedBuyer) {
         detectedBuyer = buyerAbbreviations[word];
@@ -370,7 +433,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     .map(([email, c]) => ({ email, ...c }));
 
   // Parse packing to extract kg per carton (e.g., "6x1 kg" = 6, "10 kg Bulk" = 10)
-  const parsePackingKg = (packing) => {
+  const parsePackingKg = (packing: string) => {
     if (!packing) return null;
     const packingLower = packing.toLowerCase();
 
@@ -390,12 +453,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Calculate cases, adjusted kilos, and total
-  const calculateLineItem = (item) => {
+  const calculateLineItem = (item: any) => {
     const inputKilos = parseFloat(item.kilos) || 0;
     const price = parseFloat(item.pricePerKg) || 0;
     const kgPerCarton = parsePackingKg(item.packing);
 
-    let cases = item.cases ? parseInt(item.cases) : 0;
+    let cases = item.cases ? parseInt(item.cases as string) : 0;
     let adjustedKilos = inputKilos;
 
     // If we have packing info and kilos, calculate cases and adjust kilos
@@ -417,7 +480,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Update line item with smart calculations
-  const updateLineItem = (index, field, value) => {
+  const updateLineItem = (index: number, field: string, value: string | number) => {
     const updated = [...lineItems];
     updated[index][field] = value;
 
@@ -434,12 +497,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
     // If cases is manually edited, recalculate kilos
     if (field === 'cases') {
-      const cases = parseInt(value) || 0;
-      const kgPerCarton = parsePackingKg(updated[index].packing);
+      const cases = parseInt(value as string) || 0;
+      const kgPerCarton = parsePackingKg(updated[index].packing as string);
       if (kgPerCarton && cases > 0) {
         updated[index].kilos = cases * kgPerCarton;
-        const price = parseFloat(updated[index].pricePerKg) || 0;
-        updated[index].total = (updated[index].kilos * price).toFixed(2);
+        const price = parseFloat(updated[index].pricePerKg as string) || 0;
+        updated[index].total = ((cases * kgPerCarton) * price).toFixed(2);
       }
     }
 
@@ -447,7 +510,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Recalculate all line items (used after parsing)
-  const recalculateAllLineItems = (items) => {
+  const recalculateAllLineItems = (items: any[]) => {
     return items.map(item => {
       const calculated = calculateLineItem(item);
       const kgPerCarton = parsePackingKg(item.packing);
@@ -466,19 +529,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Remove line item
-  const removeLineItem = (index) => {
+  const removeLineItem = (index: number) => {
     if (lineItems.length > 1) {
       setLineItems(lineItems.filter((_, i) => i !== index));
     }
   };
 
   // Calculate grand totals
-  const grandTotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total || 0), 0).toFixed(2);
-  const totalKilos = lineItems.reduce((sum, item) => sum + (parseFloat(item.kilos) || 0), 0);
-  const totalCases = lineItems.reduce((sum, item) => sum + (parseInt(item.cases) || 0), 0);
+  const grandTotal = lineItems.reduce((sum, item) => sum + parseFloat((item.total as string) || '0'), 0).toFixed(2);
+  const totalKilos = lineItems.reduce((sum, item) => sum + (parseFloat((item.kilos as string) || '0') || 0), 0);
+  const totalCases = lineItems.reduce((sum, item) => sum + (parseInt((item.cases as string) || '0') || 0), 0);
 
   // Handle supplier selection
-  const handleSupplierChange = (email) => {
+  const handleSupplierChange = (email: string) => {
     const supplier = suppliers.find(s => s.email === email);
     setPOData({
       ...poData,
@@ -488,7 +551,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Handle buyer selection
-  const handleBuyerChange = (email) => {
+  const handleBuyerChange = (email: string) => {
     const buyer = buyers.find(b => b.email === email);
     const buyerCompany = buyer ? buyer.company : '';
     const buyerCode = BUYER_CODES[buyerCompany] || buyerCompany.substring(0, 2).toUpperCase();
@@ -533,9 +596,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   // Send PO to supplier
   const sendPO = () => {
     // Create new order from PO data
-    const newOrder = {
+    const newOrder: Order = {
       id: poData.poNumber,
-      poNumber: poData.poNumber.split('/').pop(), // e.g., "EG-001" or "3044"
+      poNumber: poData.poNumber.split('/').pop() || poData.poNumber, // e.g., "EG-001" or "3044"
       company: poData.buyer,
       product: poData.product || lineItems.map(i => i.product).filter(p => p).join(', '),
       specs: lineItems.map(i => `${i.size || ''} ${i.glaze ? `(${i.glaze})` : ''} ${i.packing || ''}`.trim()).filter(s => s).join(', '),
@@ -576,14 +639,14 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   };
 
   // Format date for display
-  const formatDate = (dateStr) => {
+  const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
     return new Date(dateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   // Status badge component
-  const StatusBadge = ({ status }) => {
-    const statusConfig = {
+  const StatusBadge = ({ status }: { status: string }) => {
+    const statusConfig: Record<string, { color: string; label: string }> = {
       draft: { color: 'bg-gray-100 text-gray-700', label: 'Draft' },
       pending_approval: { color: 'bg-yellow-100 text-yellow-700', label: 'Pending Sign-off' },
       approved: { color: 'bg-green-100 text-green-700', label: 'Approved' },
@@ -774,11 +837,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.pricePerKg ? `$${item.pricePerKg}` : '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right font-medium">{item.total > 0 ? `$${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right font-medium">{Number(item.total) > 0 ? `$${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-3 py-2" colSpan="4">Total</td>
+                    <td className="border border-gray-300 px-3 py-2" colSpan={4}>Total</td>
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalKilos}</td>
                     <td className="border border-gray-300 px-3 py-2"></td>

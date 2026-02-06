@@ -1,14 +1,42 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import { getContactInfo } from '../utils/helpers';
 
-function MailboxPage({ onBack }) {
-  const [selectedFolder, setSelectedFolder] = useState('all');
-  const [selectedEmail, setSelectedEmail] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+interface Folder {
+  id: string;
+  name?: string;
+  icon?: string;
+  color?: string;
+  count?: number;
+  isCompany?: boolean;
+  type?: string;
+  label?: string;
+}
+
+interface EmailItem {
+  id: number;
+  folder: string;
+  from: string;
+  fromName: string;
+  subject: string;
+  preview: string;
+  date: string;
+  starred: boolean;
+  hasAttachment: boolean;
+  read: boolean;
+}
+
+interface Props {
+  onBack: () => void;
+}
+
+function MailboxPage({ onBack }: Props) {
+  const [selectedFolder, setSelectedFolder] = useState<string>('all');
+  const [selectedEmail, setSelectedEmail] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   // Email folders organized by company
-  const folders = [
+  const folders: Folder[] = [
     { id: 'all', name: 'All Mail', icon: 'Inbox', color: 'blue', count: 0 },
     { id: 'starred', name: 'Starred', icon: 'Star', color: 'amber', count: 0 },
     { id: 'office', name: 'With The Tide Office', icon: 'Folder', color: 'orange', isCompany: true },
@@ -31,7 +59,7 @@ function MailboxPage({ onBack }) {
   ];
 
   // Sample emails with company associations
-  const emails = [
+  const emails: EmailItem[] = [
     { id: 1, folder: 'pescados', from: 'oscar@eguillem.com', fromName: 'Oscar García', subject: 'RE: PO 3038 - CALAMAR TROCEADO - Artwork Approval', preview: 'Dear Sumehr, The artworks of EGUILLEM BRAND are OK. REMINDER: send us artworks of OLIVER BRAND...', date: '2026-02-04T17:15:00Z', starred: true, hasAttachment: false, read: true },
     { id: 2, folder: 'pescados', from: 'calidad@eguillem.com', fromName: 'Mª Carmen Martínez', subject: 'RE: NEED ARTWORK APPROVAL - PI GI/PI/25-26/I02047', preview: 'Dear Santosh, The artwork NEEDS CORRECTION. Please check the following and resend...', date: '2026-02-03T15:45:00Z', starred: false, hasAttachment: false, read: true },
     { id: 3, folder: 'nila', from: 'nilaexport@nilaseafoods.com', fromName: 'Nila Exports', subject: 'RE: PESCADOS 04TH CONTAINER - DHL DETAILS - TELEX RELEASE', preview: 'Dear Sir/Madam, Good day! Please find below the telex release message received from the liner...', date: '2026-02-03T18:08:00Z', starred: true, hasAttachment: true, read: false },
@@ -68,12 +96,12 @@ function MailboxPage({ onBack }) {
                           email.fromName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           email.preview.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFolder && matchesSearch;
-  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const formatDate = (dateStr) => {
+  const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr);
     const today = new Date();
-    const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (diffDays < 7) return date.toLocaleDateString('en-US', { weekday: 'short' });
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -106,7 +134,7 @@ function MailboxPage({ onBack }) {
             }
 
             const isSelected = selectedFolder === folder.id;
-            const colorClasses = {
+            const colorClasses: Record<string, string> = {
               blue: 'text-blue-600', amber: 'text-amber-500', orange: 'text-orange-500',
               purple: 'text-purple-600', green: 'text-green-600', teal: 'text-teal-600',
               red: 'text-red-600', emerald: 'text-emerald-600', indigo: 'text-indigo-600',
@@ -121,10 +149,10 @@ function MailboxPage({ onBack }) {
                 className={`w-full px-4 py-2 flex items-center justify-between hover:bg-gray-100 transition-colors ${isSelected ? 'bg-blue-50 border-r-2 border-blue-600' : ''}`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon name={folder.icon} size={16} className={isSelected ? 'text-blue-600' : colorClasses[folder.color] || 'text-gray-400'} />
+                  <Icon name={folder.icon as any} size={16} className={isSelected ? 'text-blue-600' : colorClasses[folder.color || ''] || 'text-gray-400'} />
                   <span className={`text-sm ${isSelected ? 'font-medium text-blue-600' : 'text-gray-700'}`}>{folder.name}</span>
                 </div>
-                {folder.count > 0 && (
+                {folder.count! > 0 && (
                   <span className={`text-xs px-2 py-0.5 rounded-full ${isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-600'}`}>
                     {folder.count}
                   </span>

@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
 import PageHeader from '../components/PageHeader';
-import OrderProgressBar from '../components/OrderProgressBar';
 import StageFilter from '../components/StageFilter';
 import OrderRow from '../components/OrderRow';
+import type { Order } from '../types';
 
-function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }) {
-  const [filterStage, setFilterStage] = useState(null);
-  const [filterCompany, setFilterCompany] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+interface Props {
+  orders: Order[];
+  expandedOrder: string | null;
+  setExpandedOrder: (id: string | null) => void;
+  setSelectedOrder: (order: Order) => void;
+  onBack: () => void;
+}
+
+function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }: Props) {
+  const [filterStage, setFilterStage] = useState<number | null>(null);
+  const [filterCompany, setFilterCompany] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
   const activeOrders = orders.filter(o => o.currentStage < 8);
 
   // Get unique companies from active orders

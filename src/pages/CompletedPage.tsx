@@ -1,10 +1,19 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import PageHeader from '../components/PageHeader';
+import type { Order } from '../types';
 
-function CompletedPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }) {
-  const [searchTerm, setSearchTerm] = useState('');
+interface Props {
+  orders: Order[];
+  expandedOrder: string | null;
+  setExpandedOrder: (id: string | null) => void;
+  setSelectedOrder: (order: Order) => void;
+  onBack: () => void;
+}
+
+function CompletedPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }: Props) {
+  const [searchTerm, setSearchTerm] = useState<string>('');
   const completedOrders = orders.filter(o => o.currentStage === 8);
 
   const filteredOrders = completedOrders.filter(order => {

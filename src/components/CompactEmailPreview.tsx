@@ -1,11 +1,16 @@
-import React from 'react';
+import { HistoryEntry } from '../types';
 import ContactAvatar from './ContactAvatar';
 import Icon from './Icon';
 import { getContactInfo } from '../utils/helpers';
 
-function CompactEmailPreview({ entry, onClick }) {
+interface Props {
+  entry: HistoryEntry;
+  onClick?: () => void;
+}
+
+function CompactEmailPreview({ entry, onClick }: Props) {
   const contact = getContactInfo(entry.from);
-  const formatTime = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const formatTime = (ts: string) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
     <div className="flex items-center gap-3 cursor-pointer" onClick={onClick}>
       <ContactAvatar email={entry.from} size="sm" />

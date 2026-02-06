@@ -1,6 +1,9 @@
-import React from 'react';
+interface Props {
+  currentStage: number;
+}
 
-function OrderProgressBar({ currentStage, totalStages = 8 }) {
+function OrderProgressBar({ currentStage }: Props) {
+  const totalStages = 8;
   const progress = ((currentStage - 1) / (totalStages - 1)) * 100;
   return (
     <div className="flex items-center w-full max-w-xs">

@@ -1,7 +1,9 @@
+import type { Order, ProductInquiry } from '../types';
+
 // Order data - this will be replaced with database queries when DB is added
 // Each function returns data in the same shape, making the DB swap seamless
 
-export const initialOrders = [
+export const initialOrders: Order[] = [
   {
     id: 'GI/PO/25-26/3043',
     poNumber: 'PO 3043',
@@ -240,7 +242,7 @@ export const initialOrders = [
 ];
 
 // Product inquiries
-export const productInquiries = [
+export const productInquiries: ProductInquiry[] = [
   { product: 'Calamar Troceado 20/40', sizes: ['6X1 20% ESTRELLA POLAR - 10 tons'], total: '10 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR' },
   { product: 'Puntilla Lavada y Congelada', total: '8 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR' },
   { product: 'Squid Whole IQF', sizes: ['U/3 - 2900 Kgs @ 7.9 USD', '3/6 - 2160 Kgs @ 7.2 USD'], total: '6340 Kgs', from: 'Ocean Fresh GmbH' }

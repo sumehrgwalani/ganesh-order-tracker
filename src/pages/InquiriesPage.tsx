@@ -1,25 +1,42 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 
-function InquiriesPage({ onBack }) {
-  const [activeTab, setActiveTab] = useState('received');
+interface InquiryItem {
+  id: string;
+  product: string;
+  sizes?: string[];
+  total: string;
+  from?: string;
+  to?: string;
+  brand?: string;
+  date: string;
+  status: string;
+  priority?: string;
+}
 
-  const receivedInquiries = [
+interface Props {
+  onBack: () => void;
+}
+
+function InquiriesPage({ onBack }: Props) {
+  const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received');
+
+  const receivedInquiries: InquiryItem[] = [
     { id: 'INQ-001', product: 'Calamar Troceado 20/40', sizes: ['6X1 20% ESTRELLA POLAR - 10 tons'], total: '10 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR', date: '4th Feb 2026', status: 'pending', priority: 'high' },
     { id: 'INQ-002', product: 'Puntilla Lavada y Congelada', total: '8 tons', from: 'PESCADOS E.GUILLEM', brand: 'ESTRELLA POLAR', date: '3rd Feb 2026', status: 'pending', priority: 'medium' },
     { id: 'INQ-003', product: 'Squid Whole IQF', sizes: ['U/3 - 2900 Kgs @ 7.9 USD', '3/6 - 2160 Kgs @ 7.2 USD'], total: '6340 Kgs', from: 'Ocean Fresh GmbH', date: '2nd Feb 2026', status: 'responded', priority: 'high' },
     { id: 'INQ-004', product: 'Vannamei HLSO', sizes: ['16/20 - 5000 Kgs', '21/25 - 3000 Kgs'], total: '8000 Kgs', from: 'SeaFood Europe', date: '1st Feb 2026', status: 'converted', priority: 'low' },
   ];
 
-  const sentInquiries = [
+  const sentInquiries: InquiryItem[] = [
     { id: 'SINQ-001', product: 'Baby Squid 200/300', to: 'RAUNAQ', total: '15 tons', date: '3rd Feb 2026', status: 'awaiting' },
     { id: 'SINQ-002', product: 'Squid Rings 40/60', to: 'Silver Sea Foods', total: '10 tons', date: '2nd Feb 2026', status: 'quoted' },
     { id: 'SINQ-003', product: 'Cuttlefish Whole', to: 'Nila Exports', total: '8 tons', date: '31st Jan 2026', status: 'confirmed' },
   ];
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: string): string => {
+    const colors: Record<string, string> = {
       pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
       responded: 'bg-blue-50 text-blue-700 border-blue-200',
       converted: 'bg-green-50 text-green-700 border-green-200',
@@ -30,8 +47,8 @@ function InquiriesPage({ onBack }) {
     return colors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
   };
 
-  const getPriorityColor = (priority) => {
-    const colors = { high: 'bg-red-500', medium: 'bg-yellow-500', low: 'bg-green-500' };
+  const getPriorityColor = (priority: string): string => {
+    const colors: Record<string, string> = { high: 'bg-red-500', medium: 'bg-yellow-500', low: 'bg-green-500' };
     return colors[priority] || 'bg-gray-500';
   };
 
@@ -91,7 +108,7 @@ function InquiriesPage({ onBack }) {
             {receivedInquiries.map(inq => (
               <div key={inq.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
                 <div className="flex items-center gap-4">
-                  <div className={`w-2 h-12 rounded-full ${getPriorityColor(inq.priority)}`}></div>
+                  <div className={`w-2 h-12 rounded-full ${getPriorityColor(inq.priority || '')}`}></div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono text-xs text-gray-400">{inq.id}</span>

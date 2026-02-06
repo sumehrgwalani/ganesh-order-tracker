@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { ContactFormData } from '../types';
 import Icon from './Icon';
 
-function ContactModal({ contact, onSave, onClose, companies }) {
-  const [formData, setFormData] = useState(contact || {
+interface Props {
+  contact: ContactFormData | null;
+  onSave: (data: ContactFormData) => void;
+  onClose: () => void;
+  companies: string[];
+}
+
+function ContactModal({ contact, onSave, onClose, companies }: Props) {
+  const [formData, setFormData] = useState<ContactFormData>(contact || {
     name: '',
     email: '',
     phone: '',
@@ -15,7 +23,7 @@ function ContactModal({ contact, onSave, onClose, companies }) {
   const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-red-500', 'bg-teal-500', 'bg-pink-500', 'bg-indigo-500'];
   const categories = ['buyers', 'suppliers', 'inspectors', 'other'];
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const initials = formData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     onSave({ ...formData, initials });

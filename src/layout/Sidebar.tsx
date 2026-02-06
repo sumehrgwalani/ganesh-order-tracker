@@ -2,7 +2,14 @@ import React from 'react';
 import Icon from '../components/Icon';
 import { WTTLogo } from '../components/Logos';
 
-function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }) {
+interface SidebarProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  onSettingsClick: () => void;
+  onNavClick: () => void;
+}
+
+function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }: SidebarProps) {
   const menuItems = [
     { icon: 'Home', label: 'Dashboard', id: 'dashboard' },
     { icon: 'FilePlus', label: 'Create PO', id: 'create-po' },
@@ -13,7 +20,7 @@ function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }) {
     { icon: 'Users', label: 'Contacts', id: 'contacts' },
   ];
 
-  const handleNavClick = (tabId) => {
+  const handleNavClick = (tabId: string) => {
     if (onNavClick) onNavClick(); // Clear selected order
     setActiveTab(tabId);
   };

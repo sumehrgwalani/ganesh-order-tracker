@@ -2,10 +2,18 @@ import React from 'react';
 import Icon from '../components/Icon';
 import { WTTLogo } from '../components/Logos';
 
-function Header({ searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick }) {
-  const formatLastSync = (ts) => {
+interface HeaderProps {
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  lastSync: string;
+  isSyncing: boolean;
+  onSyncClick: () => void;
+}
+
+function Header({ searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick }: HeaderProps) {
+  const formatLastSync = (ts: string) => {
     if (!ts) return 'Never';
-    const diff = Math.floor((new Date() - new Date(ts)) / 60000);
+    const diff = Math.floor((new Date().getTime() - new Date(ts).getTime()) / 60000);
     if (diff < 1) return 'Just now';
     if (diff < 60) return `${diff}m ago`;
     return `${Math.floor(diff / 60)}h ago`;

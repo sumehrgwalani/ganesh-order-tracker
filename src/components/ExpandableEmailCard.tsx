@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { HistoryEntry } from '../types';
 import Icon from './Icon';
 import ContactAvatar from './ContactAvatar';
 import { getContactInfo } from '../utils/helpers';
 
-function ExpandableEmailCard({ entry, defaultExpanded = false }) {
+interface Props {
+  entry: HistoryEntry;
+  defaultExpanded?: boolean;
+}
+
+function ExpandableEmailCard({ entry, defaultExpanded = false }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const contact = getContactInfo(entry.from);
-  const formatTime = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const formatTime = (ts: string) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
     <div className={`border rounded-xl transition-all ${expanded ? 'border-blue-300 shadow-md' : 'border-gray-200 hover:border-blue-200'} bg-white overflow-hidden`}>
@@ -31,7 +37,7 @@ function ExpandableEmailCard({ entry, defaultExpanded = false }) {
               {entry.hasAttachment && (
                 <span className="flex items-center gap-1 text-xs text-gray-400">
                   <Icon name="Paperclip" size={12} />
-                  {entry.attachments?.length || 1} attachment{entry.attachments?.length > 1 ? 's' : ''}
+                  {entry.attachments?.length || 1} attachment{(entry.attachments?.length ?? 0) > 1 ? 's' : ''}
                 </span>
               )}
             </div>

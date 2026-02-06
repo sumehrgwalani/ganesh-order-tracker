@@ -1,4 +1,6 @@
-export const CONTACTS = {
+import type { ContactsMap } from '../types';
+
+export const CONTACTS: ContactsMap = {
   // ===== INDIAN SUPPLIERS =====
   'info@silverseafoodindia.com': { name: 'Dharmesh Jungi', company: 'Silver Star', role: 'Supplier', initials: 'DJ', color: 'bg-slate-500', phone: '9824498350', notes: 'Generous, Chatty, Average Quality, Regular Business', country: 'India' },
   'krseafoods@gmail.com': { name: 'Rajesh Chamadia', company: 'KR Seafoods', role: 'Supplier', initials: 'RC', color: 'bg-blue-500', phone: '9825221121', notes: 'Whatsapp Only, Direct, Easier to negotiate on Phone, Average Quality Decent Price', country: 'India' },

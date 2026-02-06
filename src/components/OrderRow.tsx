@@ -1,11 +1,18 @@
-import React from 'react';
+import { Order } from '../types';
 import Icon from './Icon';
 import { ORDER_STAGES } from '../data/constants';
 import OrderProgressBar from './OrderProgressBar';
 import CompactEmailPreview from './CompactEmailPreview';
 import ExpandableEmailCard from './ExpandableEmailCard';
 
-function OrderRow({ order, onClick, expanded, onToggleExpand }) {
+interface Props {
+  order: Order;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onClick: () => void;
+}
+
+function OrderRow({ order, expanded, onToggleExpand, onClick }: Props) {
   const isCompleted = order.currentStage === 8;
   const lastUpdate = order.history[order.history.length - 1];
   return (
@@ -38,8 +45,8 @@ function OrderRow({ order, onClick, expanded, onToggleExpand }) {
           <Icon name="ChevronRight" className="ml-4 text-gray-300" size={20} />
         </div>
         <div className="mt-3 pt-3 border-t border-gray-50">
-          <CompactEmailPreview entry={lastUpdate} onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} />
-          <button onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+          <CompactEmailPreview entry={lastUpdate} onClick={() => { onToggleExpand(); }} />
+          <button onClick={() => { onToggleExpand(); }} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
             <Icon name="ChevronDown" size={14} className={`transform transition-transform ${expanded ? 'rotate-180' : ''}`} />
             {expanded ? 'Hide' : 'Show'} email history ({order.history.length} emails)
           </button>

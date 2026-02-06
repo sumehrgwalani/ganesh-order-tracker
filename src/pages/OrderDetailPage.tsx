@@ -1,17 +1,23 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
 import { getContactInfo } from '../utils/helpers';
 import ContactAvatar from '../components/ContactAvatar';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
+import type { Order } from '../types';
 
-function OrderDetailPage({ order, onBack }) {
-  const [activeDocSection, setActiveDocSection] = useState(null);
+interface Props {
+  order: Order;
+  onBack: () => void;
+}
+
+function OrderDetailPage({ order, onBack }: Props) {
+  const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
 
   // Helper to categorize emails and attachments
   const categorizeDocuments = () => {
-    const docs = {
+    const docs: any = {
       purchaseOrder: [],
       proformaInvoice: [],
       artwork: [],
@@ -22,12 +28,12 @@ function OrderDetailPage({ order, onBack }) {
 
     order.history.forEach((entry, idx) => {
       const subjectLower = entry.subject.toLowerCase();
-      const hasAttachment = entry.hasAttachment && entry.attachments?.length > 0;
+      const hasAttachment = entry.hasAttachment && entry.attachments?.length! > 0;
 
       // Purchase Order - stage 1 or PO in subject
       if (entry.stage === 1 || subjectLower.includes('purchase order') || subjectLower.includes('new po')) {
         if (hasAttachment) {
-          entry.attachments.forEach(att => {
+          entry.attachments?.forEach(att => {
             if (att.toLowerCase().includes('po')) {
               docs.purchaseOrder.push({ ...entry, attachment: att, emailIndex: idx });
             }
@@ -41,7 +47,7 @@ function OrderDetailPage({ order, onBack }) {
       // Proforma Invoice - stage 2 or PI in subject
       if (entry.stage === 2 || subjectLower.includes('proforma') || subjectLower.includes(' pi ') || subjectLower.includes('pi-')) {
         if (hasAttachment) {
-          entry.attachments.forEach(att => {
+          entry.attachments?.forEach(att => {
             if (att.toLowerCase().includes('pi')) {
               docs.proformaInvoice.push({ ...entry, attachment: att, emailIndex: idx });
             }
@@ -71,8 +77,8 @@ function OrderDetailPage({ order, onBack }) {
       if (entry.stage === 7 || subjectLower.includes('final cop') || subjectLower.includes('== document ==')) {
         docs.finalDocuments.push({ ...entry, emailIndex: idx });
         if (hasAttachment) {
-          entry.attachments.forEach(att => {
-            if (!docs.finalDocuments.find(d => d.attachment === att)) {
+          entry.attachments?.forEach(att => {
+            if (!docs.finalDocuments.find((d: any) => d.attachment === att)) {
               docs.finalDocuments.push({ ...entry, attachment: att, emailIndex: idx });
             }
           });
@@ -97,8 +103,8 @@ function OrderDetailPage({ order, onBack }) {
     { id: 'finalDocuments', title: 'Final Document Copies', icon: 'FileText', color: 'green', docs: documents.finalDocuments },
   ];
 
-  const formatDate = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const formatTime = (ts) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (ts: string) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formatTime = (ts: string) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   return (
     <div>
@@ -187,7 +193,7 @@ function OrderDetailPage({ order, onBack }) {
         <div className="grid grid-cols-3 gap-4">
           {docSections.map(section => {
             const hasDocuments = section.docs.length > 0;
-            const bgColors = {
+            const bgColors: any = {
               blue: hasDocuments ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200',
               indigo: hasDocuments ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 border-gray-200',
               purple: hasDocuments ? 'bg-purple-50 border-purple-200 hover:bg-purple-100' : 'bg-gray-50 border-gray-200',
@@ -195,7 +201,7 @@ function OrderDetailPage({ order, onBack }) {
               amber: hasDocuments ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : 'bg-gray-50 border-gray-200',
               green: hasDocuments ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200',
             };
-            const textColors = {
+            const textColors: any = {
               blue: hasDocuments ? 'text-blue-700' : 'text-gray-400',
               indigo: hasDocuments ? 'text-indigo-700' : 'text-gray-400',
               purple: hasDocuments ? 'text-purple-700' : 'text-gray-400',
@@ -203,7 +209,7 @@ function OrderDetailPage({ order, onBack }) {
               amber: hasDocuments ? 'text-amber-700' : 'text-gray-400',
               green: hasDocuments ? 'text-green-700' : 'text-gray-400',
             };
-            const iconColors = {
+            const iconColors: any = {
               blue: hasDocuments ? 'text-blue-500' : 'text-gray-300',
               indigo: hasDocuments ? 'text-indigo-500' : 'text-gray-300',
               purple: hasDocuments ? 'text-purple-500' : 'text-gray-300',
@@ -221,7 +227,7 @@ function OrderDetailPage({ order, onBack }) {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <Icon name={section.icon} size={24} className={iconColors[section.color]} />
+                      <Icon name={section.icon as any} size={24} className={iconColors[section.color]} />
                       <div>
                         <p className={`font-medium ${textColors[section.color]}`}>{section.title}</p>
                         <p className="text-xs text-gray-500 mt-1">
@@ -238,7 +244,7 @@ function OrderDetailPage({ order, onBack }) {
                 {/* Expanded Document List */}
                 {activeDocSection === section.id && hasDocuments && (
                   <div className="mt-2 p-3 bg-gray-50 rounded-xl space-y-2">
-                    {section.docs.map((doc, idx) => {
+                    {section.docs.map((doc: any, idx: number) => {
                       const contact = getContactInfo(doc.from);
                       return (
                         <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200">
@@ -255,7 +261,7 @@ function OrderDetailPage({ order, onBack }) {
                               )}
                               {!doc.attachment && doc.hasAttachment && doc.attachments && (
                                 <div className="mt-2 space-y-1">
-                                  {doc.attachments.map((att, attIdx) => (
+                                  {doc.attachments.map((att: string, attIdx: number) => (
                                     <div key={attIdx} className="flex items-center gap-1 text-xs text-blue-600">
                                       <Icon name="Paperclip" size={12} />
                                       <span>{att}</span>

@@ -1,7 +1,13 @@
-import React from 'react';
 import Icon from './Icon';
 
-function PageHeader({ title, subtitle, onBack, actions }) {
+interface Props {
+  title: string;
+  subtitle?: string;
+  onBack?: () => void;
+  actions?: React.ReactNode;
+}
+
+function PageHeader({ title, subtitle, onBack, actions }: Props) {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-4 mb-2">

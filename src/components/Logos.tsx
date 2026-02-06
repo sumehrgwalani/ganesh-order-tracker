@@ -1,7 +1,14 @@
-import React from 'react';
 import { LOGO_URL, GI_LOGO_URL } from '../data/constants';
 
-function WTTLogo({ size = 40 }) {
+interface WTTLogoProps {
+  size?: number;
+}
+
+interface GILogoProps {
+  size?: number;
+}
+
+function WTTLogo({ size = 40 }: WTTLogoProps) {
   return (
     <img
       src={LOGO_URL}
@@ -14,7 +21,7 @@ function WTTLogo({ size = 40 }) {
   );
 }
 
-function GILogo({ size = 60 }) {
+function GILogo({ size = 60 }: GILogoProps) {
   return (
     <img
       src={GI_LOGO_URL}

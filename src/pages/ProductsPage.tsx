@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
+import type { Order } from '../types';
 
-function ProductsPage({ orders, onBack }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+interface Product {
+  id: number;
+  name: string;
+  category: string;
+  specs: string;
+  suppliers: string[];
+  orders: number;
+  image: string;
+}
+
+interface Props {
+  orders: Order[];
+  onBack: () => void;
+}
+
+function ProductsPage({ orders, onBack }: Props) {
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   // Extract unique products from orders
-  const productsList = [
+  const productsList: Product[] = [
     { id: 1, name: 'Calamar Troceado', category: 'squid', specs: '20/40 6X1 20%', suppliers: ['RAUNAQ', 'JJ SEAFOODS'], orders: 3, image: '🦑' },
     { id: 2, name: 'Squid Whole IQF', category: 'squid', specs: 'Various sizes', suppliers: ['Nila Exports', 'Silver Sea Foods'], orders: 5, image: '🦑' },
     { id: 3, name: 'Baby Squid Finger Laid', category: 'squid', specs: '200/300', suppliers: ['RAUNAQ'], orders: 1, image: '🦑' },

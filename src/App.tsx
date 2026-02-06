@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Order, Stats } from './types';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
 import DashboardContent from './pages/Dashboard';
@@ -14,15 +15,15 @@ import { initialOrders, productInquiries } from './data/orders';
 import { CONTACTS } from './data/contacts';
 
 function App() {
-  const [orders, setOrders] = useState(initialOrders);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [expandedOrder, setExpandedOrder] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStage, setSelectedStage] = useState(null);
-  const [lastSync, setLastSync] = useState(new Date().toISOString());
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedStage, setSelectedStage] = useState<number | null>(null);
+  const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Filter orders by search term AND selected stage
   const filteredOrders = orders.filter(order => {
@@ -35,7 +36,7 @@ function App() {
     return matchesSearch && matchesStage;
   });
 
-  const stats = { active: orders.filter(o => o.currentStage < 8).length, completed: orders.filter(o => o.currentStage === 8).length, inquiries: productInquiries.length, contacts: Object.keys(CONTACTS).length, products: 8 };
+  const stats: Stats = { active: orders.filter(o => o.currentStage < 8).length, completed: orders.filter(o => o.currentStage === 8).length, inquiries: productInquiries.length, contacts: Object.keys(CONTACTS).length, products: 8 };
 
   const handleSync = () => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); setLastSync(new Date().toISOString()); }, 2000); };
 

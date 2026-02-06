@@ -1,22 +1,40 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
 import PhoneIcon from '../components/PhoneIcon';
+import type { ContactFormData } from '../types';
 
-function ContactsPage({ onBack }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedCountry, setSelectedCountry] = useState('all');
-  const [viewMode, setViewMode] = useState('company'); // 'company' or 'list'
-  const [showModal, setShowModal] = useState(false);
-  const [editingContact, setEditingContact] = useState(null);
-  const [expandedCompany, setExpandedCompany] = useState(null);
+interface Contact {
+  id: string;
+  email: string;
+  name: string;
+  company: string;
+  role: string;
+  phone?: string;
+  country?: string;
+  category?: string;
+  color?: string;
+  initials?: string;
+}
+
+interface Props {
+  onBack: () => void;
+}
+
+function ContactsPage({ onBack }: Props) {
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'company' | 'list'>('company');
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
 
   // Initialize contacts from CONTACTS constant with additional fields
-  const [contacts, setContacts] = useState(() => {
-    return Object.entries(CONTACTS).map(([email, data]) => ({
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    return Object.entries(CONTACTS).map(([email, data]: any) => ({
       id: email,
       email,
       ...data,
@@ -30,10 +48,10 @@ function ContactsPage({ onBack }) {
 
   // Get unique companies and countries
   const companies = [...new Set(contacts.map(c => c.company))].sort();
-  const countries = [...new Set(contacts.map(c => c.country))].sort();
+  const countries = [...new Set(contacts.map(c => c.country).filter((c): c is string => !!c))].sort();
 
   // Group contacts by company
-  const contactsByCompany = companies.reduce((acc, company) => {
+  const contactsByCompany = companies.reduce((acc: Record<string, Contact[]>, company) => {
     acc[company] = contacts.filter(c => c.company === company);
     return acc;
   }, {});
@@ -69,32 +87,58 @@ function ContactsPage({ onBack }) {
   ];
 
   // Country flags for visual display
-  const countryFlags = { India: '🇮🇳', China: '🇨🇳', Spain: '🇪🇸', Portugal: '🇵🇹', Italy: '🇮🇹', USA: '🇺🇸', Greece: '🇬🇷' };
+  const countryFlags: Record<string, string> = { India: '🇮🇳', China: '🇨🇳', Spain: '🇪🇸', Portugal: '🇵🇹', Italy: '🇮🇹', USA: '🇺🇸', Greece: '🇬🇷' };
 
   const locationFilters = [
     { id: 'all', label: 'All Locations', flag: '🌍' },
-    ...countries.map(c => ({ id: c, label: c, flag: countryFlags[c] || '🏳️' }))
+    ...countries.map(c => ({ id: c ?? '', label: c ?? 'Unknown', flag: (c && countryFlags[c]) || '🏳️' }))
   ];
 
-  const handleSaveContact = (contactData) => {
+  const handleSaveContact = (contactData: ContactFormData) => {
+    const contact: Contact = {
+      id: editingContact?.id || contactData.email,
+      email: contactData.email,
+      name: contactData.name,
+      company: contactData.company,
+      role: contactData.role,
+      phone: contactData.phone || '',
+      country: 'Unknown',
+      category: contactData.category,
+      color: contactData.color,
+      initials: contactData.initials || '',
+    };
     if (editingContact) {
-      setContacts(contacts.map(c => c.id === editingContact.id ? { ...contactData, id: editingContact.id } : c));
+      setContacts(contacts.map(c => c.id === editingContact.id ? { ...contact, id: editingContact.id } : c));
     } else {
-      setContacts([...contacts, { ...contactData, id: contactData.email }]);
+      setContacts([...contacts, contact]);
     }
     setShowModal(false);
     setEditingContact(null);
   };
 
-  const handleEditContact = (contact) => {
+  const handleEditContact = (contact: Contact) => {
     setEditingContact(contact);
     setShowModal(true);
   };
 
-  const handleDeleteContact = (contactId) => {
+  const handleDeleteContact = (contactId: string) => {
     if (confirm('Are you sure you want to delete this contact?')) {
       setContacts(contacts.filter(c => c.id !== contactId));
     }
+  };
+
+  const contactToFormData = (contact: Contact | null): ContactFormData | null => {
+    if (!contact) return null;
+    return {
+      name: contact.name,
+      email: contact.email,
+      phone: contact.phone || '',
+      company: contact.company,
+      role: contact.role,
+      category: contact.category || 'other',
+      color: contact.color || 'bg-blue-500',
+      initials: contact.initials,
+    };
   };
 
   return (
@@ -274,7 +318,7 @@ function ContactsPage({ onBack }) {
                     ))}
                     <div className="p-3 bg-gray-50 border-t border-gray-100">
                       <button
-                        onClick={() => { setEditingContact({ company }); setShowModal(true); }}
+                        onClick={() => { setEditingContact({ ...{ company } as Contact }); setShowModal(true); }}
                         className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                       >
                         <Icon name="Plus" size={14} /> Add contact to {company}
@@ -345,7 +389,7 @@ function ContactsPage({ onBack }) {
       {/* Contact Modal */}
       {showModal && (
         <ContactModal
-          contact={editingContact}
+          contact={contactToFormData(editingContact)}
           companies={companies}
           onSave={handleSaveContact}
           onClose={() => { setShowModal(false); setEditingContact(null); }}

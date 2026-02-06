@@ -1,21 +1,34 @@
-import React from 'react';
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import StatsCard from '../components/StatsCard';
 import StageFilter from '../components/StageFilter';
 import OrderRow from '../components/OrderRow';
 import { ORDER_STAGES } from '../data/constants';
 import { productInquiries } from '../data/orders';
+import type { Order, Stats } from '../types';
 
-function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, setSelectedOrder }) {
+interface Props {
+  orders: Order[];
+  stats: Stats;
+  setActiveTab: (tab: string) => void;
+  filteredOrders: Order[];
+  selectedStage: number | null;
+  setSelectedStage: (stage: number | null) => void;
+  expandedOrder: string | null;
+  setExpandedOrder: (id: string | null) => void;
+  setSelectedOrder: (order: Order) => void;
+}
+
+function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, setSelectedOrder }: Props) {
   return (
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
       <div className="grid grid-cols-5 gap-4 mb-8">
-        <StatsCard title="Active Orders" value={stats.active} highlight onClick={() => setActiveTab('orders')} trend="+2 this week" />
-        <StatsCard title="Completed" value={stats.completed} onClick={() => setActiveTab('completed')} />
-        <StatsCard title="Inquiries" value={stats.inquiries} onClick={() => setActiveTab('inquiries')} />
-        <StatsCard title="Contacts" value={stats.contacts} onClick={() => setActiveTab('contacts')} />
-        <StatsCard title="Products" value={stats.products} onClick={() => setActiveTab('products')} />
+        <StatsCard icon="Package" title="Active Orders" value={stats.active} color="primary" onClick={() => setActiveTab('orders')} trend="+2 this week" />
+        <StatsCard icon="CheckCircle" title="Completed" value={stats.completed} color="secondary" onClick={() => setActiveTab('completed')} />
+        <StatsCard icon="MessageSquare" title="Inquiries" value={stats.inquiries} color="secondary" onClick={() => setActiveTab('inquiries')} />
+        <StatsCard icon="Users" title="Contacts" value={stats.contacts} color="secondary" onClick={() => setActiveTab('contacts')} />
+        <StatsCard icon="Box" title="Products" value={stats.products} color="secondary" onClick={() => setActiveTab('products')} />
       </div>
       <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-6">
         <div className="flex justify-between items-center mb-4">

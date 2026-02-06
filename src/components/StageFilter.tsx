@@ -1,18 +1,35 @@
-import React from 'react';
+import { Order, OrderStage } from '../types';
 import Icon from './Icon';
 import { ORDER_STAGES } from '../data/constants';
 
-function StageFilter({ stages, orders, selectedStage, onStageSelect }) {
+interface Props {
+  selectedStage: number | null;
+  onStageSelect: (stage: number | null) => void;
+  orders: Order[];
+  stages?: OrderStage[];
+}
+
+interface Stage {
+  id: number;
+  name: string;
+  shortName: string;
+  description: string;
+  color: string;
+}
+
+function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp }: Props) {
+  const stages = (stagesProp || ORDER_STAGES) as Stage[];
+  
   // Count orders at each stage
-  const stageCounts = stages.reduce((acc, stage) => {
+  const stageCounts = stages.reduce((acc: Record<number, number>, stage) => {
     acc[stage.id] = orders.filter(o => o.currentStage === stage.id).length;
     return acc;
   }, {});
 
   const totalOrders = orders.length;
 
-  const getStageColors = (stageId, isSelected) => {
-    const colors = {
+  const getStageColors = (stageId: number, isSelected: boolean) => {
+    const colors: Record<number, string> = {
       1: isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300',
       2: isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300',
       3: isSelected ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300',
@@ -58,7 +75,7 @@ function StageFilter({ stages, orders, selectedStage, onStageSelect }) {
         {/* Stage buttons */}
         {stages.map((stage, i) => {
           const isSelected = selectedStage === stage.id;
-          const count = stageCounts[stage.id];
+          const count = stageCounts[stage.id] || 0;
           const hasOrders = count > 0;
 
           return (
