@@ -31,7 +31,7 @@ const HEADER_ALIASES: Record<string, FieldKey> = {
 };
 
 // Keywords that identify a header row
-const HEADER_KEYWORDS = ['first name', 'firstname', 'surname', 'last name', 'lastname', 'email', 'e-mail', 'phone', 'telephone', 'company', 'name'];
+const HEADER_KEYWORDS = ['first name', 'firstname', 'surname', 'last name', 'lastname', 'email', 'e-mail', 'phone', 'telephone', 'company', 'name', 'address'];
 
 // Known country names for section detection
 const KNOWN_COUNTRIES = [
@@ -125,7 +125,7 @@ function smartParse(allRows: string[][]): { contacts: MappedContact[]; detected:
     const companyIdx = colMap['company'] ?? colMap['company name'] ?? colMap['organisation'] ?? colMap['organization'] ?? -1;
     const phoneIdx = colMap['phone'] ?? colMap['telephone'] ?? colMap['tel'] ?? colMap['mobile'] ?? -1;
     const notesIdx = colMap['notes'] ?? colMap['note'] ?? colMap['comments'] ?? colMap['remarks'] ?? -1;
-    const addressIdx = colMap['address'] ?? -1;
+    const addressIdx = colMap['address'] ?? colMap['street'] ?? colMap['street address'] ?? colMap['office address'] ?? colMap['location address'] ?? colMap['direccion'] ?? -1;
     const roleIdx = colMap['role'] ?? colMap['type'] ?? colMap['category'] ?? colMap['position'] ?? colMap['title'] ?? -1;
     const countryIdx = colMap['country'] ?? colMap['location'] ?? colMap['region'] ?? -1;
 
@@ -619,7 +619,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Name</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Email</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Company</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Role</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Address</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Country</th>
                         </tr>
                       </thead>
@@ -638,7 +638,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
                               <td className="px-3 py-2 font-medium text-gray-800">{contact.name}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.email}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.company || '-'}</td>
-                              <td className="px-3 py-2 text-gray-600">{contact.role || '-'}</td>
+                              <td className="px-3 py-2 text-gray-600">{contact.address || '-'}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.country || '-'}</td>
                             </tr>
                           );
