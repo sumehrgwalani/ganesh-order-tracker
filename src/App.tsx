@@ -178,7 +178,7 @@ function App() {
     <div className="flex h-screen bg-gray-50">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onSettingsClick={() => setShowSettings(true)} onNavClick={() => setSelectedOrder(null)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} />
+        <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} userEmail={user?.email} onSignOut={signOut} />
         <main className="flex-1 overflow-auto p-6">
           {renderPage()}
         </main>
