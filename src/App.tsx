@@ -22,7 +22,7 @@ import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 
 function App() {
   const { session, user, loading: authLoading, orgId, signOut } = useAuth();
-  const { contacts: dbContacts, loading: contactsLoading } = useContacts(orgId);
+  const { contacts: dbContacts, loading: contactsLoading, bulkUpsertContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder } = useOrders(orgId);
   const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
@@ -149,7 +149,12 @@ function App() {
       case 'inquiries':
         return <InquiriesPage onBack={() => setActiveTab('dashboard')} />;
       case 'contacts':
-        return <ContactsPage onBack={() => setActiveTab('dashboard')} />;
+        return <ContactsPage
+          onBack={() => setActiveTab('dashboard')}
+          dbContacts={isDbReady ? dbContacts : undefined}
+          onBulkImport={isDbReady ? bulkUpsertContacts : undefined}
+          onRefresh={isDbReady ? refetchContacts : undefined}
+        />;
       case 'products':
         return <ProductsPage orders={activeOrders} onBack={() => setActiveTab('dashboard')} />;
       default:

@@ -3,8 +3,9 @@ import Icon from '../components/Icon';
 import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
+import ContactImportModal from '../components/ContactImportModal';
 import PhoneIcon from '../components/PhoneIcon';
-import type { ContactFormData } from '../types';
+import type { ContactFormData, ContactsMap } from '../types';
 
 interface Contact {
   id: string;
@@ -17,33 +18,45 @@ interface Contact {
   category?: string;
   color?: string;
   initials?: string;
+  notes?: string;
 }
 
 interface Props {
   onBack: () => void;
+  dbContacts?: ContactsMap;
+  onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
+  onRefresh?: () => Promise<void>;
 }
 
-function ContactsPage({ onBack }: Props) {
+function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'company' | 'list'>('company');
   const [showModal, setShowModal] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
 
-  // Initialize contacts from CONTACTS constant with additional fields
-  const [contacts, setContacts] = useState<Contact[]>(() => {
-    return Object.entries(CONTACTS).map(([email, data]: any) => ({
+  // Helper to convert ContactsMap to Contact[]
+  const mapToContacts = (source: Record<string, any>): Contact[] => {
+    return Object.entries(source).map(([email, data]: any) => ({
       id: email,
       email,
       ...data,
       phone: data.phone || '',
       country: data.country || 'Unknown',
-      category: data.role.toLowerCase().includes('supplier') ? 'suppliers' :
-                data.role.toLowerCase().includes('inspector') || data.role.toLowerCase().includes('surveyor') ? 'inspectors' :
-                data.role.toLowerCase().includes('buyer') || data.role.toLowerCase().includes('compras') || data.role.toLowerCase().includes('calidad') ? 'buyers' : 'other'
+      notes: data.notes || '',
+      category: data.role?.toLowerCase().includes('supplier') ? 'suppliers' :
+                data.role?.toLowerCase().includes('inspector') || data.role?.toLowerCase().includes('surveyor') ? 'inspectors' :
+                data.role?.toLowerCase().includes('buyer') || data.role?.toLowerCase().includes('compras') || data.role?.toLowerCase().includes('calidad') ? 'buyers' : 'other'
     }));
+  };
+
+  // Use DB contacts if available, otherwise fall back to hardcoded
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    const source = dbContacts && Object.keys(dbContacts).length > 0 ? dbContacts : CONTACTS;
+    return mapToContacts(source);
   });
 
   // Get unique companies and countries
@@ -148,9 +161,16 @@ function ContactsPage({ onBack }: Props) {
         subtitle={`${contacts.length} contacts across ${companies.length} companies`}
         onBack={onBack}
         actions={
-          <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Contact</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onBulkImport && (
+              <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
+                <Icon name="Upload" size={16} /><span className="text-sm font-medium">Import CSV/Excel</span>
+              </button>
+            )}
+            <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Contact</span>
+            </button>
+          </div>
         }
       />
 
@@ -393,6 +413,45 @@ function ContactsPage({ onBack }: Props) {
           companies={companies}
           onSave={handleSaveContact}
           onClose={() => { setShowModal(false); setEditingContact(null); }}
+        />
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && onBulkImport && (
+        <ContactImportModal
+          existingEmails={new Set(contacts.map(c => c.email.toLowerCase()))}
+          onImport={async (importedContacts) => {
+            const result = await onBulkImport(importedContacts);
+            // Refresh contacts from DB after import
+            if (onRefresh) {
+              await onRefresh();
+              // We need to update local state too — refetch will update dbContacts via hook
+              // For now, also add to local state so UI updates immediately
+              const newLocalContacts = importedContacts.map(c => ({
+                id: c.email,
+                email: c.email,
+                name: c.name,
+                company: c.company,
+                role: c.role,
+                phone: c.phone || '',
+                country: c.country || 'Unknown',
+                notes: c.notes || '',
+                category: c.role?.toLowerCase().includes('supplier') ? 'suppliers' :
+                          c.role?.toLowerCase().includes('buyer') ? 'buyers' :
+                          c.role?.toLowerCase().includes('inspector') ? 'inspectors' : 'other',
+                initials: c.name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2),
+                color: 'bg-blue-500',
+              }));
+              // Merge: update existing, add new
+              const existingMap = new Map(contacts.map(c => [c.email.toLowerCase(), c]));
+              for (const nc of newLocalContacts) {
+                existingMap.set(nc.email.toLowerCase(), nc);
+              }
+              setContacts(Array.from(existingMap.values()));
+            }
+            return result;
+          }}
+          onClose={() => setShowImportModal(false)}
         />
       )}
     </div>
