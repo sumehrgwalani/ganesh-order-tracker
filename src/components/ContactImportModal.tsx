@@ -351,7 +351,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
@@ -544,7 +544,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
                       </button>
                     )}
                   </div>
-                  <div className="overflow-x-auto max-h-72">
+                  <div className="overflow-x-auto max-h-[50vh]">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
@@ -611,7 +611,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
               {/* Preview table (for new/update/all views) */}
               {previewFilter !== 'skipped' && (
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto max-h-80">
+                  <div className="overflow-x-auto max-h-[50vh]">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
