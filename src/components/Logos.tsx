@@ -1,0 +1,37 @@
+import { LOGO_URL, GI_LOGO_URL } from '../data/constants';
+
+interface WTTLogoProps {
+  size?: number;
+}
+
+interface GILogoProps {
+  size?: number;
+}
+
+function WTTLogo({ size = 40 }: WTTLogoProps) {
+  return (
+    <img
+      src={LOGO_URL}
+      alt="withthetide"
+      width={size}
+      height={size}
+      className="rounded-full object-cover"
+      style={{ minWidth: size, minHeight: size }}
+    />
+  );
+}
+
+function GILogo({ size = 60 }: GILogoProps) {
+  return (
+    <img
+      src={GI_LOGO_URL}
+      alt="Ganesh International"
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{ minWidth: size, minHeight: size }}
+    />
+  );
+}
+
+export { WTTLogo, GILogo };
