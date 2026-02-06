@@ -14,6 +14,7 @@ interface Contact {
   company: string;
   role: string;
   phone?: string;
+  address?: string;
   country?: string;
   category?: string;
   color?: string;
@@ -24,7 +25,8 @@ interface Contact {
 interface Props {
   onBack: () => void;
   dbContacts?: ContactsMap;
-  onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
+  onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; address?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
+  onBulkDelete?: (emails: string[]) => Promise<void>;
   onRefresh?: () => Promise<void>;
 }
 
@@ -35,6 +37,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
     email,
     ...data,
     phone: data.phone || '',
+    address: data.address || '',
     country: data.country || 'Unknown',
     notes: data.notes || '',
     category: data.role?.toLowerCase().includes('supplier') ? 'suppliers' :
@@ -43,7 +46,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
   }));
 }
 
-function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
+function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
@@ -52,6 +55,9 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
+  // Batch delete state
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Use a stable key (number of contacts) to detect when DB data actually changes
   const dbContactsCount = dbContacts !== undefined ? Object.keys(dbContacts).length : -1;
@@ -151,12 +157,48 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
     }
   };
 
+  const toggleSelectEmail = (email: string) => {
+    setSelectedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedEmails.size === filteredContacts.length) {
+      setSelectedEmails(new Set());
+    } else {
+      setSelectedEmails(new Set(filteredContacts.map(c => c.email)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedEmails.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedEmails.size} contact${selectedEmails.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      if (onBulkDelete) {
+        await onBulkDelete(Array.from(selectedEmails));
+      }
+      setContacts(prev => prev.filter(c => !selectedEmails.has(c.email)));
+      setSelectedEmails(new Set());
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const contactToFormData = (contact: Contact | null): ContactFormData | null => {
     if (!contact) return null;
     return {
       name: contact.name,
       email: contact.email,
       phone: contact.phone || '',
+      address: contact.address || '',
       company: contact.company,
       role: contact.role,
       category: contact.category || 'other',
@@ -172,15 +214,15 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
         subtitle={`${contacts.length} contacts across ${companies.length} companies`}
         onBack={onBack}
         actions={
-          <div className="flex items-center gap-2">
-            {onBulkImport && (
-              <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
-                <Icon name="Upload" size={16} /><span className="text-sm font-medium">Import CSV/Excel</span>
-              </button>
-            )}
-            <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <div className="flex flex-col items-stretch gap-2 w-44">
+            <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Contact</span>
             </button>
+            {onBulkImport && (
+              <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium text-center">
+                Import CSV/Excel
+              </button>
+            )}
           </div>
         }
       />
@@ -259,8 +301,43 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
         )}
       </div>
 
-      {/* View Toggle */}
-      <div className="flex justify-end mb-4">
+      {/* View Toggle + Batch Delete Bar */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {filteredContacts.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+              <input
+                type="checkbox"
+                checked={selectedEmails.size === filteredContacts.length && filteredContacts.length > 0}
+                onChange={toggleSelectAll}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              Select all
+            </label>
+          )}
+          {selectedEmails.size > 0 && (
+            <div className="flex items-center gap-3 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+              <span className="text-sm font-medium text-red-700">{selectedEmails.size} selected</span>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isDeleting}
+                className="flex items-center gap-1.5 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting...</>
+                ) : (
+                  <><Icon name="Trash2" size={14} /> Delete</>
+                )}
+              </button>
+              <button
+                onClick={() => setSelectedEmails(new Set())}
+                className="text-sm text-red-600 hover:text-red-800"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setViewMode('company')}
@@ -314,8 +391,14 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
                 {isExpanded && (
                   <div className="border-t border-gray-100">
                     {companyContacts.map((contact, idx) => (
-                      <div key={contact.id} className={`p-4 flex items-center justify-between ${idx > 0 ? 'border-t border-gray-50' : ''} hover:bg-gray-50`}>
+                      <div key={contact.id} className={`p-4 flex items-center justify-between ${idx > 0 ? 'border-t border-gray-50' : ''} hover:bg-gray-50 ${selectedEmails.has(contact.email) ? 'bg-blue-50' : ''}`}>
                         <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedEmails.has(contact.email)}
+                            onChange={() => toggleSelectEmail(contact.email)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
+                          />
                           <div className="relative">
                             <div className={`w-10 h-10 ${contact.color} rounded-full flex items-center justify-center text-white font-medium text-sm`}>
                               {contact.initials}
@@ -365,9 +448,15 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
         /* List View */
         <div className="grid grid-cols-3 gap-4">
           {filteredContacts.map((contact) => (
-            <div key={contact.id} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-blue-200 transition-all">
+            <div key={contact.id} className={`bg-white rounded-xl border p-5 hover:shadow-md transition-all ${selectedEmails.has(contact.email) ? 'border-blue-400 bg-blue-50' : 'border-gray-100 hover:border-blue-200'}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedEmails.has(contact.email)}
+                    onChange={() => toggleSelectEmail(contact.email)}
+                    className="w-4 h-4 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
+                  />
                   <div className="relative">
                     <div className={`w-12 h-12 ${contact.color} rounded-full flex items-center justify-center text-white font-medium`}>
                       {contact.initials}

@@ -32,6 +32,7 @@ export function useContacts(orgId: string | null) {
           initials: row.initials || '',
           color: row.color || 'bg-gray-500',
           phone: row.phone || '',
+          address: row.address || '',
           notes: row.notes || '',
           country: row.country || '',
         }
@@ -62,6 +63,7 @@ export function useContacts(orgId: string | null) {
           company: formData.company,
           role: formData.role || formData.category || 'Supplier',
           phone: formData.phone || '',
+          address: formData.address || '',
           country: '',
           initials,
           color: formData.color || 'bg-gray-500',
@@ -115,7 +117,7 @@ export function useContacts(orgId: string | null) {
 
   const bulkUpsertContacts = async (rows: Array<{
     email: string; name: string; company: string; role: string;
-    phone?: string; country?: string; notes?: string;
+    phone?: string; country?: string; address?: string; notes?: string;
   }>) => {
     if (!orgId || rows.length === 0) return { inserted: 0, updated: 0 }
 
@@ -144,6 +146,7 @@ export function useContacts(orgId: string | null) {
         company: row.company?.trim() || '',
         role: row.role?.trim() || 'Supplier',
         phone: row.phone?.trim() || '',
+        address: row.address?.trim() || '',
         country: row.country?.trim() || '',
         notes: row.notes?.trim() || '',
         initials,
@@ -163,6 +166,23 @@ export function useContacts(orgId: string | null) {
     return { inserted: records.length - updatedCount, updated: updatedCount }
   }
 
+  const bulkDeleteContacts = async (emails: string[]) => {
+    if (!orgId || emails.length === 0) return
+    try {
+      const { error: deleteError } = await supabase
+        .from('contacts')
+        .delete()
+        .eq('organization_id', orgId)
+        .in('email', emails)
+
+      if (deleteError) throw deleteError
+      await fetchContacts()
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    }
+  }
+
   return {
     contacts,
     contactsList: Object.entries(contacts).map(([email, c]) => ({ email, ...c })),
@@ -171,6 +191,7 @@ export function useContacts(orgId: string | null) {
     addContact,
     updateContact,
     deleteContact,
+    bulkDeleteContacts,
     bulkUpsertContacts,
     refetch: fetchContacts,
   }

@@ -7,6 +7,7 @@ export interface Contact {
   initials: string;
   color: string;
   phone: string;
+  address: string;
   notes: string;
   country: string;
 }
@@ -15,6 +16,7 @@ export interface ContactFormData {
   name: string;
   email: string;
   phone: string;
+  address: string;
   company: string;
   role: string;
   category: string;

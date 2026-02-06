@@ -9,6 +9,7 @@ const CONTACT_FIELDS = [
   { key: 'company', label: 'Company', required: false },
   { key: 'role', label: 'Role', required: false },
   { key: 'phone', label: 'Phone', required: false },
+  { key: 'address', label: 'Address', required: false },
   { key: 'country', label: 'Country', required: false },
   { key: 'notes', label: 'Notes', required: false },
 ] as const;
@@ -25,7 +26,7 @@ const HEADER_ALIASES: Record<string, FieldKey> = {
   phone: 'phone', 'telephone': 'phone', 'tel': 'phone', 'mobile': 'phone', 'cell': 'phone', 'phone number': 'phone', 'telefono': 'phone',
   country: 'country', 'location': 'country', 'region': 'country', 'pais': 'country',
   notes: 'notes', 'note': 'notes', 'comments': 'notes', 'description': 'notes', 'remarks': 'notes', 'notas': 'notes',
-  address: 'notes', // fold address into notes if no notes column
+  address: 'address', 'street': 'address', 'city': 'address', 'location address': 'address', 'direccion': 'address',
   surname: 'name', 'last name': 'name', 'lastname': 'name', // will be handled specially
 };
 
@@ -49,6 +50,7 @@ interface MappedContact {
   company: string;
   role: string;
   phone: string;
+  address: string;
   country: string;
   notes: string;
 }
@@ -151,17 +153,13 @@ function smartParse(allRows: string[][]): { contacts: MappedContact[]; detected:
       const role = roleIdx >= 0 ? String(row[roleIdx] || '').trim() : 'Supplier';
       const rowCountry = countryIdx >= 0 ? String(row[countryIdx] || '').trim() : country;
 
-      // Notes: combine notes + address if both exist
-      let notes = notesIdx >= 0 ? String(row[notesIdx] || '').trim() : '';
-      if (addressIdx >= 0) {
-        const addr = String(row[addressIdx] || '').trim();
-        if (addr) notes = notes ? `${notes} | ${addr}` : addr;
-      }
+      const address = addressIdx >= 0 ? String(row[addressIdx] || '').trim() : '';
+      const notes = notesIdx >= 0 ? String(row[notesIdx] || '').trim() : '';
 
       // Only include contacts with at least a name
       if (!name) continue;
 
-      contacts.push({ name, email, company, role, phone, country: rowCountry, notes });
+      contacts.push({ name, email, company, role, phone, address, country: rowCountry, notes });
     }
   }
 
@@ -234,9 +232,9 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
           // Smart mode: skip mapping entirely, go straight to preview
           setSmartContacts(smart.contacts);
           // Set dummy headers/rows for the mapping fallback
-          setHeaders(['Name', 'Email', 'Company', 'Phone', 'Country', 'Notes']);
-          setRows(smart.contacts.map(c => [c.name, c.email, c.company, c.phone, c.country, c.notes]));
-          setMapping({ Name: 'name', Email: 'email', Company: 'company', Phone: 'phone', Country: 'country', Notes: 'notes' });
+          setHeaders(['Name', 'Email', 'Company', 'Phone', 'Address', 'Country', 'Notes']);
+          setRows(smart.contacts.map(c => [c.name, c.email, c.company, c.phone, c.address, c.country, c.notes]));
+          setMapping({ Name: 'name', Email: 'email', Company: 'company', Phone: 'phone', Address: 'address', Country: 'country', Notes: 'notes' });
           setStep('preview');
           return;
         }
@@ -296,6 +294,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
         company: row[fieldIndices.company ?? -1] || '',
         role: row[fieldIndices.role ?? -1] || 'Supplier',
         phone: row[fieldIndices.phone ?? -1] || '',
+        address: row[fieldIndices.address ?? -1] || '',
         country: row[fieldIndices.country ?? -1] || '',
         notes: row[fieldIndices.notes ?? -1] || '',
       })).filter(c => c.name.trim() !== '');

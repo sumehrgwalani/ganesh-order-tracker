@@ -14,6 +14,7 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
     name: '',
     email: '',
     phone: '',
+    address: '',
     company: '',
     role: '',
     category: 'other',
@@ -74,6 +75,18 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
               onChange={(e) => setFormData({...formData, phone: e.target.value})}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="+91 98765 43210"
+            />
+          </div>
+
+          {/* Address */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <input
+              type="text"
+              value={formData.address || ''}
+              onChange={(e) => setFormData({...formData, address: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="123 Main St, City, Country"
             />
           </div>
 
