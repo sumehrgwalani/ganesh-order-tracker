@@ -636,7 +636,7 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
                                 </span>
                               </td>
                               <td className="px-3 py-2 font-medium text-gray-800">{contact.name}</td>
-                              <td className="px-3 py-2 text-gray-600">{contact.email}</td>
+                              <td className="px-3 py-2 text-gray-600">{contact.email.endsWith('@placeholder.local') ? '-' : contact.email}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.company || '-'}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.address || '-'}</td>
                               <td className="px-3 py-2 text-gray-600">{contact.country || '-'}</td>

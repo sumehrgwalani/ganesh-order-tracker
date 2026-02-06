@@ -46,6 +46,10 @@ function mapToContacts(source: Record<string, any>): Contact[] {
   }));
 }
 
+// Check if an email is a placeholder (imported without a real email)
+const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
+const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
+
 function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -416,7 +420,7 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
                         </div>
                         <div className="flex items-center gap-6">
                           <div className="text-right">
-                            <p className="text-sm text-gray-600 flex items-center gap-1"><Icon name="Mail" size={12} /> {contact.email}</p>
+                            <p className="text-sm text-gray-600 flex items-center gap-1"><Icon name="Mail" size={12} /> {displayEmail(contact.email)}</p>
                             {contact.phone && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><PhoneIcon size={12} /> {contact.phone}</p>}
                           </div>
                           <div className="flex gap-1">
@@ -481,7 +485,7 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
               </div>
               <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
                 <p className="text-xs text-gray-600 flex items-center gap-2">
-                  <Icon name="Mail" size={12} className="text-gray-400" /> {contact.email}
+                  <Icon name="Mail" size={12} className="text-gray-400" /> {displayEmail(contact.email)}
                 </p>
                 {contact.phone && (
                   <p className="text-xs text-gray-600 flex items-center gap-2">
@@ -491,7 +495,11 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
               </div>
               <div className="flex gap-2 mt-3">
                 <button onClick={() => handleEditContact(contact)} className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">Edit</button>
-                <a href={`mailto:${contact.email}`} className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-center">Email</a>
+                {!isPlaceholderEmail(contact.email) ? (
+                  <a href={`mailto:${contact.email}`} className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-center">Email</a>
+                ) : (
+                  <span className="flex-1 px-3 py-1.5 text-xs bg-gray-50 text-gray-400 rounded-lg text-center">No email</span>
+                )}
               </div>
             </div>
           ))}
