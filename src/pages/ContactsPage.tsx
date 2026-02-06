@@ -422,6 +422,7 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
                           <div className="text-right">
                             <p className="text-sm text-gray-600 flex items-center gap-1"><Icon name="Mail" size={12} /> {displayEmail(contact.email)}</p>
                             {contact.phone && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><PhoneIcon size={12} /> {contact.phone}</p>}
+                            {contact.address && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Icon name="MapPin" size={12} /> {contact.address}</p>}
                           </div>
                           <div className="flex gap-1">
                             <button onClick={() => handleEditContact(contact)} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit">
@@ -490,6 +491,11 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onBulkDelete, onRefres
                 {contact.phone && (
                   <p className="text-xs text-gray-600 flex items-center gap-2">
                     <PhoneIcon size={12} /> {contact.phone}
+                  </p>
+                )}
+                {contact.address && (
+                  <p className="text-xs text-gray-600 flex items-center gap-2">
+                    <Icon name="MapPin" size={12} className="text-gray-400" /> {contact.address}
                   </p>
                 )}
               </div>
