@@ -53,9 +53,9 @@ function ContactsPage({ onBack, dbContacts, onBulkImport, onRefresh }: Props) {
     }));
   };
 
-  // Use DB contacts if available, otherwise fall back to hardcoded
+  // Use DB contacts when provided (even if empty = fresh account), otherwise fall back to hardcoded demo data
   const [contacts, setContacts] = useState<Contact[]>(() => {
-    const source = dbContacts && Object.keys(dbContacts).length > 0 ? dbContacts : CONTACTS;
+    const source = dbContacts !== undefined ? dbContacts : CONTACTS;
     return mapToContacts(source);
   });
 
