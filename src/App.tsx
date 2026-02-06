@@ -11,11 +11,32 @@ import ContactsPage from './pages/ContactsPage';
 import MailboxPage from './pages/MailboxPage';
 import ProductsPage from './pages/ProductsPage';
 import OrderDetailPage from './pages/OrderDetailPage';
-import { initialOrders, productInquiries } from './data/orders';
-import { CONTACTS } from './data/contacts';
+import LoginPage from './pages/LoginPage';
+import { useAuth } from './hooks/useAuth';
+import { useContacts } from './hooks/useContacts';
+import { useOrders } from './hooks/useOrders';
+import { useProducts } from './hooks/useProducts';
+// Fallback data for offline/setup mode
+import { initialOrders, productInquiries as fallbackInquiries } from './data/orders';
+import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 
 function App() {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const { session, user, loading: authLoading, orgId, signOut } = useAuth();
+  const { contacts: dbContacts, loading: contactsLoading } = useContacts(orgId);
+  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder } = useOrders(orgId);
+  const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
+
+  // Use database data if available, fall back to hardcoded data
+  const isDbReady = orgId && !contactsLoading && !ordersLoading;
+  const contacts = isDbReady && Object.keys(dbContacts).length > 0 ? dbContacts : FALLBACK_CONTACTS;
+  const orders = isDbReady && dbOrders.length > 0 ? dbOrders : initialOrders;
+  const productInquiries = isDbReady && dbInquiries.length > 0 ? dbInquiries : fallbackInquiries;
+
+  // Local orders state for fallback mode
+  const [localOrders, setLocalOrders] = useState<Order[]>(initialOrders);
+  const activeOrders = isDbReady ? orders : localOrders;
+  const setOrders = isDbReady ? setDbOrders : setLocalOrders;
+
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
@@ -25,8 +46,25 @@ function App() {
   const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
+  // Show login page if not authenticated
+  if (!authLoading && !session) {
+    return <LoginPage onAuthSuccess={() => {}} />;
+  }
+
+  // Show loading while auth or data is loading
+  if (authLoading || (orgId && (contactsLoading || ordersLoading))) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading your data...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Filter orders by search term AND selected stage
-  const filteredOrders = orders.filter(order => {
+  const filteredOrders = activeOrders.filter(order => {
     const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.product.toLowerCase().includes(searchTerm.toLowerCase());
@@ -36,9 +74,27 @@ function App() {
     return matchesSearch && matchesStage;
   });
 
-  const stats: Stats = { active: orders.filter(o => o.currentStage < 8).length, completed: orders.filter(o => o.currentStage === 8).length, inquiries: productInquiries.length, contacts: Object.keys(CONTACTS).length, products: 8 };
+  const stats: Stats = {
+    active: activeOrders.filter(o => o.currentStage < 8).length,
+    completed: activeOrders.filter(o => o.currentStage === 8).length,
+    inquiries: productInquiries.length,
+    contacts: Object.keys(contacts).length,
+    products: dbProducts.length > 0 ? dbProducts.length : 8,
+  };
 
-  const handleSync = () => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); setLastSync(new Date().toISOString()); }, 2000); };
+  const handleSync = async () => {
+    setIsSyncing(true);
+    // If connected to DB, refetch data
+    if (orgId) {
+      // The hooks auto-refetch, so just update timestamp
+      setTimeout(() => {
+        setIsSyncing(false);
+        setLastSync(new Date().toISOString());
+      }, 1000);
+    } else {
+      setTimeout(() => { setIsSyncing(false); setLastSync(new Date().toISOString()); }, 2000);
+    }
+  };
 
   // Render the current page based on activeTab
   const renderPage = () => {
@@ -56,7 +112,7 @@ function App() {
       case 'orders':
         return (
           <OrdersPage
-            orders={orders}
+            orders={activeOrders}
             expandedOrder={expandedOrder}
             setExpandedOrder={setExpandedOrder}
             setSelectedOrder={setSelectedOrder}
@@ -66,7 +122,7 @@ function App() {
       case 'completed':
         return (
           <CompletedPage
-            orders={orders}
+            orders={activeOrders}
             expandedOrder={expandedOrder}
             setExpandedOrder={setExpandedOrder}
             setSelectedOrder={setSelectedOrder}
@@ -78,10 +134,13 @@ function App() {
       case 'create-po':
         return <POGeneratorPage
           onBack={() => setActiveTab('dashboard')}
-          contacts={CONTACTS}
-          orders={orders}
+          contacts={contacts}
+          orders={activeOrders}
           setOrders={setOrders}
           onOrderCreated={(newOrder) => {
+            if (orgId && createOrder) {
+              createOrder(newOrder).catch(console.error);
+            }
             setSelectedOrder(newOrder);
             setActiveTab('orders');
           }}
@@ -91,11 +150,11 @@ function App() {
       case 'contacts':
         return <ContactsPage onBack={() => setActiveTab('dashboard')} />;
       case 'products':
-        return <ProductsPage orders={orders} onBack={() => setActiveTab('dashboard')} />;
+        return <ProductsPage orders={activeOrders} onBack={() => setActiveTab('dashboard')} />;
       default:
         return (
           <DashboardContent
-            orders={orders}
+            orders={activeOrders}
             stats={stats}
             setActiveTab={setActiveTab}
             filteredOrders={filteredOrders}
