@@ -226,14 +226,161 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       'vannamei hlso': 'Vannamei HLSO',
     };
 
+    // Product abbreviation map
+    const productAbbreviations: Record<string, string> = {
+      'cfwc': 'Cuttlefish Whole Cleaned',
+      'cf': 'Cuttlefish',
+      'sqwc': 'Squid Whole Cleaned',
+      'sq': 'Squid',
+      'oct': 'Octopus',
+    };
+
+    // Seafood keywords for auto-adding "Frozen" prefix
+    const seafoodKeywords = ['cuttlefish', 'squid', 'octopus', 'shrimp', 'prawn', 'fish', 'seafood', 'vannamei', 'lobster', 'crab', 'mussel', 'clam', 'scallop', 'anchovy', 'sardine', 'tuna', 'salmon', 'cod', 'hake', 'sole', 'skewer', 'roe'];
+    const friesKeywords = ['fries', 'french fries', 'potato', 'wedges'];
+
+    // Helper: resolve product name from abbreviations and translations, add Frozen prefix
+    const resolveProductName = (rawName: string): string => {
+      let productName = rawName;
+      const nameLower = rawName.toLowerCase();
+
+      // Check product translations first
+      for (const [sp, en] of Object.entries(productTranslations)) {
+        if (nameLower.includes(sp.toLowerCase())) {
+          productName = en;
+          break;
+        }
+      }
+
+      // Check abbreviations (e.g. CFWC → Cuttlefish Whole Cleaned)
+      if (productName === rawName) {
+        const words = rawName.split(/\s+/);
+        const firstWordLower = words[0].toLowerCase();
+        if (productAbbreviations[firstWordLower]) {
+          const rest = words.slice(1).filter(w => w.toLowerCase() !== 'iqf' && !w.match(/^\d/)).join(' ');
+          productName = productAbbreviations[firstWordLower] + (rest ? ' ' + rest : '');
+        }
+      }
+
+      // Handle WC abbreviation anywhere
+      if (productName.toLowerCase().includes(' wc')) {
+        productName = productName.replace(/\s+wc/i, ' Whole Cleaned');
+      }
+
+      // Add IQF if it was in the original name
+      if (rawName.toLowerCase().includes('iqf') && !productName.toLowerCase().includes('iqf')) {
+        productName += ' IQF';
+      }
+
+      // Auto-add "Frozen" prefix
+      const productLower = productName.toLowerCase();
+      const needsFrozen = [...seafoodKeywords, ...friesKeywords].some(kw => productLower.includes(kw));
+      if (needsFrozen && !productLower.startsWith('frozen')) {
+        productName = 'Frozen ' + productName;
+      }
+      return productName;
+    };
+
+    // Helper: extract packing from a line (e.g. "6kg Bulk", "6x1kg")
+    const extractPacking = (text: string): string => {
+      const bulkMatch = text.match(/(\d+)\s*kg\s*bulk/i);
+      if (bulkMatch) return bulkMatch[1] + ' kg Bulk';
+      const multiMatch = text.match(/(\d+)\s*[xX]\s*(\d+)\s*kg/i);
+      if (multiMatch) return multiMatch[1] + 'x' + multiMatch[2] + ' kg';
+      const directMatch = text.match(/(\d+)\s*kg/i);
+      if (directMatch && text.toLowerCase().includes('bulk')) return directMatch[1] + ' kg Bulk';
+      return '';
+    };
+
     // Parse multi-product blocks
-    const productBlocks = [];
-    let currentBlock = null;
+    const productBlocks: any[] = [];
+    let currentBlock: any = null;
+    // Template for header-with-subrows format (stores shared product/packing/glaze)
+    let headerTemplate: any = null;
 
     for (const line of lines) {
       const lineLower = line.toLowerCase();
 
-      // Check if this line starts a new product (product names usually don't have numbers at start)
+      // Skip TOTAL lines
+      if (lineLower.match(/^total\b/i)) continue;
+
+      // === FORMAT 2: Header with inline packing+glaze, followed by size/cases/price sub-rows ===
+      // Detect header like "CFWC IQF 6kg Bulk with 20% Glaze"
+      const isHeaderWithDetails = /^[a-zA-Z]/.test(line) &&
+        (lineLower.includes('glaze') || lineLower.includes('glaseo')) &&
+        lineLower.match(/\d+\s*(?:kg|kilo)/i) &&
+        line.length > 10;
+
+      // Detect sub-row like "U/1  150c/s  7.30$/kg" or "Large  200c/s  5.60$/kg"
+      const casesRowMatch = line.match(/^(\S+(?:\s+\S+)?)\s+(\d+)\s*c\/s\s+(?:\$?\s*)?(\d+\.?\d*)\s*(?:\$\/kg)?/i);
+
+      if (isHeaderWithDetails) {
+        // Save any pending block from previous product
+        if (currentBlock) productBlocks.push(currentBlock);
+        currentBlock = null;
+
+        // Parse the header line
+        // Extract glaze
+        const glazeMatch = lineLower.match(/(\d+)%\s*(?:glaseo|glaze)/i);
+        const glaze = glazeMatch ? glazeMatch[1] + '% Glaze' : '';
+
+        // Extract marked glaze
+        const markedMatch = lineLower.match(/marked\s*(?:as)?\s*(\d+)%/i);
+        const glazeMarked = markedMatch ? markedMatch[1] + '% Glaze' : '';
+
+        // Extract packing from the header
+        const packing = extractPacking(line);
+
+        // Extract product name: everything before packing/glaze numbers
+        let rawProductName = line.replace(/\s+(?:with\s+)?\d+%\s*(?:glaseo|glaze).*/i, '')
+                                 .replace(/\s+\d+\s*(?:kg|kilo).*$/i, '')
+                                 .replace(/\s+\d+\s*[xX]\s*\d+.*$/i, '')
+                                 .trim();
+
+        const productName = resolveProductName(rawProductName);
+
+        headerTemplate = { product: productName, glaze, glazeMarked, packing };
+        continue;
+      }
+
+      if (casesRowMatch && headerTemplate) {
+        // This is a sub-row under a header — create a line item variant
+        const size = casesRowMatch[1].trim();
+        const cases = casesRowMatch[2];
+        const price = casesRowMatch[3];
+
+        // Calculate kilos from cases * packing kg per carton
+        const packingKgMatch = headerTemplate.packing.match(/(\d+)\s*[xX]\s*(\d+)/);
+        const bulkKgMatch = headerTemplate.packing.match(/^(\d+)\s*kg/i);
+        let kgPerCase = 0;
+        if (packingKgMatch) {
+          kgPerCase = parseInt(packingKgMatch[1]) * parseInt(packingKgMatch[2]);
+        } else if (bulkKgMatch) {
+          kgPerCase = parseInt(bulkKgMatch[1]);
+        }
+        const kilos = kgPerCase > 0 ? (parseInt(cases) * kgPerCase).toString() : '';
+
+        productBlocks.push({
+          product: headerTemplate.product,
+          size,
+          glaze: headerTemplate.glaze,
+          glazeMarked: headerTemplate.glazeMarked,
+          kilos,
+          cases,
+          pricePerKg: price,
+          packing: headerTemplate.packing,
+          notes: ''
+        });
+        continue;
+      }
+
+      // If we hit a non-cases line while in header mode, close the template
+      if (headerTemplate && /^[a-zA-Z]/.test(line) && !casesRowMatch) {
+        headerTemplate = null;
+      }
+
+      // === FORMAT 1: Original line-by-line format ===
+      // Check if this line starts a new product
       const isProductLine = /^[a-zA-Z]/.test(line) &&
         !lineLower.includes('glaseo') &&
         !lineLower.includes('glaze') &&
@@ -247,37 +394,16 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         !lineLower.match(/^\d+-\d+\s*piezas/i) &&
         line.length > 2;
 
-      // Check for buyer/supplier line (usually at the end, short, has abbreviations)
+      // Check for buyer/supplier line
       const isBuyerSupplierLine = line.split(/\s+/).every((word: string) => {
         const w = word.toLowerCase();
         return buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 3;
       }) && line.length < 30;
 
-      if (isProductLine && !isBuyerSupplierLine) {
-        // Save previous block and start new one
+      if (isProductLine && !isBuyerSupplierLine && !headerTemplate) {
         if (currentBlock) productBlocks.push(currentBlock);
 
-        // Translate product name
-        let productName = line;
-        for (const [sp, en] of Object.entries(productTranslations)) {
-          if (lineLower.includes(sp.toLowerCase())) {
-            productName = en;
-            break;
-          }
-        }
-        // Handle WC abbreviation
-        if (lineLower.includes(' wc')) {
-          productName = productName.replace(/\s+wc/i, ' Whole Cleaned');
-        }
-
-        // Auto-add "Frozen" prefix for seafood and french fries (unless already present)
-        const seafoodKeywords = ['cuttlefish', 'squid', 'octopus', 'shrimp', 'prawn', 'fish', 'seafood', 'vannamei', 'lobster', 'crab', 'mussel', 'clam', 'scallop', 'anchovy', 'sardine', 'tuna', 'salmon', 'cod', 'hake', 'sole', 'skewer'];
-        const friesKeywords = ['fries', 'french fries', 'potato', 'wedges'];
-        const productLower = productName.toLowerCase();
-        const needsFrozen = [...seafoodKeywords, ...friesKeywords].some(kw => productLower.includes(kw));
-        if (needsFrozen && !productLower.startsWith('frozen')) {
-          productName = 'Frozen ' + productName;
-        }
+        const productName = resolveProductName(line);
 
         currentBlock = {
           product: productName,
@@ -307,7 +433,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         // Quantity and price (4MT U/1 $6.10)
         const qtyPriceMatch = line.match(/(\d+)\s*MT\s+(U\/\d+|\d+\/\d+)?\s*\$?([\d.]+)?/i);
         if (qtyPriceMatch) {
-          currentBlock.kilos = (parseFloat(qtyPriceMatch[1]) * 1000).toString(); // MT to kg
+          currentBlock.kilos = (parseFloat(qtyPriceMatch[1]) * 1000).toString();
           if (qtyPriceMatch[2]) currentBlock.size = qtyPriceMatch[2];
           if (qtyPriceMatch[3]) currentBlock.pricePerKg = qtyPriceMatch[3];
         }
@@ -330,7 +456,6 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         if (packingMatch) {
           let packing = packingMatch[1].replace(/kilo/i, 'kg');
           const extra = packingMatch[2] || '';
-          // Translate Spanish packing terms
           if (extra.toLowerCase().includes('bolsa con rider') || extra.toLowerCase().includes('con rider')) {
             packing += ' Bag with Rider';
           } else if (extra.toLowerCase().includes('bolsa')) {
@@ -406,7 +531,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         glaze: block.glaze || '',
         glazeMarked: block.glazeMarked || '',
         brand: '',
-        cases: '',
+        cases: block.cases || '',
         kilos: block.kilos,
         pricePerKg: block.pricePerKg,
         currency: 'USD',
