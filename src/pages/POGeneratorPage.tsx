@@ -1024,6 +1024,47 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
               <p>FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
             </div>
           </div>
+
+          {/* Bottom Action Bar */}
+          <div className="p-6 border-t border-gray-200 bg-gray-50">
+            {status === 'draft' && (
+              <div className="flex items-center justify-between">
+                <button onClick={() => setShowPreview(false)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
+                  <Icon name="Edit" size={16} /> Back to Edit
+                </button>
+                <button onClick={submitForApproval} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm">
+                  <Icon name="CheckCircle" size={16} /> Submit for Sign-off
+                </button>
+              </div>
+            )}
+            {status === 'pending_approval' && (
+              <div className="flex items-center justify-between">
+                <button onClick={rejectPO} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
+                  <Icon name="Edit" size={16} /> Back to Edit
+                </button>
+                <button onClick={approvePO} className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-sm">
+                  <Icon name="CheckCircle" size={16} /> Approve & Sign
+                </button>
+              </div>
+            )}
+            {status === 'approved' && (
+              <div className="flex items-center justify-between">
+                <button onClick={rejectPO} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
+                  <Icon name="Edit" size={16} /> Back to Edit
+                </button>
+                <button onClick={sendPO} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm">
+                  <Icon name="Send" size={16} /> Send to Supplier
+                </button>
+              </div>
+            )}
+            {status === 'sent' && (
+              <div className="flex items-center justify-center">
+                <div className="px-6 py-2.5 bg-green-100 text-green-700 rounded-lg flex items-center gap-2 font-medium">
+                  <Icon name="CheckCircle" size={16} /> Purchase Order Sent Successfully
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         /* Form View */
