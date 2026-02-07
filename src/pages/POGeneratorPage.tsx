@@ -35,6 +35,7 @@ interface POLineItem {
   glazeMarked: string;
   packing: string;
   brand: string;
+  freezing: string;
   cases: string | number;
   kilos: string | number;
   pricePerKg: string | number;
@@ -144,7 +145,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   });
 
   const [lineItems, setLineItems] = useState<POLineItem[]>([
-    { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
+    { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
   ]);
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
@@ -334,6 +335,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       return { brand: '', cleaned: text };
     };
 
+    // Helper: detect freezing method from text (IQF, Semi IQF, Blast, Block, Plate)
+    const detectFreezing = (text: string): string => {
+      const t = text.toLowerCase();
+      if (/\bsemi\s*iqf\b/i.test(t)) return 'Semi IQF';
+      if (/\biqf\b/i.test(t)) return 'IQF';
+      if (/\bblast\b/i.test(t)) return 'Blast';
+      if (/\bblock\s*(?:frozen|freeze)?\b/i.test(t)) return 'Block';
+      if (/\bplate\s*(?:frozen|freeze)?\b/i.test(t)) return 'Plate';
+      return '';
+    };
+
     // Parse multi-product blocks
     const productBlocks: any[] = [];
     let currentBlock: any = null;
@@ -401,16 +413,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           }
         } else {
           // Standalone compact line — inherit product from previous block if possible
-          const prevProduct = productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].product : '';
+          const prevBlock = productBlocks.length > 0 ? productBlocks[productBlocks.length - 1] : null;
           currentBlock = {
-            product: prevProduct,
+            product: prevBlock?.product || '',
             size: compactSizeMtPrice[1],
-            glaze: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].glaze || '' : '',
+            glaze: prevBlock?.glaze || '',
             glazeMarked: '',
+            freezing: prevBlock?.freezing || '',
             kilos: (parseFloat(compactSizeMtPrice[2]) * 1000).toString(),
             pricePerKg: compactSizeMtPrice[3],
-            packing: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].packing || '' : '',
-            brand: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].brand || '' : '',
+            packing: prevBlock?.packing || '',
+            brand: prevBlock?.brand || '',
             cases: '',
             notes: ''
           };
@@ -435,6 +448,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             size: '',
             glaze: '',
             glazeMarked: '',
+            freezing: detectFreezing(possibleProduct),
             kilos: (parseFloat(productMtPriceMatch[2]) * 1000).toString(),
             pricePerKg: productMtPriceMatch[3],
             packing: '',
@@ -482,7 +496,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
         const productName = resolveProductName(rawProductName);
 
-        headerTemplate = { product: productName, glaze, glazeMarked, packing };
+        const freezing = detectFreezing(line);
+        headerTemplate = { product: productName, glaze, glazeMarked, packing, freezing };
         continue;
       }
 
@@ -508,6 +523,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           size,
           glaze: headerTemplate.glaze,
           glazeMarked: headerTemplate.glazeMarked,
+          freezing: headerTemplate.freezing || '',
           kilos,
           cases,
           pricePerKg: price,
@@ -565,6 +581,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           size: '',
           glaze: '',
           glazeMarked: '',
+          freezing: detectFreezing(line),
           kilos: '',
           pricePerKg: '',
           packing: '',
@@ -698,6 +715,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         glaze: block.glaze || '',
         glazeMarked: block.glazeMarked || '',
         brand: block.brand || '',
+        freezing: block.freezing || '',
         cases: block.cases || '',
         kilos: block.kilos,
         pricePerKg: block.pricePerKg,
@@ -716,6 +734,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         for (const item of newLineItems) {
           if (!item.packing && defaults.packing) item.packing = defaults.packing;
           if (!item.brand && defaults.brand) item.brand = defaults.brand;
+          if (!item.freezing && defaults.freezing) item.freezing = defaults.freezing;
         }
       }
     }
@@ -872,7 +891,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
   // Add line item
   const addLineItem = () => {
-    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
   };
 
   // Remove line item
@@ -925,6 +944,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           ...item,
           packing: item.packing || defaults.packing || '',
           brand: item.brand || defaults.brand || '',
+          freezing: item.freezing || defaults.freezing || '',
         })));
       }
     }
@@ -992,6 +1012,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           ...item,
           packing: item.packing || defaults.packing || '',
           brand: item.brand || defaults.brand || '',
+          freezing: item.freezing || defaults.freezing || '',
         })));
       }
     }
@@ -1017,7 +1038,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     const lastLineItems = lastOrder.lineItems || [];
 
     // Extract defaults from the last order's line items
-    const defaults: { packing: string; brand: string } = { packing: '', brand: '' };
+    const defaults: { packing: string; brand: string; freezing: string } = { packing: '', brand: '', freezing: '' };
 
     for (const item of lastLineItems) {
       if (!defaults.packing && item.packing && typeof item.packing === 'string') {
@@ -1026,7 +1047,10 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       if (!defaults.brand && item.brand && typeof item.brand === 'string') {
         defaults.brand = item.brand;
       }
-      if (defaults.packing && defaults.brand) break;
+      if (!defaults.freezing && item.freezing && typeof item.freezing === 'string') {
+        defaults.freezing = item.freezing;
+      }
+      if (defaults.packing && defaults.brand && defaults.freezing) break;
     }
 
     return defaults;
@@ -1264,11 +1288,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             {/* Product Details Table */}
             {(() => {
               const hasBrand = lineItems.some(i => i.brand);
+              const hasFreezing = lineItems.some(i => i.freezing);
               const hasSize = lineItems.some(i => i.size);
               const hasGlaze = lineItems.some(i => i.glaze);
               const hasPacking = lineItems.some(i => i.packing);
               const hasCases = lineItems.some(i => i.cases);
-              const filledCols = [true, hasBrand, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
+              const filledCols = [true, hasBrand, hasFreezing, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
               const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
               return (
             <div className="mb-6">
@@ -1277,6 +1302,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                   <tr className="bg-gray-100">
                     <th className="border border-gray-300 px-3 py-2 text-left">Product</th>
                     {hasBrand && <th className="border border-gray-300 px-3 py-2 text-left">Brand</th>}
+                    {hasFreezing && <th className="border border-gray-300 px-3 py-2 text-left">Freezing</th>}
                     {hasSize && <th className="border border-gray-300 px-3 py-2 text-left">Size</th>}
                     {hasGlaze && <th className="border border-gray-300 px-3 py-2 text-left">Glaze</th>}
                     {hasPacking && <th className="border border-gray-300 px-3 py-2 text-left">Packing</th>}
@@ -1293,6 +1319,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                     <tr key={idx}>
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
                       {hasBrand && <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>}
+                      {hasFreezing && <td className="border border-gray-300 px-3 py-2">{item.freezing || '-'}</td>}
                       {hasSize && <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>}
                       {hasGlaze && <td className="border border-gray-300 px-3 py-2">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
                       {hasPacking && <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>}
@@ -1303,7 +1330,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-3 py-2" colSpan={1 + (hasBrand ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
+                    <td className="border border-gray-300 px-3 py-2" colSpan={1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
                     {hasCases && <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>}
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalKilos}</td>
                     <td className="border border-gray-300 px-3 py-2"></td>
@@ -1626,7 +1653,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-4 gap-4 mb-4">
+                      <div className="grid grid-cols-5 gap-4 mb-4">
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Product Name</label>
                           <input type="text" value={item.product} onChange={(e) => updateLineItem(idx, 'product', e.target.value)} placeholder="Product name" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" />
@@ -1634,6 +1661,17 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
                           <input type="text" value={item.brand || ''} onChange={(e) => updateLineItem(idx, 'brand', e.target.value)} placeholder="Brand name" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Freezing</label>
+                          <select value={item.freezing || ''} onChange={(e) => updateLineItem(idx, 'freezing', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                            <option value="">Select...</option>
+                            <option value="IQF">IQF</option>
+                            <option value="Semi IQF">Semi IQF</option>
+                            <option value="Blast">Blast</option>
+                            <option value="Block">Block</option>
+                            <option value="Plate">Plate</option>
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Size</label>
