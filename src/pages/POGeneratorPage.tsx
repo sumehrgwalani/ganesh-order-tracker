@@ -896,16 +896,25 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* Product Details Table */}
+            {(() => {
+              const hasBrand = lineItems.some(i => i.brand);
+              const hasSize = lineItems.some(i => i.size);
+              const hasGlaze = lineItems.some(i => i.glaze);
+              const hasPacking = lineItems.some(i => i.packing);
+              const hasCases = lineItems.some(i => i.cases);
+              const filledCols = [true, hasBrand, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
+              const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
+              return (
             <div className="mb-6">
               <table className="w-full border-collapse border border-gray-300 text-sm">
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border border-gray-300 px-3 py-2 text-left">Product</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left">Brand</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left">Size</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left">Glaze</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left">Packing</th>
-                    <th className="border border-gray-300 px-3 py-2 text-right">Cases</th>
+                    {hasBrand && <th className="border border-gray-300 px-3 py-2 text-left">Brand</th>}
+                    {hasSize && <th className="border border-gray-300 px-3 py-2 text-left">Size</th>}
+                    {hasGlaze && <th className="border border-gray-300 px-3 py-2 text-left">Glaze</th>}
+                    {hasPacking && <th className="border border-gray-300 px-3 py-2 text-left">Packing</th>}
+                    {hasCases && <th className="border border-gray-300 px-3 py-2 text-right">Cases</th>}
                     <th className="border border-gray-300 px-3 py-2 text-right">Kilos</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Price/Kg<br/><span className="text-xs">{poData.deliveryTerms} {poData.destination || '___'}</span></th>
                     <th className="border border-gray-300 px-3 py-2 text-right">
@@ -917,19 +926,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
+                      {hasBrand && <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>}
+                      {hasSize && <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>}
+                      {hasGlaze && <td className="border border-gray-300 px-3 py-2">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
+                      {hasPacking && <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>}
+                      {hasCases && <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>}
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right font-medium">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-3 py-2" colSpan={5}>Total</td>
-                    <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>
+                    <td className="border border-gray-300 px-3 py-2" colSpan={1 + (hasBrand ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
+                    {hasCases && <td className="border border-gray-300 px-3 py-2 text-right">{totalCases}</td>}
                     <td className="border border-gray-300 px-3 py-2 text-right">{totalKilos}</td>
                     <td className="border border-gray-300 px-3 py-2"></td>
                     <td className="border border-gray-300 px-3 py-2 text-right">U.S. ${grandTotal}</td>
@@ -937,21 +946,27 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 </tbody>
               </table>
             </div>
+              );
+            })()}
 
             {/* Terms Section */}
             <div className="space-y-2 text-sm text-gray-700 mb-6">
               <p><span className="font-medium">Total Value:</span> U.S. ${grandTotal}</p>
-              <p><span className="font-medium">Packing:</span> {lineItems.map(i => i.packing).filter(p => p).join(', ') || 'As per standard'}</p>
-              <p className="text-xs text-gray-500 ml-4">*We need a quality control of photos before loading</p>
-              <p className="text-xs text-gray-500 ml-4">*Different colors Tapes for different products & Lots.</p>
-              <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>
-              <p><span className="font-medium">Shipment Date:</span> {poData.deliveryDate ? formatDate(poData.deliveryDate) : '___________________'}</p>
-              <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'}</p>
+              {lineItems.some(i => i.packing) && (
+                <>
+                  <p><span className="font-medium">Packing:</span> {lineItems.map(i => i.packing).filter(p => p).join(', ')}</p>
+                  <p className="text-xs text-gray-500 ml-4">*We need a quality control of photos before loading</p>
+                  <p className="text-xs text-gray-500 ml-4">*Different colors Tapes for different products & Lots.</p>
+                </>
+              )}
+              {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
+              {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
+              {poData.commission && <p><span className="font-medium">Commission:</span> {poData.commission}</p>}
               {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
-              <p><span className="font-medium">Payment:</span> {poData.payment || '___________________'}</p>
+              {poData.payment && <p><span className="font-medium">Payment:</span> {poData.payment}</p>}
               <p><span className="font-medium">Variation:</span> +/- 5% in Quantity & Value</p>
               <p><span className="font-medium">Labelling Details:</span> As per previous. (pls send for approval)</p>
-              <p><span className="font-medium">Lote number:</span> {poData.loteNumber || '___________________'}</p>
+              {poData.loteNumber && <p><span className="font-medium">Lote number:</span> {poData.loteNumber}</p>}
             </div>
 
             {/* Important Notes */}
@@ -968,12 +983,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* Shipping Marks */}
-            <p className="text-sm mb-4"><span className="font-medium">Shipping Marks:</span> {poData.shippingMarks || '___________________'}</p>
+            {poData.shippingMarks && <p className="text-sm mb-4"><span className="font-medium">Shipping Marks:</span> {poData.shippingMarks}</p>}
 
             {/* Please Note Section */}
             <div className="text-sm text-gray-600 mb-6">
               <p className="font-medium mb-2">Please Note:</p>
-              <p>After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in {poData.buyerBank || '___________________'}.</p>
+              {poData.buyerBank && <p>After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in {poData.buyerBank}.</p>}
               <p className="mt-2">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
               <p className="mt-2">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
             </div>
