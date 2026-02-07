@@ -51,6 +51,8 @@ interface PODataInternal extends POFormData {
   date: string;
   supplier: string;
   supplierEmail: string;
+  supplierAddress: string;
+  supplierCountry: string;
   product: string;
   brand: string;
   buyer: string;
@@ -120,6 +122,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     date: new Date().toISOString().split('T')[0],
     supplier: '',
     supplierEmail: '',
+    supplierAddress: '',
+    supplierCountry: '',
     product: '',
     brand: '',
     buyer: '',
@@ -587,6 +591,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       ...poData,
       supplierEmail: email,
       supplier: supplier ? supplier.company : '',
+      supplierAddress: supplier?.address || '',
+      supplierCountry: supplier?.country || '',
       payment: autoPayment || poData.payment,
     });
   };
@@ -878,7 +884,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             <div className="mb-6">
               <p className="text-sm text-gray-600">To,</p>
               <p className="font-bold text-gray-800">{poData.supplier || '[EXPORTER NAME]'}</p>
-              <p className="text-gray-600">INDIA</p>
+              {poData.supplierAddress && <p className="text-gray-600">{poData.supplierAddress}</p>}
+              <p className="text-gray-600">{poData.supplierCountry?.toUpperCase() || 'INDIA'}</p>
             </div>
 
             {/* Greeting */}
