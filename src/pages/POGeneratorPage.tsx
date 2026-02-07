@@ -1093,13 +1093,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             {/* Terms Section */}
             <div className="space-y-2 text-sm text-gray-700 mb-6">
               <p><span className="font-medium">Total Value:</span> U.S. ${grandTotal}</p>
-              {lineItems.some(i => i.packing) && (
-                <>
-                  <p><span className="font-medium">Packing:</span> {lineItems.map(i => i.packing).filter(p => p).join(', ')}</p>
-                  <p className="text-xs text-gray-500 ml-4">*We need a quality control of photos before loading</p>
-                  <p className="text-xs text-gray-500 ml-4">*Different colors Tapes for different products & Lots.</p>
-                </>
-              )}
+              <p className="text-xs text-gray-500 ml-4">*We need a quality control of photos before loading</p>
+              <p className="text-xs text-gray-500 ml-4">*Different colors Tapes for different products & Lots.</p>
               {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
               {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
               <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
