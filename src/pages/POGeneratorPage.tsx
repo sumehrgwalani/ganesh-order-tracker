@@ -881,11 +881,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* To Section */}
-            <div className="mb-6">
-              <p className="text-sm text-gray-600">To,</p>
+            <div className="mb-6 max-w-xs text-sm leading-snug">
+              <p className="text-gray-500">To,</p>
               <p className="font-bold text-gray-800">{poData.supplier || '[EXPORTER NAME]'}</p>
               {poData.supplierAddress && <p className="text-gray-600">{poData.supplierAddress}</p>}
-              <p className="text-gray-600">{poData.supplierCountry?.toUpperCase() || 'INDIA'}</p>
+              <p className="text-gray-600 font-medium">{poData.supplierCountry?.toUpperCase() || 'INDIA'}</p>
             </div>
 
             {/* Greeting */}
