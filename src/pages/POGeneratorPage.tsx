@@ -707,6 +707,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       };
     });
 
+    // Fill in missing packing/brand from the last order between this supplier+buyer
+    const currentSupplier = detectedSupplier || poData.supplier;
+    const currentBuyer = detectedBuyer || poData.buyer;
+    if (currentSupplier && currentBuyer) {
+      const defaults = getLastOrderDefaults(currentSupplier, currentBuyer);
+      if (defaults) {
+        for (const item of newLineItems) {
+          if (!item.packing && defaults.packing) item.packing = defaults.packing;
+          if (!item.brand && defaults.brand) item.brand = defaults.brand;
+        }
+      }
+    }
+
     // Update state with recalculated values (cases, adjusted kilos, totals)
     if (newLineItems.length > 0) {
       setLineItems(recalculateAllLineItems(newLineItems));
@@ -894,14 +907,27 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       }
     }
 
+    const supplierCompany = supplier ? supplier.company : '';
     setPOData({
       ...poData,
       supplierEmail: email,
-      supplier: supplier ? supplier.company : '',
+      supplier: supplierCompany,
       supplierAddress: supplier?.address || '',
       supplierCountry: supplier?.country || '',
       payment: autoPayment || poData.payment,
     });
+
+    // Auto-fill packing/brand on existing line items from last order
+    if (supplierCompany && poData.buyer) {
+      const defaults = getLastOrderDefaults(supplierCompany, poData.buyer);
+      if (defaults) {
+        setLineItems(prev => prev.map(item => ({
+          ...item,
+          packing: item.packing || defaults.packing || '',
+          brand: item.brand || defaults.brand || '',
+        })));
+      }
+    }
   };
 
   // Handle buyer selection - with auto-fill from previous orders
@@ -957,6 +983,53 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',
     });
+
+    // Auto-fill packing/brand on existing line items from last order
+    if (poData.supplier && buyerCompany) {
+      const defaults = getLastOrderDefaults(poData.supplier, buyerCompany);
+      if (defaults) {
+        setLineItems(prev => prev.map(item => ({
+          ...item,
+          packing: item.packing || defaults.packing || '',
+          brand: item.brand || defaults.brand || '',
+        })));
+      }
+    }
+  };
+
+  // Pull defaults (packing, brand) from the most recent order between a supplier+buyer pair
+  const getLastOrderDefaults = (supplierName: string, buyerName: string) => {
+    if (!supplierName || !buyerName) return null;
+    const sLower = supplierName.toLowerCase();
+    const bLower = buyerName.toLowerCase();
+
+    // Find matching orders, sorted by date descending (most recent first)
+    const matchingOrders = orders
+      .filter(o =>
+        o.supplier?.toLowerCase().includes(sLower) &&
+        o.company?.toLowerCase().includes(bLower)
+      )
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    if (matchingOrders.length === 0) return null;
+
+    const lastOrder = matchingOrders[0];
+    const lastLineItems = lastOrder.lineItems || [];
+
+    // Extract defaults from the last order's line items
+    const defaults: { packing: string; brand: string } = { packing: '', brand: '' };
+
+    for (const item of lastLineItems) {
+      if (!defaults.packing && item.packing && typeof item.packing === 'string') {
+        defaults.packing = item.packing;
+      }
+      if (!defaults.brand && item.brand && typeof item.brand === 'string') {
+        defaults.brand = item.brand;
+      }
+      if (defaults.packing && defaults.brand) break;
+    }
+
+    return defaults;
   };
 
   // Submit for approval — go to sign-off page
