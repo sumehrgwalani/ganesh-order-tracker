@@ -157,7 +157,27 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   const [ccEmails, setCcEmails] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [buyerSearch, setBuyerSearch] = useState('');
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
+  const [showBuyerDropdown, setShowBuyerDropdown] = useState(false);
   const poDocRef = useRef<HTMLDivElement>(null);
+  const supplierDropdownRef = useRef<HTMLDivElement>(null);
+  const buyerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (supplierDropdownRef.current && !supplierDropdownRef.current.contains(e.target as Node)) {
+        setShowSupplierDropdown(false);
+      }
+      if (buyerDropdownRef.current && !buyerDropdownRef.current.contains(e.target as Node)) {
+        setShowBuyerDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Natural language parser function - handles Spanish, abbreviations, multi-product
   const parseNaturalLanguage = (text: string) => {
@@ -562,6 +582,15 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       supplier: detectedSupplier || prev.supplier,
       supplierEmail: detectedSupplierEmail || prev.supplierEmail,
     }));
+
+    // Sync search fields with parser-detected values
+    if (detectedSupplier) {
+      const matchedS = suppliers.find(s => s.company === detectedSupplier);
+      setSupplierSearch(detectedSupplier + (matchedS?.country ? ` (${matchedS.country})` : ''));
+    }
+    if (detectedBuyer) {
+      setBuyerSearch(detectedBuyer);
+    }
 
     // Show success notification
     const extracted = [];
@@ -1291,23 +1320,62 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                   <input type="date" value={poData.date} onChange={(e) => setPOData({...poData, date: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                 </div>
-                <div>
+                <div className="relative" ref={supplierDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
-                  <select value={poData.supplierEmail} onChange={(e) => handleSupplierChange(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">Select Supplier</option>
-                    {suppliers.map(s => (
-                      <option key={s.email} value={s.email}>{s.company}{s.country ? ` (${s.country})` : ''}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    value={supplierSearch}
+                    onChange={(e) => { setSupplierSearch(e.target.value); setShowSupplierDropdown(true); }}
+                    onFocus={() => setShowSupplierDropdown(true)}
+                    placeholder="Type to search or select..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {showSupplierDropdown && (() => {
+                    const filtered = suppliers.filter(s =>
+                      s.company.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                      (s.country || '').toLowerCase().includes(supplierSearch.toLowerCase())
+                    );
+                    return filtered.length > 0 ? (
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {filtered.map(s => (
+                          <button key={s.email} type="button" onClick={() => { handleSupplierChange(s.email); setSupplierSearch(s.company + (s.country ? ` (${s.country})` : '')); setShowSupplierDropdown(false); }} className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex justify-between items-center">
+                            <span className="font-medium">{s.company}</span>
+                            {s.country && <span className="text-xs text-gray-400">{s.country}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
-                <div>
+                <div className="relative" ref={buyerDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Buyer / Principal *</label>
-                  <select value={poData.buyer} onChange={(e) => { const buyer = buyers.find(b => b.company === e.target.value); handleBuyerChange(buyer?.email || ''); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">Select Buyer</option>
-                    {[...new Set(buyers.map(b => b.company))].map(company => (
-                      <option key={company} value={company}>{company}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    value={buyerSearch}
+                    onChange={(e) => { setBuyerSearch(e.target.value); setShowBuyerDropdown(true); }}
+                    onFocus={() => setShowBuyerDropdown(true)}
+                    placeholder="Type to search or select..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {showBuyerDropdown && (() => {
+                    const uniqueBuyers = [...new Set(buyers.map(b => b.company))];
+                    const filtered = uniqueBuyers.filter(company =>
+                      company.toLowerCase().includes(buyerSearch.toLowerCase())
+                    );
+                    return filtered.length > 0 ? (
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {filtered.map(company => {
+                          const buyer = buyers.find(b => b.company === company);
+                          return (
+                            <button key={company} type="button" onClick={() => { handleBuyerChange(buyer?.email || ''); setBuyerSearch(company); setShowBuyerDropdown(false); }} className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex justify-between items-center">
+                              <span className="font-medium">{company}</span>
+                              {buyer?.country && <span className="text-xs text-gray-400">{buyer.country}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product Description</label>
