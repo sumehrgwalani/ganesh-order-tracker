@@ -31,6 +31,7 @@ interface POLineItem {
   product: string;
   size: string;
   glaze: string;
+  glazeMarked: string;
   packing: string;
   brand: string;
   cases: string | number;
@@ -138,7 +139,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   });
 
   const [lineItems, setLineItems] = useState<POLineItem[]>([
-    { product: '', size: '', glaze: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
+    { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
   ]);
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
@@ -276,6 +277,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           product: productName,
           size: '',
           glaze: '',
+          glazeMarked: '',
           kilos: '',
           pricePerKg: '',
           packing: '',
@@ -537,7 +539,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
   // Add line item
   const addLineItem = () => {
-    setLineItems([...lineItems, { product: '', size: '', glaze: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
   };
 
   // Remove line item
@@ -878,7 +880,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <span className="font-medium">
                   {lineItems.filter(i => i.product).map((item, idx, arr) => {
                     let desc = item.product;
-                    if (item.glaze) desc += ` ${item.glaze}`;
+                    const displayGlaze = item.glazeMarked || item.glaze;
+                    if (displayGlaze) desc += ` ${displayGlaze}`;
                     if (idx < arr.length - 1) return desc + ', ';
                     return desc;
                   }).join('') || '______________________'}
@@ -913,7 +916,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.glaze || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2">{item.glazeMarked || item.glaze || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
@@ -1128,8 +1131,11 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                           <input type="text" value={item.size} onChange={(e) => updateLineItem(idx, 'size', e.target.value)} placeholder="Size" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Glaze</label>
-                          <input type="text" value={item.glaze} onChange={(e) => updateLineItem(idx, 'glaze', e.target.value)} placeholder="Glaze %" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Glaze (Actual)</label>
+                          <input type="text" value={item.glaze} onChange={(e) => updateLineItem(idx, 'glaze', e.target.value)} placeholder="e.g. 25%" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                          {/* Marked glaze row below */}
+                          <label className="block text-xs font-medium text-orange-500 mb-1 mt-2">Marked As</label>
+                          <input type="text" value={item.glazeMarked || ''} onChange={(e) => updateLineItem(idx, 'glazeMarked', e.target.value)} placeholder="e.g. 20%" className="w-full px-3 py-2.5 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm bg-orange-50" />
                         </div>
                       </div>
                       <div className="grid grid-cols-5 gap-3">
