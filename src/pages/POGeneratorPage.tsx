@@ -251,6 +251,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       'baby squid': 'Baby Squid',
       'vannamei pud': 'Vannamei PUD',
       'vannamei hlso': 'Vannamei HLSO',
+      'calamar troceado': 'Cut Squid',
+      'calamar entero': 'Whole Squid',
+      'sepia entera': 'Whole Cuttlefish',
+      'sepia troceada': 'Cut Cuttlefish',
+      'cut squid skin on': 'Cut Squid Skin On',
+      'cut squid skin off': 'Cut Squid Skin Off',
     };
 
     // Product abbreviation map
@@ -319,23 +325,133 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       return '';
     };
 
+    // Helper: extract brand from parentheses like "(Marca Oliver)", "( PBO )", "(Marca Bautismar)"
+    const extractBrand = (text: string): { brand: string; cleaned: string } => {
+      const brandMatch = text.match(/\(\s*(?:Marca\s+)?(.+?)\s*\)/i);
+      if (brandMatch) {
+        return { brand: brandMatch[1].trim(), cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ').trim() };
+      }
+      return { brand: '', cleaned: text };
+    };
+
     // Parse multi-product blocks
     const productBlocks: any[] = [];
     let currentBlock: any = null;
     // Template for header-with-subrows format (stores shared product/packing/glaze)
     let headerTemplate: any = null;
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const lineLower = line.toLowerCase();
 
-      // Skip TOTAL lines
+      // Skip TOTAL lines and Container labels
       if (lineLower.match(/^total\b/i)) continue;
+      if (lineLower.match(/^container\s*\d+/i)) continue;
+
+      // Skip instruction lines (e.g. "please only prepare as they might add...")
+      if (lineLower.includes('please only prepare') || lineLower.includes('please prepare') ||
+          lineLower.includes('might add') || lineLower.includes('they may add')) continue;
+
+      // === FORMAT 3: "PACKING - 6 X 1 KG BAG 25% GLAZE" line (belongs to previous product block) ===
+      const isPackingLine = lineLower.match(/^packing\s*[-–:]/i);
+      if (isPackingLine && currentBlock) {
+        // Extract packing from this line
+        const packMatch = line.match(/(\d+\s*[xX]\s*\d+\s*(?:kg|kilo)?)/i);
+        if (packMatch) {
+          let packing = packMatch[1].replace(/kilo/i, 'kg');
+          if (lineLower.includes('bag') || lineLower.includes('bolsa')) {
+            packing += ' Bag';
+          } else if (lineLower.includes('bulk') || lineLower.includes('granel')) {
+            packing += ' Bulk';
+          }
+          currentBlock.packing = packing;
+        }
+        const bulkPackMatch = line.match(/(\d+)\s*(?:kg|kilo)\s*(?:bulk|granel)/i);
+        if (bulkPackMatch && !packMatch) {
+          currentBlock.packing = bulkPackMatch[1] + ' kg Bulk';
+        }
+        // Extract glaze from same line
+        const glazeMatch = line.match(/(\d+)%\s*(?:glaseo|glaze)/i);
+        if (glazeMatch) {
+          currentBlock.glaze = glazeMatch[1] + '% Glaze';
+        }
+        continue;
+      }
+
+      // === FORMAT 4: Compact size+MT+price line: "40/60  07 MT  3.30 $" or "10/20 7MT$5.80" ===
+      // Also handles "20/40 10MT $4.60" and "80/UP  04 MT  2.65 $"
+      const compactSizeMtPrice = line.match(/^(\d+\/\d+|U\/\d+|\d+\/UP)\s+(\d+)\s*MT\s*\$?\s*([\d.]+)\s*\$?/i);
+      if (compactSizeMtPrice) {
+        if (currentBlock) {
+          // If current block already has a size, save it as a separate product and create a new one
+          if (currentBlock.size && currentBlock.kilos) {
+            productBlocks.push(currentBlock);
+            currentBlock = {
+              ...currentBlock,
+              size: compactSizeMtPrice[1],
+              kilos: (parseFloat(compactSizeMtPrice[2]) * 1000).toString(),
+              pricePerKg: compactSizeMtPrice[3],
+              cases: '',
+              notes: ''
+            };
+          } else {
+            currentBlock.size = compactSizeMtPrice[1];
+            currentBlock.kilos = (parseFloat(compactSizeMtPrice[2]) * 1000).toString();
+            currentBlock.pricePerKg = compactSizeMtPrice[3];
+          }
+        } else {
+          // Standalone compact line — inherit product from previous block if possible
+          const prevProduct = productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].product : '';
+          currentBlock = {
+            product: prevProduct,
+            size: compactSizeMtPrice[1],
+            glaze: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].glaze || '' : '',
+            glazeMarked: '',
+            kilos: (parseFloat(compactSizeMtPrice[2]) * 1000).toString(),
+            pricePerKg: compactSizeMtPrice[3],
+            packing: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].packing || '' : '',
+            brand: productBlocks.length > 0 ? productBlocks[productBlocks.length - 1].brand || '' : '',
+            cases: '',
+            notes: ''
+          };
+        }
+        continue;
+      }
+
+      // === FORMAT 5: Compact "Product-QuantityMT $Price" like "Cut Squid-3MT $3.90" or "Cut Squid 20MT $3.90" ===
+      const productMtPriceMatch = line.match(/^([a-zA-Z][a-zA-Z\s]+?)\s*[-–]?\s*(\d+)\s*MT\s*\$?\s*([\d.]+)\s*\$?/i);
+      if (productMtPriceMatch && !isPackingLine && !lineLower.match(/^packing/i)) {
+        // Make sure this isn't a detail line for an existing block
+        const possibleProduct = productMtPriceMatch[1].trim();
+        const possibleProductLower = possibleProduct.toLowerCase();
+        // Only treat as product line if it has a seafood/product keyword
+        const isProductName = [...seafoodKeywords, ...friesKeywords, 'cut', 'baby', 'ring', 'tube', 'tentacle', 'whole'].some(kw => possibleProductLower.includes(kw));
+
+        if (isProductName) {
+          if (currentBlock) productBlocks.push(currentBlock);
+          const productName = resolveProductName(possibleProduct);
+          currentBlock = {
+            product: productName,
+            size: '',
+            glaze: '',
+            glazeMarked: '',
+            kilos: (parseFloat(productMtPriceMatch[2]) * 1000).toString(),
+            pricePerKg: productMtPriceMatch[3],
+            packing: '',
+            brand: '',
+            cases: '',
+            notes: ''
+          };
+          continue;
+        }
+      }
 
       // === FORMAT 2: Header with inline packing+glaze, followed by size/cases/price sub-rows ===
       // Detect header like "CFWC IQF 6kg Bulk with 20% Glaze"
       const isHeaderWithDetails = /^[a-zA-Z]/.test(line) &&
         (lineLower.includes('glaze') || lineLower.includes('glaseo')) &&
         lineLower.match(/\d+\s*(?:kg|kilo)/i) &&
+        !isPackingLine &&
         line.length > 10;
 
       // Detect sub-row like "U/1  150c/s  7.30$/kg" or "Large  200c/s  5.60$/kg"
@@ -396,6 +512,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           cases,
           pricePerKg: price,
           packing: headerTemplate.packing,
+          brand: '',
           notes: ''
         });
         continue;
@@ -414,6 +531,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         !lineLower.includes('granel') &&
         !lineLower.includes('bolsa') &&
         !lineLower.includes('marked as') &&
+        !lineLower.includes('packing') &&
         !lineLower.match(/^\d+\s*[xX]\s*\d+/) &&
         !lineLower.match(/^\d+\s*mt\b/i) &&
         !lineLower.match(/^\d+\s*kilo/i) &&
@@ -421,16 +539,26 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         !lineLower.match(/^\d+-\d+\s*piezas/i) &&
         line.length > 2;
 
-      // Check for buyer/supplier line
-      const isBuyerSupplierLine = line.split(/\s+/).every((word: string) => {
-        const w = word.toLowerCase();
-        return buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 3;
-      }) && line.length < 30;
+      // Check for buyer/supplier instruction line (e.g. "Raunaq EG, please only prepare...")
+      const isBuyerSupplierLine = (() => {
+        // Check if all meaningful words are buyer/supplier abbreviations
+        const lineWords = line.split(/[\s,]+/).map((w: string) => w.toLowerCase()).filter((w: string) => w.length > 0);
+        const allAbbreviations = lineWords.every((w: string) =>
+          buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 3
+        );
+        if (allAbbreviations && line.length < 30) return true;
+        // Also check lines that mention names + instruction words
+        const hasAbbrev = lineWords.some((w: string) => buyerAbbreviations[w] || supplierAbbreviations[w]);
+        const hasInstruction = lineLower.includes('please') || lineLower.includes('prepare') || lineLower.includes('only');
+        return hasAbbrev && hasInstruction;
+      })();
 
       if (isProductLine && !isBuyerSupplierLine && !headerTemplate) {
         if (currentBlock) productBlocks.push(currentBlock);
 
-        const productName = resolveProductName(line);
+        // Extract brand from parentheses (Marca Oliver, PBO, etc.)
+        const { brand, cleaned } = extractBrand(line);
+        const productName = resolveProductName(cleaned);
 
         currentBlock = {
           product: productName,
@@ -440,6 +568,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           kilos: '',
           pricePerKg: '',
           packing: '',
+          brand: brand,
+          cases: '',
           notes: ''
         };
       } else if (currentBlock) {
@@ -457,7 +587,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           currentBlock.glazeMarked = markedGlazeMatch[1] + '% Glaze';
         }
 
-        // Quantity and price (4MT U/1 $6.10)
+        // Quantity and price with size (4MT U/1 $6.10) or (U/1 4MT $6.10)
         const qtyPriceMatch = line.match(/(\d+)\s*MT\s+(U\/\d+|\d+\/\d+)?\s*\$?([\d.]+)?/i);
         if (qtyPriceMatch) {
           currentBlock.kilos = (parseFloat(qtyPriceMatch[1]) * 1000).toString();
@@ -465,9 +595,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           if (qtyPriceMatch[3]) currentBlock.pricePerKg = qtyPriceMatch[3];
         }
 
+        // Size + MT + Price with $ at end: "40/60  07 MT  3.30 $"
+        const sizeMtPriceDollarEnd = line.match(/(U\/\d+|\d+\/\d+|\d+\/UP)\s+(\d+)\s*MT\s+([\d.]+)\s*\$/i);
+        if (sizeMtPriceDollarEnd && !qtyPriceMatch) {
+          currentBlock.size = sizeMtPriceDollarEnd[1];
+          currentBlock.kilos = (parseFloat(sizeMtPriceDollarEnd[2]) * 1000).toString();
+          currentBlock.pricePerKg = sizeMtPriceDollarEnd[3];
+        }
+
         // Just quantity in MT (6MT $3.60)
-        const mtPriceMatch = line.match(/(\d+)\s*MT\s*\$?([\d.]+)/i);
-        if (mtPriceMatch && !qtyPriceMatch) {
+        const mtPriceMatch = line.match(/(\d+)\s*MT\s*\$?\s*([\d.]+)/i);
+        if (mtPriceMatch && !qtyPriceMatch && !sizeMtPriceDollarEnd) {
           currentBlock.kilos = (parseFloat(mtPriceMatch[1]) * 1000).toString();
           currentBlock.pricePerKg = mtPriceMatch[2];
         }
@@ -478,14 +616,16 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           currentBlock.size = sizeMatch[1];
         }
 
-        // Packing (6x1 kilo bolsa con rider, 10 kilo Granel)
+        // Packing (6x1 kilo bolsa con rider, 10 kilo Granel, 6 X 1 KG BAG)
         const packingMatch = line.match(/(\d+\s*[xX]\s*\d+\s*(?:kilo?|kg)?)\s*(.*)?/i);
         if (packingMatch) {
           let packing = packingMatch[1].replace(/kilo/i, 'kg');
           const extra = packingMatch[2] || '';
           if (extra.toLowerCase().includes('bolsa con rider') || extra.toLowerCase().includes('con rider')) {
             packing += ' Bag with Rider';
-          } else if (extra.toLowerCase().includes('bolsa')) {
+          } else if (extra.toLowerCase().includes('bolsa imprimida') || extra.toLowerCase().includes('printed bag') || extra.toLowerCase().includes('imprimida')) {
+            packing += ' Printed Bag';
+          } else if (extra.toLowerCase().includes('bolsa') || extra.toLowerCase().includes('bag')) {
             packing += ' Bag';
           }
           currentBlock.packing = packing;
@@ -503,8 +643,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           currentBlock.notes = skewMatch[1] + ' pcs/skewer';
         }
 
-        // Standalone price ($5.05)
-        const priceMatch = line.match(/\$\s*([\d.]+)/);
+        // Standalone price ($5.05 or 3.90 $)
+        const priceMatch = line.match(/\$\s*([\d.]+)/) || line.match(/([\d.]+)\s*\$/);
         if (priceMatch && !currentBlock.pricePerKg) {
           currentBlock.pricePerKg = priceMatch[1];
         }
@@ -557,7 +697,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         size: sizeStr,
         glaze: block.glaze || '',
         glazeMarked: block.glazeMarked || '',
-        brand: '',
+        brand: block.brand || '',
         cases: block.cases || '',
         kilos: block.kilos,
         pricePerKg: block.pricePerKg,
