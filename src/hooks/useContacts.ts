@@ -64,7 +64,7 @@ export function useContacts(orgId: string | null) {
           role: formData.role || formData.category || 'Supplier',
           phone: formData.phone || '',
           address: formData.address || '',
-          country: '',
+          country: formData.country || '',
           initials,
           color: formData.color || 'bg-gray-500',
           notes: '',

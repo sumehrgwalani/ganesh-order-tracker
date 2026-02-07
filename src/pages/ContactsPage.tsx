@@ -124,7 +124,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
   ];
 
   // Country flags for visual display
-  const countryFlags: Record<string, string> = { India: '🇮🇳', China: '🇨🇳', Spain: '🇪🇸', Portugal: '🇵🇹', Italy: '🇮🇹', USA: '🇺🇸', Greece: '🇬🇷' };
+  const countryFlags: Record<string, string> = { India: '🇮🇳', China: '🇨🇳', Spain: '🇪🇸', Portugal: '🇵🇹', Italy: '🇮🇹', USA: '🇺🇸', Greece: '🇬🇷', Vietnam: '🇻🇳', Thailand: '🇹🇭', Indonesia: '🇮🇩', Ecuador: '🇪🇨', Chile: '🇨🇱', Peru: '🇵🇪', Argentina: '🇦🇷', Morocco: '🇲🇦', Turkey: '🇹🇷', Bangladesh: '🇧🇩', Pakistan: '🇵🇰', UK: '🇬🇧', Germany: '🇩🇪', France: '🇫🇷', Japan: '🇯🇵', 'South Korea': '🇰🇷' };
 
   const locationFilters = [
     { id: 'all', label: 'All Locations', flag: '🌍' },
@@ -150,6 +150,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
         role,
         phone: contactData.phone || '',
         address: contactData.address || '',
+        country: contactData.country || editingContact.country || '',
         color: contactData.color || editingContact.color,
         initials,
         category,
@@ -167,6 +168,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
           role: dbRole,
           phone: contactData.phone || '',
           address: contactData.address || '',
+          country: contactData.country || '',
           color: contactData.color,
           initials,
         }).catch(err => console.error('Failed to save contact:', err));
@@ -181,7 +183,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
         role,
         phone: contactData.phone || '',
         address: contactData.address || '',
-        country: 'Unknown',
+        country: contactData.country || '',
         category,
         color: contactData.color || 'bg-blue-500',
         initials,
@@ -260,6 +262,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
       company: contact.company,
       role: contact.role,
       category: contact.category || 'other',
+      country: contact.country || '',
       color: contact.color || 'bg-blue-500',
       initials: contact.initials,
     };

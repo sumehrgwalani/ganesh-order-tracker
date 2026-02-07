@@ -18,6 +18,7 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
     company: '',
     role: '',
     category: 'other',
+    country: '',
     color: 'bg-blue-500'
   });
 
@@ -88,6 +89,41 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="123 Main St, City, Country"
             />
+          </div>
+
+          {/* Country */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+            <select
+              value={formData.country || ''}
+              onChange={(e) => setFormData({...formData, country: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select Country</option>
+              <option value="India">🇮🇳 India</option>
+              <option value="China">🇨🇳 China</option>
+              <option value="Spain">🇪🇸 Spain</option>
+              <option value="Portugal">🇵🇹 Portugal</option>
+              <option value="Italy">🇮🇹 Italy</option>
+              <option value="USA">🇺🇸 USA</option>
+              <option value="Greece">🇬🇷 Greece</option>
+              <option value="Vietnam">🇻🇳 Vietnam</option>
+              <option value="Thailand">🇹🇭 Thailand</option>
+              <option value="Indonesia">🇮🇩 Indonesia</option>
+              <option value="Ecuador">🇪🇨 Ecuador</option>
+              <option value="Chile">🇨🇱 Chile</option>
+              <option value="Peru">🇵🇪 Peru</option>
+              <option value="Argentina">🇦🇷 Argentina</option>
+              <option value="Morocco">🇲🇦 Morocco</option>
+              <option value="Turkey">🇹🇷 Turkey</option>
+              <option value="Bangladesh">🇧🇩 Bangladesh</option>
+              <option value="Pakistan">🇵🇰 Pakistan</option>
+              <option value="UK">🇬🇧 UK</option>
+              <option value="Germany">🇩🇪 Germany</option>
+              <option value="France">🇫🇷 France</option>
+              <option value="Japan">🇯🇵 Japan</option>
+              <option value="South Korea">🇰🇷 South Korea</option>
+            </select>
           </div>
 
           {/* Company */}

@@ -21,6 +21,7 @@ export interface ContactFormData {
   role: string;
   category: string;
   color: string;
+  country?: string;
   initials?: string;
 }
 
