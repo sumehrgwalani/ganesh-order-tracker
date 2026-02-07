@@ -880,8 +880,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <span className="font-medium">
                   {lineItems.filter(i => i.product).map((item, idx, arr) => {
                     let desc = item.product;
-                    const displayGlaze = item.glazeMarked || item.glaze;
-                    if (displayGlaze) desc += ` ${displayGlaze}`;
+                    if (item.glaze && item.glazeMarked) {
+                      desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
+                    } else if (item.glaze) {
+                      desc += ` ${item.glaze}`;
+                    }
                     if (idx < arr.length - 1) return desc + ', ';
                     return desc;
                   }).join('') || '______________________'}
@@ -916,7 +919,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                       <td className="border border-gray-300 px-3 py-2">{item.product || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.brand || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.size || '-'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{item.glazeMarked || item.glaze || '-'}</td>
+                      <td className="border border-gray-300 px-3 py-2">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2">{item.packing || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.cases || '-'}</td>
                       <td className="border border-gray-300 px-3 py-2 text-right">{item.kilos || '-'}</td>
