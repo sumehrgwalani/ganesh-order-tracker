@@ -132,40 +132,62 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
   ];
 
   const handleSaveContact = async (contactData: ContactFormData) => {
-    try {
-      if (editingContact) {
-        // Update existing contact in Supabase
-        if (onUpdateContact) {
-          await onUpdateContact(editingContact.email, {
-            name: contactData.name,
-            company: contactData.company,
-            role: contactData.role || contactData.category || 'Supplier',
-            phone: contactData.phone || '',
-            address: contactData.address || '',
-            color: contactData.color,
-            initials: contactData.initials || contactData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-          });
-          // Refetch to sync UI with DB
-          if (onRefresh) await onRefresh();
-        } else {
-          // Fallback: local-only update
-          const contact: Contact = { id: editingContact.id, email: contactData.email, name: contactData.name, company: contactData.company, role: contactData.role, phone: contactData.phone || '', country: editingContact.country || 'Unknown', category: contactData.category, color: contactData.color, initials: contactData.initials || '' };
-          setContacts(contacts.map(c => c.id === editingContact.id ? { ...contact, id: editingContact.id } : c));
-        }
-      } else {
-        // Add new contact to Supabase
-        if (onAddContact) {
-          await onAddContact(contactData);
-          if (onRefresh) await onRefresh();
-        } else {
-          // Fallback: local-only add
-          const contact: Contact = { id: contactData.email, email: contactData.email, name: contactData.name, company: contactData.company, role: contactData.role, phone: contactData.phone || '', country: 'Unknown', category: contactData.category, color: contactData.color, initials: contactData.initials || '' };
-          setContacts([...contacts, contact]);
-        }
+    const initials = contactData.initials || contactData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const role = contactData.role || contactData.category || 'Supplier';
+    const category = role.toLowerCase().includes('supplier') ? 'suppliers' :
+                     role.toLowerCase().includes('buyer') ? 'buyers' :
+                     role.toLowerCase().includes('inspector') ? 'inspectors' : 'other';
+
+    if (editingContact) {
+      // Optimistic local update — instant UI feedback
+      const updated: Contact = {
+        ...editingContact,
+        name: contactData.name,
+        company: contactData.company,
+        role,
+        phone: contactData.phone || '',
+        address: contactData.address || '',
+        color: contactData.color || editingContact.color,
+        initials,
+        category,
+      };
+      setContacts(prev => prev.map(c => c.id === editingContact.id ? updated : c));
+
+      // Persist to Supabase in background
+      if (onUpdateContact) {
+        onUpdateContact(editingContact.email, {
+          name: contactData.name,
+          company: contactData.company,
+          role,
+          phone: contactData.phone || '',
+          address: contactData.address || '',
+          color: contactData.color,
+          initials,
+        }).catch(err => console.error('Failed to save contact:', err));
       }
-    } catch (err) {
-      console.error('Failed to save contact:', err);
+    } else {
+      // Optimistic local add
+      const newContact: Contact = {
+        id: contactData.email,
+        email: contactData.email,
+        name: contactData.name,
+        company: contactData.company,
+        role,
+        phone: contactData.phone || '',
+        address: contactData.address || '',
+        country: 'Unknown',
+        category,
+        color: contactData.color || 'bg-blue-500',
+        initials,
+      };
+      setContacts(prev => [...prev, newContact]);
+
+      // Persist to Supabase in background
+      if (onAddContact) {
+        onAddContact(contactData).catch(err => console.error('Failed to add contact:', err));
+      }
     }
+
     setShowModal(false);
     setEditingContact(null);
   };
@@ -177,16 +199,12 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
 
   const handleDeleteContact = async (contactId: string) => {
     if (confirm('Are you sure you want to delete this contact?')) {
-      try {
-        // contactId is the email (used as id)
-        if (onDeleteContact) {
-          await onDeleteContact(contactId);
-          if (onRefresh) await onRefresh();
-        } else {
-          setContacts(contacts.filter(c => c.id !== contactId));
-        }
-      } catch (err) {
-        console.error('Failed to delete contact:', err);
+      // Optimistic local delete — instant UI feedback
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+
+      // Persist to Supabase in background
+      if (onDeleteContact) {
+        onDeleteContact(contactId).catch(err => console.error('Failed to delete contact:', err));
       }
     }
   };
