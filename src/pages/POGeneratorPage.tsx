@@ -155,6 +155,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   const [rawInput, setRawInput] = useState('');
   const [sendTo, setSendTo] = useState('');
   const [ccEmails, setCcEmails] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const poDocRef = useRef<HTMLDivElement>(null);
 
@@ -791,6 +792,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       return;
     }
     setSendTo(poData.supplierEmail || '');
+    setEmailSubject(`NEW PO ${poData.poNumber}`);
     setStatus('pending_approval');
     setShowPreview(true);
     setShowSignOff(true);
@@ -857,7 +859,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           timestamp: new Date().toISOString(),
           from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
           to: sendTo || poData.supplierEmail,
-          subject: `NEW PURCHASE ORDER - ${poData.poNumber} - ${poData.buyer}`,
+          subject: emailSubject || `NEW PO ${poData.poNumber}`,
           body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
           hasAttachment: true,
           attachments: [`${poData.poNumber.replace(/\//g, '_')}.pdf`]
@@ -1153,6 +1155,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                     <button onClick={downloadPDF} disabled={generatingPdf} className="px-5 py-2.5 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 flex items-center gap-2 font-medium disabled:opacity-50">
                       <Icon name="Download" size={16} /> {generatingPdf ? 'Generating PDF...' : 'Download PDF'}
                     </button>
+                  </div>
+
+                  {/* Subject */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                    <input
+                      type="text"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
                   </div>
 
                   {/* Send To */}
