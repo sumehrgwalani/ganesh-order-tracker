@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, ReactNode, Dispatch, SetStateAction } from 'react';
+import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
 import { CONTACTS } from '../data/contacts';
@@ -148,9 +149,14 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
   const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
   const [showPreview, setShowPreview] = useState(false);
+  const [showSignOff, setShowSignOff] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
   const [showParser, setShowParser] = useState(true);
   const [rawInput, setRawInput] = useState('');
+  const [sendTo, setSendTo] = useState('');
+  const [ccEmails, setCcEmails] = useState('');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const poDocRef = useRef<HTMLDivElement>(null);
 
   // Natural language parser function - handles Spanish, abbreviations, multi-product
   const parseNaturalLanguage = (text: string) => {
@@ -777,16 +783,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     });
   };
 
-  // Submit for approval
+  // Submit for approval — go to sign-off page
   const submitForApproval = () => {
     if (!poData.supplier || !poData.buyer || lineItems.every(item => !item.product)) {
       setNotification({ type: 'error', message: 'Please fill in required fields: Supplier, Buyer, and at least one product line.' });
       setTimeout(() => setNotification(null), 4000);
       return;
     }
+    setSendTo(poData.supplierEmail || '');
     setStatus('pending_approval');
     setShowPreview(true);
-    setNotification({ type: 'info', message: '🔔 Purchase Order ready for your review and sign-off!' });
+    setShowSignOff(true);
   };
 
   // Approve PO
@@ -796,12 +803,35 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Reject/Edit PO
+  // Reject/Edit PO — back to form
   const rejectPO = () => {
     setStatus('draft');
     setShowPreview(false);
+    setShowSignOff(false);
     setNotification({ type: 'warning', message: 'Returned to draft mode for editing.' });
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Download PO as PDF
+  const downloadPDF = async () => {
+    if (!poDocRef.current) return;
+    setGeneratingPdf(true);
+    try {
+      const filename = `${poData.poNumber.replace(/\//g, '_')}.pdf`;
+      await html2pdf().set({
+        margin: [10, 10, 10, 10],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(poDocRef.current).save();
+      setNotification({ type: 'success', message: `PDF downloaded as ${filename}` });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      setNotification({ type: 'error', message: 'Failed to generate PDF. Please try again.' });
+      setTimeout(() => setNotification(null), 4000);
+    }
+    setGeneratingPdf(false);
   };
 
   // Send PO to supplier
@@ -826,7 +856,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           stage: 1,
           timestamp: new Date().toISOString(),
           from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
-          to: poData.supplierEmail,
+          to: sendTo || poData.supplierEmail,
           subject: `NEW PURCHASE ORDER - ${poData.poNumber} - ${poData.buyer}`,
           body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
           hasAttachment: true,
@@ -919,70 +949,15 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       {showPreview ? (
         /* PO Preview/Document View */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          {/* Action Bar for Sign-off */}
-          {status === 'pending_approval' && (
-            <div className="bg-yellow-50 border-b border-yellow-200 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <Icon name="AlertCircle" size={20} className="text-yellow-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-yellow-800">Review Required</p>
-                  <p className="text-sm text-yellow-600">Please review the Purchase Order below and sign off before sending.</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={rejectPO} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-                  <Icon name="X" size={16} /> Edit
-                </button>
-                <button onClick={approvePO} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
-                  <Icon name="CheckCircle" size={16} /> Approve & Sign
-                </button>
-              </div>
-            </div>
-          )}
-
-          {status === 'approved' && (
-            <div className="bg-green-50 border-b border-green-200 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <Icon name="CheckCircle" size={20} className="text-green-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-green-800">Purchase Order Approved</p>
-                  <p className="text-sm text-green-600">Ready to send to {poData.supplier}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={rejectPO} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
-                  Edit
-                </button>
-                <button onClick={sendPO} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                  <Icon name="Send" size={16} /> Send to Supplier
-                </button>
-              </div>
-            </div>
-          )}
-
-          {status === 'sent' && (
-            <div className="bg-blue-50 border-b border-blue-200 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Icon name="CheckCircle" size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-blue-800">Purchase Order Sent!</p>
-                  <p className="text-sm text-blue-600">Sent to {poData.supplierEmail} on {formatDate(new Date().toISOString())}</p>
-                </div>
-              </div>
-              <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-                <Icon name="Download" size={16} /> Download PDF
-              </button>
+          {/* Status Banner */}
+          {showSignOff && status !== 'sent' && (
+            <div className="bg-blue-50 border-b border-blue-200 p-3 text-center">
+              <p className="text-sm font-medium text-blue-700">Review the Purchase Order below, then scroll down to sign off and send.</p>
             </div>
           )}
 
           {/* PO Document Preview */}
-          <div className="p-8 max-w-4xl mx-auto">
+          <div ref={poDocRef} className="p-8 max-w-4xl mx-auto bg-white">
             {/* Header with Logo */}
             <div className="flex items-center mb-8 pb-6 border-b-2 border-gray-200">
               <div className="mr-6">
@@ -1153,8 +1128,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           </div>
 
           {/* Bottom Action Bar */}
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
-            {status === 'draft' && (
+          {!showSignOff ? (
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <button onClick={() => setShowPreview(false)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
                   <Icon name="Edit" size={16} /> Back to Edit
@@ -1163,35 +1138,74 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                   <Icon name="CheckCircle" size={16} /> Submit for Sign-off
                 </button>
               </div>
-            )}
-            {status === 'pending_approval' && (
-              <div className="flex items-center justify-between">
-                <button onClick={rejectPO} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
-                  <Icon name="Edit" size={16} /> Back to Edit
-                </button>
-                <button onClick={approvePO} className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-sm">
-                  <Icon name="CheckCircle" size={16} /> Approve & Sign
-                </button>
-              </div>
-            )}
-            {status === 'approved' && (
-              <div className="flex items-center justify-between">
-                <button onClick={rejectPO} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
-                  <Icon name="Edit" size={16} /> Back to Edit
-                </button>
-                <button onClick={sendPO} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm">
-                  <Icon name="Send" size={16} /> Send to Supplier
-                </button>
-              </div>
-            )}
-            {status === 'sent' && (
-              <div className="flex items-center justify-center">
-                <div className="px-6 py-2.5 bg-green-100 text-green-700 rounded-lg flex items-center gap-2 font-medium">
-                  <Icon name="CheckCircle" size={16} /> Purchase Order Sent Successfully
+            </div>
+          ) : (
+            <div className="border-t-2 border-blue-200 bg-gradient-to-b from-blue-50 to-white p-6">
+              {status !== 'sent' ? (
+                <div className="max-w-2xl mx-auto space-y-5">
+                  <div className="text-center mb-2">
+                    <h3 className="text-lg font-bold text-gray-800">Sign-off & Send</h3>
+                    <p className="text-sm text-gray-500">Review the PO above, download the PDF, and send to the supplier.</p>
+                  </div>
+
+                  {/* Download PDF */}
+                  <div className="flex justify-center">
+                    <button onClick={downloadPDF} disabled={generatingPdf} className="px-5 py-2.5 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 flex items-center gap-2 font-medium disabled:opacity-50">
+                      <Icon name="Download" size={16} /> {generatingPdf ? 'Generating PDF...' : 'Download PDF'}
+                    </button>
+                  </div>
+
+                  {/* Send To */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Send To *</label>
+                    <input
+                      type="email"
+                      value={sendTo}
+                      onChange={(e) => setSendTo(e.target.value)}
+                      placeholder="supplier@company.com"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* CC */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CC <span className="text-gray-400 font-normal">(separate multiple with commas)</span></label>
+                    <input
+                      type="text"
+                      value={ccEmails}
+                      onChange={(e) => setCcEmails(e.target.value)}
+                      placeholder="buyer@company.com, colleague@company.com"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center justify-between pt-2">
+                    <button onClick={rejectPO} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2">
+                      <Icon name="Edit" size={16} /> Back to Edit
+                    </button>
+                    <button
+                      onClick={() => { approvePO(); sendPO(); setShowSignOff(false); }}
+                      disabled={!sendTo}
+                      className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Icon name="Send" size={16} /> Approve & Send PO
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="text-center py-4 space-y-3">
+                  <div className="inline-flex items-center gap-2 px-6 py-3 bg-green-100 text-green-700 rounded-xl font-medium text-lg">
+                    <Icon name="CheckCircle" size={20} /> Purchase Order Sent Successfully
+                  </div>
+                  <p className="text-sm text-gray-500">Sent to {sendTo}{ccEmails ? `, CC: ${ccEmails}` : ''}</p>
+                  <button onClick={downloadPDF} disabled={generatingPdf} className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2 mx-auto mt-2">
+                    <Icon name="Download" size={16} /> {generatingPdf ? 'Generating...' : 'Download PDF'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* Form View */

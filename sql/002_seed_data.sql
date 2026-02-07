@@ -4,10 +4,6 @@
 DO $$
 DECLARE
   org_id uuid;
-  nila_contact_id uuid;
-  raunaq_contact_id uuid;
-  silverstar_contact_id uuid;
-  jj_contact_id uuid;
   order_uuid uuid;
 BEGIN
 
@@ -28,13 +24,13 @@ BEGIN
   (org_id, 'arshaseafoods2017@gmail.com', 'Arif Adeni', 'Arsha', 'Supplier', 'AA', 'bg-green-500', '9884894229', 'Generous, Chatty, Negotiable, Good Quality, Good Price', 'India'),
   (org_id, 'davikpaul@gmail.com', 'David Paul', 'Premier', 'Supplier', 'DP', 'bg-indigo-500', '9847095621', 'Negotiable, Direct, Good Quality, Market Price', 'India'),
   (org_id, 'sheraz@abad.in', 'Sheraz Anwar', 'ABAD', 'Supplier', 'SA', 'bg-purple-500', '9846044411', 'Great to work with, Great Quality', 'India'),
-  (org_id, 'rohitkhetalpar@gmail.com', 'Rohit Khetalpar', 'Raunaq/JJ', 'Supplier', 'RK', 'bg-amber-500', '9879580340', 'Direct, Great Quality, High Price', 'India') RETURNING id INTO raunaq_contact_id,
+  (org_id, 'rohitkhetalpar@gmail.com', 'Rohit Khetalpar', 'Raunaq/JJ', 'Supplier', 'RK', 'bg-amber-500', '9879580340', 'Direct, Great Quality, High Price', 'India'),
   (org_id, 'imroz310@gmail.com', 'Imroz', 'Siddiq Seafoods', 'Supplier', 'IM', 'bg-teal-500', '8128896286', 'New Packer, Driven, Good Quality', 'India'),
   (org_id, 'ssintereu@gmail.com', 'Upendra Kumar', 'S.S. International', 'Supplier', 'UK', 'bg-cyan-500', '8511975602', 'New Packer Good Quality', 'India'),
   (org_id, 'capithan@capithansgroup.com', 'Peter Austin', 'Capithan', 'Supplier', 'PA', 'bg-rose-500', '9847183101', 'Good Person, Average Quality, Good Price', 'India'),
   (org_id, 'slsexportsindia@gmail.com', 'Hari', 'SLS', 'Supplier', 'HA', 'bg-emerald-500', '9447776046', 'Good Quality, Decent Guy', 'India'),
   (org_id, 'nelson@penverproducts.com', 'Nelson George', 'Penver', 'Supplier', 'NG', 'bg-violet-500', '9847330025', 'New Products', 'India'),
-  (org_id, 'info@nilaseafoods.com', 'Selwin Prabhu', 'Nila', 'Supplier', 'SP', 'bg-green-600', '9894317420', 'Good Products', 'India') RETURNING id INTO nila_contact_id,
+  (org_id, 'info@nilaseafoods.com', 'Selwin Prabhu', 'Nila', 'Supplier', 'SP', 'bg-green-600', '9894317420', 'Good Products', 'India'),
   (org_id, 'sunexports1156@gmail.com', 'Krishnakumar Nair', 'Sun Exports', 'Supplier', 'KN', 'bg-orange-500', '98460555290', 'Average Product, Good Price', 'India'),
   (org_id, 'deepmalafoods@hotmail.com', 'Varma', 'Deepmala', 'Supplier', 'VA', 'bg-red-500', '9227750200', 'Good Product, High Price, Direct', 'India'),
   (org_id, 'sales@castlerock.in', 'Bharat Mahtani', 'Castlerock', 'Supplier', 'BM', 'bg-gray-600', '9821033794', 'Average Product, Flaky, Good Price', 'India'),
@@ -50,7 +46,7 @@ BEGIN
   (org_id, 'realexportsvrl@gmail.com', 'Dhansukh Pitthar', 'Real Exports', 'Supplier', 'DP', 'bg-stone-500', '9898100901', 'Average Product', 'India'),
   (org_id, 'kingsndk@gmail.com', 'Achu John', 'Kings Seafood', 'Supplier', 'AJ', 'bg-red-600', '9995411117', 'Terrible to work with', 'India'),
   (org_id, 'bdm@profandvayalat.in', 'Venugopalan', 'Profand Vayalat', 'Supplier', 'VE', 'bg-sky-500', '9388616765', 'Okay Quality, New packer', 'India'),
-  (org_id, 'jiju@forstarfoods.com', 'Jiju Nair', 'Forstar', 'Supplier', 'JN', 'bg-fuchsia-500', '9821216619', 'Snake, Average Product', 'India') RETURNING id INTO jj_contact_id,
+  (org_id, 'jiju@forstarfoods.com', 'Jiju Nair', 'Forstar', 'Supplier', 'JN', 'bg-fuchsia-500', '9821216619', 'Snake, Average Product', 'India'),
   (org_id, 'saletseafoods@saletgroup.com', 'Sumit Salet', 'Salet', 'Supplier', 'SS', 'bg-blue-700', '9825234233', 'Average Quality Good guy', 'India'),
   (org_id, 'naikocean@gmail.com', 'Zoya Naik', 'Naik', 'Supplier', 'ZN', 'bg-rose-600', '9821211444', 'Good Quality Good Person', 'India'),
   (org_id, 'subbusan2002@gmail.com', 'Krishna Menan', 'Subu Seafoods', 'Supplier', 'KM', 'bg-violet-600', '8296772550', 'New Supplier', 'India');
@@ -141,28 +137,28 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3043', 'PO 3043', 'Pescados E Guillem', 'Frozen Seafood', 'India', 'Spain', '2026-02-05', 1, 'Rohit Khetalpar')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
-  VALUES (order_uuid, 1, '2026-02-05 09:00:00+00', 'Rohit Khetalpar <rohit@vendor.com>', 'Ganesh International', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3043', true, ARRAY['PO_3043.pdf']);
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
+  VALUES (order_uuid, 1, '2026-02-05 09:00:00+00', 'Rohit Khetalpar <rohit@vendor.com>', 'Ganesh International', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3043', true, ARRAY['PO_3043.pdf'], NULL);
 
   -- ORDER 2: GI/PO/25-26/3042
   INSERT INTO orders (organization_id, order_id, po_number, company, product, from_location, to_location, order_date, current_stage, supplier)
   VALUES (org_id, 'GI/PO/25-26/3042', 'PO 3042', 'Pescados E Guillem', 'Squid Whole IQF', 'India', 'Spain', '2026-02-04', 2, 'Nila Exports')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-02-01 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER', true, ARRAY['PO_3042.pdf']),
-  (order_uuid, 2, '2026-02-04 10:30:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER - Proforma Invoice', true, ARRAY['PI_3000250128.pdf']);
+  (order_uuid, 1, '2026-02-01 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER', true, ARRAY['PO_3042.pdf'], NULL),
+  (order_uuid, 2, '2026-02-04 10:30:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO GI/PO/25-26/3042 - PESCADOS 8TH CONTAINER - Proforma Invoice', true, ARRAY['PI_3000250128.pdf'], NULL);
 
   -- ORDER 3: GI/PO/25-26/3039
   INSERT INTO orders (organization_id, order_id, po_number, pi_number, company, brand, product, from_location, to_location, order_date, current_stage, supplier, artwork_status)
   VALUES (org_id, 'GI/PO/25-26/3039', 'PO 3039', 'GI/PI/25-26/I02048', 'Pescados E Guillem', 'MORALES', 'Calamar Troceado', 'India', 'Spain', '2026-02-03', 3, 'JJ SEAFOODS', 'needs_correction')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-28 08:00:00+00', 'Ganesh International', 'JJ SEAFOODS', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3039', true, ARRAY['PO_3039.pdf']),
-  (order_uuid, 2, '2026-01-30 11:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3039 - PI GI/PI/25-26/I02048', true, ARRAY['PI_I02048.pdf']),
+  (order_uuid, 1, '2026-01-28 08:00:00+00', 'Ganesh International', 'JJ SEAFOODS', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3039', true, ARRAY['PO_3039.pdf'], NULL),
+  (order_uuid, 2, '2026-01-30 11:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3039 - PI GI/PI/25-26/I02048', true, ARRAY['PI_I02048.pdf'], NULL),
   (order_uuid, 3, '2026-02-03 15:45:00+00', 'Mª Carmen Martínez', 'Ganesh International', 'RE: NEED ARTWORK APPROVAL - PI GI/PI/25-26/I02048 - PO 3039 - JJ SEAFOODS', false, NULL, 'artwork NEEDS CORRECTION');
 
   -- ORDER 4: GI/PO/25-26/3037
@@ -170,20 +166,20 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3037', 'PO 3037', 'GI/PI/25-26/I02046', 'Pescados E Guillem', 'EGUILLEM', 'Baby Squid Finger Laid', 'India', 'Valencia, Spain', '2026-02-03', 2, 'RAUNAQ')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-29 09:00:00+00', 'Ganesh International', 'RAUNAQ', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3037 - Baby Squid Finger Laid', true, ARRAY['PO_3037.pdf']),
-  (order_uuid, 2, '2026-02-01 14:30:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3037 - BABY SQUID FINGER LAID - PI GI/PI/25-26/I02046', true, ARRAY['PI_I02046.pdf']);
+  (order_uuid, 1, '2026-01-29 09:00:00+00', 'Ganesh International', 'RAUNAQ', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3037 - Baby Squid Finger Laid', true, ARRAY['PO_3037.pdf'], NULL),
+  (order_uuid, 2, '2026-02-01 14:30:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3037 - BABY SQUID FINGER LAID - PI GI/PI/25-26/I02046', true, ARRAY['PI_I02046.pdf'], NULL);
 
   -- ORDER 5: GI/PO/25-26/3038
   INSERT INTO orders (organization_id, order_id, po_number, pi_number, company, brand, product, from_location, to_location, order_date, current_stage, supplier)
   VALUES (org_id, 'GI/PO/25-26/3038', 'PO 3038', 'GI/PI/25-26/I02047', 'Pescados E Guillem', 'EGUILLEM', 'Calamar Troceado', 'India', 'Valencia, Spain', '2026-02-04', 3, 'RAUNAQ')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-28 10:00:00+00', 'Ganesh International', 'RAUNAQ Supplier', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3038', true, ARRAY['PO_3038.pdf']),
-  (order_uuid, 2, '2026-01-30 14:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02047 - PO 3038', true, ARRAY['PI_I02047.pdf']),
+  (order_uuid, 1, '2026-01-28 10:00:00+00', 'Ganesh International', 'RAUNAQ Supplier', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3038', true, ARRAY['PO_3038.pdf'], NULL),
+  (order_uuid, 2, '2026-01-30 14:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02047 - PO 3038', true, ARRAY['PI_I02047.pdf'], NULL),
   (order_uuid, 3, '2026-02-04 17:15:00+00', 'Mª Carmen Martínez', 'Ganesh International', 'RE: NEED ARTWORK APPROVAL - PI GI/PI/25-26/I02047 - PO 3038 - RAUNAQ', false, NULL, 'artworks are OK');
 
   -- ORDER 6: GI/PO/25-26/3035
@@ -191,10 +187,10 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3035', 'PO 3035', 'GI/PI/25-26/I02044', 'Pescados E Guillem', 'MORALES', 'Frozen Squid Whole', 'India', 'Valencia, Spain', '2026-02-04', 3, 'RAUNAQ')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-25 09:00:00+00', 'Ganesh International', 'RAUNAQ', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3035', true, ARRAY['PO_3035.pdf']),
-  (order_uuid, 2, '2026-01-27 11:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02044 - PO 3035', true, ARRAY['PI_I02044.pdf']),
+  (order_uuid, 1, '2026-01-25 09:00:00+00', 'Ganesh International', 'RAUNAQ', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3035', true, ARRAY['PO_3035.pdf'], NULL),
+  (order_uuid, 2, '2026-01-27 11:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: NEW PURCHASE ORDER - PI GI/PI/25-26/I02044 - PO 3035', true, ARRAY['PI_I02044.pdf'], NULL),
   (order_uuid, 3, '2026-02-04 16:22:00+00', 'Mª Carmen Martínez', 'Ganesh International', 'RE: NEED ARTWORK APPROVAL - PI- GI/PI/25-26/I02044 - PO 3035 - RAUNAQ', false, NULL, 'artworks are OK');
 
   -- ORDER 7: GI/PO/25-26/3026
@@ -202,15 +198,15 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3026', 'PO 3026', 'Pescados E Guillem', 'Squid Whole IQF', 'Cochin, India', 'Spain', '2026-02-03', 8, 'Nila Exports')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-10 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3026', true, ARRAY['PO_3026.pdf']),
-  (order_uuid, 2, '2026-01-12 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO GI/PO/25-26/3026 - Proforma Invoice', true, ARRAY['PI_3000250117.pdf']),
-  (order_uuid, 3, '2026-01-15 14:00:00+00', 'Ganesh International', 'PESCADOS E.GUILLEM', 'RE: ARTWORK APPROVAL - PO 3026', false, NULL),
+  (order_uuid, 1, '2026-01-10 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3026', true, ARRAY['PO_3026.pdf'], NULL),
+  (order_uuid, 2, '2026-01-12 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO GI/PO/25-26/3026 - Proforma Invoice', true, ARRAY['PI_3000250117.pdf'], NULL),
+  (order_uuid, 3, '2026-01-15 14:00:00+00', 'Ganesh International', 'PESCADOS E.GUILLEM', 'RE: ARTWORK APPROVAL - PO 3026', false, NULL, NULL),
   (order_uuid, 4, '2026-01-18 09:00:00+00', 'Hansel Fernandez', 'Ganesh International', 'INSPECTION REPORT - PO 3026 - Invoice 3000250117', true, ARRAY['Inspection_Report_3026.pdf', 'Photos_3026.zip'], 'APPROVED'),
   (order_uuid, 5, '2026-01-22 11:00:00+00', 'Ganesh International', 'All Parties', 'VESSEL SCHEDULE == GI/PO/25-26/3026', false, NULL, 'Vessel MSC ROSA M Voyage 123N ETD 25-JAN-2026 ETA 10-FEB-2026'),
   (order_uuid, 6, '2026-01-28 15:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: DRAFT DOCUMENT == GI/PO/25-26/3026', false, NULL, 'Documents OK'),
-  (order_uuid, 7, '2026-01-31 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == GI/PO/25-26/3026 == FINAL COPIES', true, ARRAY['BL_MEDUWP096292.pdf', 'Invoice_3000250117.pdf', 'PackingList.pdf', 'COO.pdf', 'HealthCert.pdf']),
+  (order_uuid, 7, '2026-01-31 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == GI/PO/25-26/3026 == FINAL COPIES', true, ARRAY['BL_MEDUWP096292.pdf', 'Invoice_3000250117.pdf', 'PackingList.pdf', 'COO.pdf', 'HealthCert.pdf'], NULL),
   (order_uuid, 8, '2026-02-03 18:08:00+00', 'Ganesh International', 'All Parties', 'RE: PESCADOS 04tH CONTAINER', true, ARRAY['TelexRelease_MEDUWP096292.pdf'], 'Telex Release confirmed');
 
   -- ORDER 8: GI/PO/25-26/3027
@@ -218,36 +214,36 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3027', 'PO 3027', 'Pescados E Guillem', 'Vannamei PUD Blanched', 'India', 'Spain', '2026-02-02', 8, 'Nila Exports', '1016613850')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-08 07:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3027', true, ARRAY['PO_3027.pdf']),
-  (order_uuid, 2, '2026-01-10 09:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3027 - Proforma Invoice', true, ARRAY['PI_3000250122.pdf']),
+  (order_uuid, 1, '2026-01-08 07:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3027', true, ARRAY['PO_3027.pdf'], NULL),
+  (order_uuid, 2, '2026-01-10 09:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3027 - Proforma Invoice', true, ARRAY['PI_3000250122.pdf'], NULL),
   (order_uuid, 3, '2026-01-13 12:00:00+00', 'Ganesh International', 'Nila Exports', 'RE: ARTWORK - PO 3027', false, NULL, 'Artworks OK'),
   (order_uuid, 4, '2026-01-16 08:00:00+00', 'J B Boda', 'Ganesh International', 'INSPECTION REPORT - PO 3027', true, ARRAY['JBBoda_Report_3027.pdf', 'Inspection_Photos.zip'], 'PASSED'),
   (order_uuid, 5, '2026-01-20 14:00:00+00', 'Ganesh International', 'All Parties', 'VESSEL SCHEDULE == PO 3027', false, NULL, 'Vessel MAERSK SELETAR Voyage 205E'),
   (order_uuid, 6, '2026-01-25 16:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: DRAFT DOCUMENT == PO 3027', false, NULL, 'Documents OK'),
-  (order_uuid, 7, '2026-01-29 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == PO 3027 == FINAL COPIES', true, ARRAY['BL_3027.pdf', 'Invoice_3027.pdf', 'PL_3027.pdf']),
-  (order_uuid, 8, '2026-02-02 18:25:00+00', 'Ganesh International', 'All Parties', 'DHL AWB: 1016613850', true, ARRAY['DHL_Receipt_1016613850.pdf']);
+  (order_uuid, 7, '2026-01-29 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == PO 3027 == FINAL COPIES', true, ARRAY['BL_3027.pdf', 'Invoice_3027.pdf', 'PL_3027.pdf'], NULL),
+  (order_uuid, 8, '2026-02-02 18:25:00+00', 'Ganesh International', 'All Parties', 'DHL AWB: 1016613850', true, ARRAY['DHL_Receipt_1016613850.pdf'], NULL);
 
   -- ORDER 9: GI/PO/25-26/3034
   INSERT INTO orders (organization_id, order_id, po_number, pi_number, company, brand, product, from_location, to_location, order_date, current_stage, supplier)
   VALUES (org_id, 'GI/PO/25-26/3034', 'PO 3034', 'GI/PI/25-26/I02043', 'Pescados E Guillem', 'MORALES', 'Calamar Troceado', 'India', 'Spain', '2026-02-03', 2, 'JJ SEAFOOD')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-30 08:00:00+00', 'Ganesh International', 'JJ SEAFOOD', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3034', true, ARRAY['PO_3034.pdf']),
-  (order_uuid, 2, '2026-02-01 10:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3034 - CALAMAR TROCEADO - PI GI/PI/25-26/I02043', true, ARRAY['PI_I02043.pdf']);
+  (order_uuid, 1, '2026-01-30 08:00:00+00', 'Ganesh International', 'JJ SEAFOOD', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3034', true, ARRAY['PO_3034.pdf'], NULL),
+  (order_uuid, 2, '2026-02-01 10:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: PO 3034 - CALAMAR TROCEADO - PI GI/PI/25-26/I02043', true, ARRAY['PI_I02043.pdf'], NULL);
 
   -- ORDER 10: GI/PO/25-26/3029
   INSERT INTO orders (organization_id, order_id, po_number, company, product, from_location, to_location, order_date, current_stage, supplier)
   VALUES (org_id, 'GI/PO/25-26/3029', 'PO 3029', 'Pescados E Guillem', 'Squid Whole IQF', 'India', 'Spain', '2026-02-01', 6, 'Nila Exports')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-15 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3029', true, ARRAY['PO_3029.pdf']),
-  (order_uuid, 2, '2026-01-17 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3029 - PI 3000250120', true, ARRAY['PI_3000250120.pdf']),
+  (order_uuid, 1, '2026-01-15 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3029', true, ARRAY['PO_3029.pdf'], NULL),
+  (order_uuid, 2, '2026-01-17 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3029 - PI 3000250120', true, ARRAY['PI_3000250120.pdf'], NULL),
   (order_uuid, 3, '2026-01-19 14:00:00+00', 'Ganesh International', 'Nila Exports', 'RE: ARTWORK - PO 3029', false, NULL, 'Artworks OK'),
   (order_uuid, 4, '2026-01-22 09:00:00+00', 'Hansel Fernandez', 'Ganesh International', 'INSPECTION REPORT - PO 3029', true, ARRAY['QC_Report_3029.pdf'], 'APPROVED'),
   (order_uuid, 5, '2026-01-25 11:00:00+00', 'Ganesh International', 'All Parties', 'VESSEL SCHEDULE == PO 3029', false, NULL, 'MSC ANNA ETD 28-JAN-2026 ETA 12-FEB-2026'),
@@ -258,31 +254,31 @@ BEGIN
   VALUES (org_id, 'GI/PO/25-26/3028', 'PO 3028', 'Pescados E Guillem', 'Vannamei HLSO', 'India', 'Spain', '2026-01-31', 7, 'Nila Exports')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2026-01-10 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3028', true, ARRAY['PO_3028.pdf']),
-  (order_uuid, 2, '2026-01-12 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3028 - PI 3000250118', true, ARRAY['PI_3000250118.pdf']),
+  (order_uuid, 1, '2026-01-10 08:00:00+00', 'Ganesh International', 'Nila Exports', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3028', true, ARRAY['PO_3028.pdf'], NULL),
+  (order_uuid, 2, '2026-01-12 10:00:00+00', 'Nila Exports', 'Ganesh International', 'RE: PO 3028 - PI 3000250118', true, ARRAY['PI_3000250118.pdf'], NULL),
   (order_uuid, 3, '2026-01-14 14:00:00+00', 'Ganesh International', 'Nila Exports', 'RE: ARTWORK - PO 3028', false, NULL, 'Artworks OK'),
   (order_uuid, 4, '2026-01-17 09:00:00+00', 'J B Boda', 'Ganesh International', 'QC REPORT - PO 3028', true, ARRAY['JBBoda_3028.pdf'], 'PASSED'),
   (order_uuid, 5, '2026-01-20 11:00:00+00', 'Ganesh International', 'All Parties', 'VESSEL SCHEDULE == PO 3028', false, NULL, 'MAERSK SELETAR ETD 23-JAN-2026'),
   (order_uuid, 6, '2026-01-26 15:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: DRAFT DOCUMENT == PO 3028', false, NULL, 'Documents OK'),
-  (order_uuid, 7, '2026-01-31 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == GI/PO/25-26/3028 == FINAL COPIES', true, ARRAY['BL_MEDUWP096305.pdf', 'Invoice_3028.pdf', 'PackingList_3028.pdf', 'COO_3028.pdf', 'HealthCert_3028.pdf']);
+  (order_uuid, 7, '2026-01-31 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == GI/PO/25-26/3028 == FINAL COPIES', true, ARRAY['BL_MEDUWP096305.pdf', 'Invoice_3028.pdf', 'PackingList_3028.pdf', 'COO_3028.pdf', 'HealthCert_3028.pdf'], NULL);
 
   -- ORDER 12: GI/PO/25-26/3015
   INSERT INTO orders (organization_id, order_id, po_number, company, product, from_location, to_location, order_date, current_stage, supplier, awb_number)
   VALUES (org_id, 'GI/PO/25-26/3015', 'PO 3015', 'Pescados E Guillem', 'Squid Rings', 'Porbandar, India', 'Spain', '2025-12-15', 8, 'Silver Sea Foods', '1016612890')
   RETURNING id INTO order_uuid;
 
-  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments)
+  INSERT INTO order_history (order_id, stage, timestamp, from_address, to_address, subject, has_attachment, attachments, body)
   VALUES
-  (order_uuid, 1, '2025-11-20 08:00:00+00', 'Ganesh International', 'Silver Sea Foods', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3015', true, ARRAY['PO_3015.pdf']),
-  (order_uuid, 2, '2025-11-22 10:00:00+00', 'Silver Sea Foods', 'Ganesh International', 'RE: PO 3015 - Proforma Invoice', true, ARRAY['PI_3015.pdf']),
+  (order_uuid, 1, '2025-11-20 08:00:00+00', 'Ganesh International', 'Silver Sea Foods', 'NEW PURCHASE ORDER - PO GI/PO/25-26/3015', true, ARRAY['PO_3015.pdf'], NULL),
+  (order_uuid, 2, '2025-11-22 10:00:00+00', 'Silver Sea Foods', 'Ganesh International', 'RE: PO 3015 - Proforma Invoice', true, ARRAY['PI_3015.pdf'], NULL),
   (order_uuid, 3, '2025-11-25 14:00:00+00', 'Ganesh International', 'Silver Sea Foods', 'RE: ARTWORK - PO 3015', false, NULL, 'Artworks OK'),
   (order_uuid, 4, '2025-11-28 09:00:00+00', 'J B Boda Porbandar', 'Ganesh International', 'INSPECTION REPORT - PO 3015', true, ARRAY['JBBoda_Porbandar_3015.pdf', 'Inspection_Photos_3015.zip'], 'APPROVED'),
   (order_uuid, 5, '2025-12-01 11:00:00+00', 'Ganesh International', 'All Parties', 'VESSEL SCHEDULE == PO 3015', false, NULL, 'ETD 05-DEC-2025 ETA 20-DEC-2025'),
   (order_uuid, 6, '2025-12-08 15:00:00+00', 'Oscar | PESCADOS E.GUILLEM', 'Ganesh International', 'RE: DRAFT DOCUMENT == PO 3015', false, NULL, 'Documents OK'),
-  (order_uuid, 7, '2025-12-12 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == PO 3015 == FINAL COPIES', true, ARRAY['BL_3015.pdf', 'Invoice_3015.pdf', 'PL_3015.pdf']),
-  (order_uuid, 8, '2025-12-15 17:00:00+00', 'Ganesh International', 'All Parties', 'DHL DETAILS == PO 3015 == AWB 1016612890', true, ARRAY['DHL_Receipt_1016612890.pdf']);
+  (order_uuid, 7, '2025-12-12 10:00:00+00', 'Ganesh International', 'All Parties', '== DOCUMENT == PO 3015 == FINAL COPIES', true, ARRAY['BL_3015.pdf', 'Invoice_3015.pdf', 'PL_3015.pdf'], NULL),
+  (order_uuid, 8, '2025-12-15 17:00:00+00', 'Ganesh International', 'All Parties', 'DHL DETAILS == PO 3015 == AWB 1016612890', true, ARRAY['DHL_Receipt_1016612890.pdf'], NULL);
 
   -- ============================================================================
   -- INSERT PRODUCT INQUIRIES (3)
