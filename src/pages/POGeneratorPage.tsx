@@ -970,7 +970,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
               )}
               {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
               {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
-              <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'}</p>
+              <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
               {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
               {poData.payment && <p><span className="font-medium">Payment:</span> {poData.payment}</p>}
               <p><span className="font-medium">Variation:</span> +/- 5% in Quantity & Value</p>
