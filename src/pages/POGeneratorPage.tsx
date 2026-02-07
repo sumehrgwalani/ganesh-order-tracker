@@ -232,8 +232,10 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       // Check if this line starts a new product (product names usually don't have numbers at start)
       const isProductLine = /^[a-zA-Z]/.test(line) &&
         !lineLower.includes('glaseo') &&
+        !lineLower.includes('glaze') &&
         !lineLower.includes('granel') &&
         !lineLower.includes('bolsa') &&
+        !lineLower.includes('marked as') &&
         !lineLower.match(/^\d+\s*[xX]\s*\d+/) &&
         !lineLower.match(/^\d+\s*mt\b/i) &&
         !lineLower.match(/^\d+\s*kilo/i) &&
@@ -290,6 +292,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         const glazeMatch = line.match(/(\d+)%\s*(?:glaseo|glaze)/i);
         if (glazeMatch) {
           currentBlock.glaze = glazeMatch[1] + '% Glaze';
+        }
+
+        // Marked/declared glaze (Marked as 20% or Marked as 20% glaze)
+        const markedGlazeMatch = line.match(/marked\s*(?:as)?\s*(\d+)%/i);
+        if (markedGlazeMatch) {
+          currentBlock.glazeMarked = markedGlazeMatch[1] + '% Glaze';
         }
 
         // Quantity and price (4MT U/1 $6.10)
@@ -373,7 +381,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           s.company.toLowerCase().includes(companyName.toLowerCase())
         );
         if (matchedSupplier) {
-          detectedSupplier = `${matchedSupplier.name} - ${matchedSupplier.company}`;
+          detectedSupplier = matchedSupplier.company;
           detectedSupplierEmail = matchedSupplier.email;
         }
       }
@@ -392,6 +400,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         product: block.product,
         size: sizeStr,
         glaze: block.glaze || '',
+        glazeMarked: block.glazeMarked || '',
         brand: '',
         cases: '',
         kilos: block.kilos,
@@ -577,7 +586,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     setPOData({
       ...poData,
       supplierEmail: email,
-      supplier: supplier ? `${supplier.name} - ${supplier.company}` : '',
+      supplier: supplier ? supplier.company : '',
       payment: autoPayment || poData.payment,
     });
   };
@@ -1092,7 +1101,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                   <select value={poData.supplierEmail} onChange={(e) => handleSupplierChange(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     <option value="">Select Supplier</option>
                     {suppliers.map(s => (
-                      <option key={s.email} value={s.email}>{s.name} - {s.company} ({s.country})</option>
+                      <option key={s.email} value={s.email}>{s.company}{s.country ? ` (${s.country})` : ''}</option>
                     ))}
                   </select>
                 </div>
