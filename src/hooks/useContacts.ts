@@ -73,7 +73,7 @@ export function useContacts(orgId: string | null) {
         .single()
 
       if (insertError) throw insertError
-      await fetchContacts()
+      // No refetch — ContactsPage handles optimistic UI update
       return data
     } catch (err: any) {
       setError(err.message)
@@ -91,7 +91,7 @@ export function useContacts(orgId: string | null) {
         .eq('email', email)
 
       if (updateError) throw updateError
-      await fetchContacts()
+      // No refetch — ContactsPage handles optimistic UI update
     } catch (err: any) {
       setError(err.message)
       throw err
@@ -108,7 +108,7 @@ export function useContacts(orgId: string | null) {
         .eq('email', email)
 
       if (deleteError) throw deleteError
-      await fetchContacts()
+      // No refetch — ContactsPage handles optimistic UI update
     } catch (err: any) {
       setError(err.message)
       throw err
