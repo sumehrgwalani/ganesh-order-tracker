@@ -610,14 +610,20 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Get suppliers from contacts
+  // Get suppliers from contacts — flexible match (handles 'Supplier', 'Suppliers', 'suppliers', etc.)
   const suppliers = Object.entries(contacts)
-    .filter(([_, c]) => c.role === 'Supplier')
+    .filter(([_, c]) => {
+      const r = (c.role || '').toLowerCase();
+      return r.includes('supplier');
+    })
     .map(([email, c]) => ({ email, ...c }));
 
-  // Get buyers from contacts
+  // Get buyers from contacts — flexible match
   const buyers = Object.entries(contacts)
-    .filter(([_, c]) => c.role === 'Buyer')
+    .filter(([_, c]) => {
+      const r = (c.role || '').toLowerCase();
+      return r.includes('buyer') || r.includes('compras') || r.includes('calidad');
+    })
     .map(([email, c]) => ({ email, ...c }));
 
   // Parse packing to extract kg per carton (e.g., "6x1 kg" = 6, "10 kg Bulk" = 10)

@@ -61,7 +61,9 @@ export function useContacts(orgId: string | null) {
           email: formData.email,
           name: formData.name,
           company: formData.company,
-          role: formData.role || formData.category || 'Supplier',
+          role: (formData.category && formData.category !== 'other')
+            ? formData.category.charAt(0).toUpperCase() + formData.category.slice(1)
+            : formData.role || 'Supplier',
           phone: formData.phone || '',
           address: formData.address || '',
           country: formData.country || '',
