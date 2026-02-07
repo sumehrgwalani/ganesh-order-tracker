@@ -134,9 +134,12 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
   const handleSaveContact = async (contactData: ContactFormData) => {
     const initials = contactData.initials || contactData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     const role = contactData.role || contactData.category || 'Supplier';
-    const category = role.toLowerCase().includes('supplier') ? 'suppliers' :
-                     role.toLowerCase().includes('buyer') ? 'buyers' :
-                     role.toLowerCase().includes('inspector') ? 'inspectors' : 'other';
+    // Use the explicit category from the form dropdown; only derive from role if no category set
+    const category = contactData.category || (
+      role.toLowerCase().includes('supplier') ? 'suppliers' :
+      role.toLowerCase().includes('buyer') ? 'buyers' :
+      role.toLowerCase().includes('inspector') ? 'inspectors' : 'other'
+    );
 
     if (editingContact) {
       // Optimistic local update — instant UI feedback
@@ -153,12 +156,15 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
       };
       setContacts(prev => prev.map(c => c.id === editingContact.id ? updated : c));
 
-      // Persist to Supabase in background
+      // Persist to Supabase in background — save the category as role if user picked one
+      const dbRole = contactData.category && contactData.category !== 'other'
+        ? contactData.category.charAt(0).toUpperCase() + contactData.category.slice(1)
+        : role;
       if (onUpdateContact) {
         onUpdateContact(editingContact.email, {
           name: contactData.name,
           company: contactData.company,
-          role,
+          role: dbRole,
           phone: contactData.phone || '',
           address: contactData.address || '',
           color: contactData.color,
