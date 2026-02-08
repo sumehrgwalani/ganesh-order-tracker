@@ -66,44 +66,54 @@ function OrderRow({ order, expanded, onToggleExpand, onClick, onDelete }: Props)
       )}
 
       <div className="p-4 cursor-pointer" onClick={onClick}>
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="font-mono text-sm text-gray-600 font-medium">{order.id}</span>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${isCompleted ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
-                {ORDER_STAGES[order.currentStage - 1]?.shortName}
-              </span>
-              {order.brand && <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded">{order.brand}</span>}
-            </div>
-            <OrderProgressBar currentStage={order.currentStage} />
-          </div>
-          <div className="text-center px-6 border-l border-gray-100 min-w-[140px]">
-            <p className="font-medium text-gray-800 truncate text-sm">{order.company}</p>
-            {order.supplier && <p className="text-xs text-gray-400">{order.supplier}</p>}
-          </div>
-          <div className="text-right px-6 border-l border-gray-100 min-w-[180px]">
-            <p className="font-medium text-gray-800 text-sm">{order.product}</p>
-            <p className="text-xs text-gray-500 truncate">{order.specs}</p>
-          </div>
-          <div className="text-right px-6 border-l border-gray-100 min-w-[140px]">
-            <p className="text-xs text-gray-500">{order.from} → {order.to}</p>
-            {order.awbNumber && <p className="text-xs text-blue-600 font-mono mt-1">AWB: {order.awbNumber}</p>}
-          </div>
-          <div className="text-right pl-6 text-xs text-gray-500 min-w-[100px]">{order.date}</div>
+        {/* Top row: PO info + actions */}
+        <div className="flex items-center gap-2 mb-2">
+          <span className="font-mono text-sm text-gray-600 font-medium whitespace-nowrap">{order.id}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${isCompleted ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+            {ORDER_STAGES[order.currentStage - 1]?.shortName}
+          </span>
+          {order.brand && <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded whitespace-nowrap">{order.brand}</span>}
+          <div className="flex-1" />
+          <span className="text-xs text-gray-400 whitespace-nowrap">{order.date}</span>
           {onDelete && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
-              className="ml-3 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
               title="Delete order"
             >
-              <Icon name="Trash2" size={16} />
+              <Icon name="Trash2" size={15} />
             </button>
           )}
-          <Icon name="ChevronRight" className="ml-2 text-gray-300" size={20} />
+          <Icon name="ChevronRight" className="text-gray-300 flex-shrink-0" size={18} />
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-50">
+
+        {/* Main content grid */}
+        <div className="grid grid-cols-12 gap-4 items-start mb-2">
+          {/* Company & Supplier */}
+          <div className="col-span-3">
+            <p className="font-medium text-gray-800 text-sm truncate">{order.company}</p>
+            {order.supplier && <p className="text-xs text-gray-400 truncate">{order.supplier}</p>}
+          </div>
+          {/* Product & Specs */}
+          <div className="col-span-5">
+            <p className="font-medium text-gray-800 text-sm truncate">{order.product}</p>
+            <p className="text-xs text-gray-500 truncate">{order.specs}</p>
+          </div>
+          {/* Route */}
+          <div className="col-span-2 text-right">
+            <p className="text-xs text-gray-500 truncate">{order.from} → {order.to}</p>
+            {order.awbNumber && <p className="text-xs text-blue-600 font-mono mt-0.5">AWB: {order.awbNumber}</p>}
+          </div>
+          {/* Progress */}
+          <div className="col-span-2">
+            <OrderProgressBar currentStage={order.currentStage} />
+          </div>
+        </div>
+
+        {/* Email preview */}
+        <div className="pt-2 border-t border-gray-50">
           <CompactEmailPreview entry={lastUpdate} onClick={() => { onToggleExpand(); }} />
-          <button onClick={() => { onToggleExpand(); }} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+          <button onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} className="mt-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
             <Icon name="ChevronDown" size={14} className={`transform transition-transform ${expanded ? 'rotate-180' : ''}`} />
             {expanded ? 'Hide' : 'Show'} email history ({order.history.length} emails)
           </button>
