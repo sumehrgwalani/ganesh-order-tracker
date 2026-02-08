@@ -1168,17 +1168,21 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
     const productDesc = uniqueProducts.join(', ');
 
+    // Look up full supplier details (address, country) from contacts
+    const matchedS = detectedSupplier ? suppliers.find(s => s.company === detectedSupplier) : null;
+
     setPOData(prev => ({
       ...prev,
       product: productDesc || prev.product,
       buyer: detectedBuyer || prev.buyer,
       supplier: detectedSupplier || prev.supplier,
       supplierEmail: detectedSupplierEmail || prev.supplierEmail,
+      supplierAddress: matchedS?.address || prev.supplierAddress,
+      supplierCountry: matchedS?.country || prev.supplierCountry,
     }));
 
     // Sync search fields with parser-detected values
     if (detectedSupplier) {
-      const matchedS = suppliers.find(s => s.company === detectedSupplier);
       setSupplierSearch(detectedSupplier + (matchedS?.country ? ` (${matchedS.country})` : ''));
     }
     if (detectedBuyer) {
@@ -1883,19 +1887,19 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
               return (
             <div className="mb-2" style={{ pageBreakInside: 'avoid' }}>
-              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '11px' }}>
+              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '11px', tableLayout: 'auto' }}>
                 <thead>
                   <tr className="bg-gray-100">
-                    <th className="border border-gray-300 px-1.5 py-1 text-left">Product</th>
-                    {hasBrand && <th className="border border-gray-300 px-1.5 py-1 text-left">Brand</th>}
-                    {hasFreezing && <th className="border border-gray-300 px-1.5 py-1 text-left">Freezing</th>}
-                    {hasSize && <th className="border border-gray-300 px-1.5 py-1 text-left">Size</th>}
-                    {hasGlaze && <th className="border border-gray-300 px-1.5 py-1 text-left">Glaze</th>}
-                    {hasPacking && <th className="border border-gray-300 px-1.5 py-1 text-left">Packing</th>}
-                    {hasCases && <th className="border border-gray-300 px-1.5 py-1 text-right">Cases</th>}
-                    <th className="border border-gray-300 px-1.5 py-1 text-right">Kilos</th>
-                    <th className="border border-gray-300 px-1.5 py-1 text-right">Price/Kg<br/><span style={{ fontSize: '9px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
-                    <th className="border border-gray-300 px-1.5 py-1 text-right">
+                    <th className="border border-gray-300 px-2 py-1 text-left" style={{ minWidth: '130px' }}>Product</th>
+                    {hasBrand && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Brand</th>}
+                    {hasFreezing && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Freezing</th>}
+                    {hasSize && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Size</th>}
+                    {hasGlaze && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Glaze</th>}
+                    {hasPacking && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Packing</th>}
+                    {hasCases && <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Cases</th>}
+                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Kilos</th>
+                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Price/Kg<br/><span style={{ fontSize: '9px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
+                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>
                       {lineItems.some(i => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}
                     </th>
                   </tr>
@@ -1903,16 +1907,16 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 <tbody>
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
-                      <td className="border border-gray-300 px-1.5 py-0.5">{item.product || '-'}</td>
-                      {hasBrand && <td className="border border-gray-300 px-1.5 py-0.5">{item.brand || '-'}</td>}
-                      {hasFreezing && <td className="border border-gray-300 px-1.5 py-0.5">{item.freezing || '-'}</td>}
-                      {hasSize && <td className="border border-gray-300 px-1.5 py-0.5">{item.size || '-'}</td>}
-                      {hasGlaze && <td className="border border-gray-300 px-1.5 py-0.5">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
-                      {hasPacking && <td className="border border-gray-300 px-1.5 py-0.5">{item.packing || '-'}</td>}
-                      {hasCases && <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.cases || '-'}</td>}
-                      <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
-                      <td className="border border-gray-300 px-1.5 py-0.5 text-right font-medium">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-2 py-1">{item.product || '-'}</td>
+                      {hasBrand && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.brand || '-'}</td>}
+                      {hasFreezing && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.freezing || '-'}</td>}
+                      {hasSize && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.size || '-'}</td>}
+                      {hasGlaze && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
+                      {hasPacking && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.packing || '-'}</td>}
+                      {hasCases && <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
+                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
+                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
+                      <td className="border border-gray-300 px-2 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
