@@ -17,9 +17,10 @@ interface Props {
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
   setSelectedOrder: (order: Order) => void;
+  onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, setSelectedOrder }: Props) {
+function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, setSelectedOrder, onDeleteOrder }: Props) {
   return (
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
@@ -53,7 +54,7 @@ function DashboardContent({ orders, stats, setActiveTab, filteredOrders, selecte
         <div className="space-y-0">
           {filteredOrders.length > 0 ? (
             filteredOrders.map(order => (
-              <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} />
+              <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} onDelete={onDeleteOrder} />
             ))
           ) : (
             <div className="text-center py-12 text-gray-500">

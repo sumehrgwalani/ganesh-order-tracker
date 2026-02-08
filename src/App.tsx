@@ -180,6 +180,13 @@ function App() {
             expandedOrder={expandedOrder}
             setExpandedOrder={setExpandedOrder}
             setSelectedOrder={setSelectedOrder}
+            onDeleteOrder={async (orderId) => {
+              if (deleteOrder) {
+                await deleteOrder(orderId);
+              } else {
+                setOrders(prev => prev.filter(o => o.id !== orderId));
+              }
+            }}
           />
         );
     }
