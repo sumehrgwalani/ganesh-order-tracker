@@ -48,8 +48,10 @@ function App() {
     );
   }
 
-  // Show loading while auth or data is loading
-  if (authLoading || (orgId && (contactsLoading || ordersLoading))) {
+  // Show loading while auth, org setup, or data is loading
+  // Important: also show spinner when session exists but orgId isn't ready yet
+  // to prevent stale data from a previous user being briefly visible
+  if (authLoading || !orgId || contactsLoading || ordersLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

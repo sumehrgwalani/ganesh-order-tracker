@@ -9,6 +9,7 @@ export function useContacts(orgId: string | null) {
 
   const fetchContacts = useCallback(async () => {
     if (!orgId) {
+      setContacts({})  // Clear stale data from previous user
       setLoading(false)
       return
     }

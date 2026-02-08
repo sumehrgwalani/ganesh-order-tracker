@@ -9,6 +9,7 @@ export function useOrders(orgId: string | null) {
 
   const fetchOrders = useCallback(async () => {
     if (!orgId) {
+      setOrders([])  // Clear stale data from previous user
       setLoading(false)
       return
     }

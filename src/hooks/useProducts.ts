@@ -18,6 +18,8 @@ export function useProducts(orgId: string | null) {
 
   const fetchProducts = useCallback(async () => {
     if (!orgId) {
+      setProducts([])   // Clear stale data from previous user
+      setInquiries([])
       setLoading(false)
       return
     }
