@@ -988,14 +988,14 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           {/* PO Document Preview */}
           <div ref={poDocRef} className="px-6 py-3 mx-auto bg-white" style={{ fontSize: '12px', lineHeight: '1.35', maxWidth: '1000px' }}>
             {/* Header with Logo */}
-            <div className="flex items-center mb-2 pb-1.5 border-b-2 border-gray-200">
-              <div className="mr-3">
-                <GILogo size={50} />
-              </div>
+            <div className="flex items-center justify-between mb-2 pb-1.5 border-b-2 border-gray-200">
               <div>
                 <h2 className="text-lg font-bold text-gray-800" style={{ marginBottom: '1px' }}>GANESH INTERNATIONAL</h2>
                 <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
                 <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+              </div>
+              <div className="ml-4 flex-shrink-0">
+                <GILogo size={60} />
               </div>
             </div>
 
