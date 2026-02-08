@@ -128,7 +128,7 @@ function OrdersPage({ orders, expandedOrder, setExpandedOrder, onDeleteOrder }: 
               <OrderRow
                 key={order.id}
                 order={order}
-                onClick={() => navigate('/orders/' + order.id)}
+                onClick={() => navigate('/orders/' + encodeURIComponent(order.id))}
                 expanded={expandedOrder === order.id}
                 onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
                 onDelete={onDeleteOrder}

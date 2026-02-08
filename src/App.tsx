@@ -161,7 +161,7 @@ function App() {
                   if (orgId && createOrder) {
                     createOrder(newOrder).catch(console.error);
                   }
-                  navigate('/orders/' + newOrder.id);
+                  navigate('/orders/' + encodeURIComponent(newOrder.id));
                 }}
               />
             } />

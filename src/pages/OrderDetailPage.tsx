@@ -13,7 +13,8 @@ interface Props {
 }
 
 function OrderDetailPage({ orders }: Props) {
-  const { orderId } = useParams<{ orderId: string }>();
+  const { orderId: rawOrderId } = useParams<{ orderId: string }>();
+  const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
   const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
   const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({

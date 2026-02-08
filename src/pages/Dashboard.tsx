@@ -54,7 +54,7 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
         <div className="space-y-0">
           {filteredOrders.length > 0 ? (
             filteredOrders.map(order => (
-              <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + order.id)} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} onDelete={onDeleteOrder} />
+              <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + encodeURIComponent(order.id))} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} onDelete={onDeleteOrder} />
             ))
           ) : (
             <div className="text-center py-12 text-gray-500">
