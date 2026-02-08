@@ -113,10 +113,6 @@ function ProductsPage({ orders }: Props) {
                 <span className="font-medium text-gray-700">{product.suppliers.length}</span>
               </div>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">Details</button>
-              <button className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">New Order</button>
-            </div>
           </div>
         ))}
       </div>

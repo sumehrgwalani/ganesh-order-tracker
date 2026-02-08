@@ -6,8 +6,6 @@ import OrderProgressBar from './OrderProgressBar';
 
 interface Props {
   order: Order;
-  expanded?: boolean;
-  onToggleExpand?: () => void;
   onClick: () => void;
   onDelete?: (orderId: string) => Promise<void>;
 }

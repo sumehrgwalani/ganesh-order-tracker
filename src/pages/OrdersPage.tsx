@@ -9,12 +9,10 @@ import type { Order } from '../types';
 
 interface Props {
   orders: Order[];
-  expandedOrder: string | null;
-  setExpandedOrder: (id: string | null) => void;
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrdersPage({ orders, expandedOrder, setExpandedOrder, onDeleteOrder }: Props) {
+function OrdersPage({ orders, onDeleteOrder }: Props) {
   const navigate = useNavigate();
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
@@ -129,8 +127,6 @@ function OrdersPage({ orders, expandedOrder, setExpandedOrder, onDeleteOrder }: 
                 key={order.id}
                 order={order}
                 onClick={() => navigate('/orders/' + encodeURIComponent(order.id))}
-                expanded={expandedOrder === order.id}
-                onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
                 onDelete={onDeleteOrder}
               />
             ))

@@ -187,7 +187,6 @@ export function useContacts(orgId: string | null) {
 
   return {
     contacts,
-    contactsList: Object.entries(contacts).map(([email, c]) => ({ email, ...c })),
     loading,
     error,
     addContact,

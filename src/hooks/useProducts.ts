@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { ProductInquiry } from '../types'
 
-export interface Product {
+interface Product {
   id: string
   name: string
   category: string

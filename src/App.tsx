@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Order, Stats } from './types';
 import Sidebar from './layout/Sidebar';
@@ -18,32 +18,19 @@ import { useContacts } from './hooks/useContacts';
 import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
 import { useToast } from './components/Toast';
-// Fallback data for offline/setup mode
-import { initialOrders, productInquiries as fallbackInquiries } from './data/orders';
-import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 
 function App() {
   const { session, user, loading: authLoading, orgId, signOut } = useAuth();
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
-  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder, restoreOrder } = useOrders(orgId);
+  const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
   const { showToast } = useToast();
-  const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
+  const { inquiries: productInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
-  // When authenticated with DB, always use DB data (even if empty = fresh account)
-  // Only fall back to hardcoded sample data when DB is not connected (e.g. GitHub Pages demo)
-  const isDbReady = !!(orgId && !contactsLoading && !ordersLoading);
-  const contacts = isDbReady ? dbContacts : FALLBACK_CONTACTS;
-  const orders = isDbReady ? dbOrders : initialOrders;
-  const productInquiries = isDbReady ? dbInquiries : fallbackInquiries;
-
-  // Local orders state for fallback/demo mode (no DB)
-  const [localOrders, setLocalOrders] = useState<Order[]>(initialOrders);
-  const activeOrders = isDbReady ? orders : localOrders;
-  const setOrders = isDbReady ? setDbOrders : setLocalOrders;
+  const contacts = dbContacts;
+  const orders = dbOrders;
 
   // UI state that doesn't need routing
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedStage, setSelectedStage] = useState<number | null>(null);
   const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
@@ -74,7 +61,7 @@ function App() {
   }
 
   // Filter orders by search term AND selected stage
-  const filteredOrders = activeOrders.filter(order => {
+  const filteredOrders = orders.filter(order => {
     const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.product.toLowerCase().includes(searchTerm.toLowerCase());
@@ -85,25 +72,20 @@ function App() {
   });
 
   const stats: Stats = {
-    active: activeOrders.filter(o => o.currentStage < 8).length,
-    completed: activeOrders.filter(o => o.currentStage === 8).length,
+    active: orders.filter(o => o.currentStage < 8).length,
+    completed: orders.filter(o => o.currentStage === 8).length,
     inquiries: productInquiries.length,
     contacts: Object.keys(contacts).length,
-    products: isDbReady ? dbProducts.length : 8,
+    products: dbProducts.length,
   };
 
   const handleSync = async () => {
     setIsSyncing(true);
-    // If connected to DB, refetch data
-    if (orgId) {
-      // The hooks auto-refetch, so just update timestamp
-      setTimeout(() => {
-        setIsSyncing(false);
-        setLastSync(new Date().toISOString());
-      }, 1000);
-    } else {
-      setTimeout(() => { setIsSyncing(false); setLastSync(new Date().toISOString()); }, 2000);
-    }
+    // The hooks auto-refetch, so just update timestamp
+    setTimeout(() => {
+      setIsSyncing(false);
+      setLastSync(new Date().toISOString());
+    }, 1000);
   };
 
   const handleDeleteOrder = async (orderId: string) => {
@@ -143,34 +125,31 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar onSettingsClick={() => setShowSettings(true)} />
+      <Sidebar onSettingsClick={() => {}} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} userEmail={user?.email} onSignOut={signOut} />
         <main className="flex-1 overflow-auto p-6">
           <Routes>
             <Route path="/" element={
               <DashboardContent
-                orders={activeOrders}
+                orders={orders}
                 stats={stats}
                 filteredOrders={filteredOrders}
                 selectedStage={selectedStage}
                 setSelectedStage={setSelectedStage}
-                expandedOrder={expandedOrder}
-                setExpandedOrder={setExpandedOrder}
                 onDeleteOrder={handleDeleteOrder}
+                productInquiries={productInquiries}
               />
             } />
             <Route path="/orders" element={
               <OrdersPage
-                orders={activeOrders}
-                expandedOrder={expandedOrder}
-                setExpandedOrder={setExpandedOrder}
+                orders={orders}
                 onDeleteOrder={handleDeleteOrder}
               />
             } />
             <Route path="/orders/:orderId" element={
               <OrderDetailPage
-                orders={activeOrders}
+                orders={orders}
                 onUpdateStage={handleUpdateStage}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}
@@ -178,7 +157,7 @@ function App() {
             } />
             <Route path="/completed" element={
               <CompletedPage
-                orders={activeOrders}
+                orders={orders}
                 expandedOrder={expandedOrder}
                 setExpandedOrder={setExpandedOrder}
               />
@@ -187,11 +166,11 @@ function App() {
             <Route path="/create-po" element={
               <POGeneratorPage
                 contacts={contacts}
-                orders={activeOrders}
+                orders={orders}
                 setOrders={setOrders}
                 onOrderCreated={(newOrder) => {
                   if (orgId && createOrder) {
-                    createOrder(newOrder).catch(console.error);
+                    createOrder(newOrder).catch(() => showToast('Failed to save order', 'error'));
                   }
                   navigate('/orders/' + encodeURIComponent(newOrder.id));
                 }}
@@ -200,16 +179,16 @@ function App() {
             <Route path="/inquiries" element={<InquiriesPage />} />
             <Route path="/contacts" element={
               <ContactsPage
-                dbContacts={isDbReady ? dbContacts : undefined}
-                onAddContact={isDbReady ? addContact : undefined}
-                onUpdateContact={isDbReady ? updateContact : undefined}
-                onDeleteContact={isDbReady ? deleteContact : undefined}
-                onBulkImport={isDbReady ? bulkUpsertContacts : undefined}
-                onBulkDelete={isDbReady ? bulkDeleteContacts : undefined}
-                onRefresh={isDbReady ? refetchContacts : undefined}
+                dbContacts={dbContacts}
+                onAddContact={addContact}
+                onUpdateContact={updateContact}
+                onDeleteContact={deleteContact}
+                onBulkImport={bulkUpsertContacts}
+                onBulkDelete={bulkDeleteContacts}
+                onRefresh={refetchContacts}
               />
             } />
-            <Route path="/products" element={<ProductsPage orders={activeOrders} />} />
+            <Route path="/products" element={<ProductsPage orders={orders} />} />
             {/* Redirect any unknown routes to dashboard */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

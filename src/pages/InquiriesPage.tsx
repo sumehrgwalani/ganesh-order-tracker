@@ -16,10 +16,7 @@ interface InquiryItem {
   priority?: string;
 }
 
-interface Props {
-}
-
-function InquiriesPage({ }: Props) {
+function InquiriesPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received');
 

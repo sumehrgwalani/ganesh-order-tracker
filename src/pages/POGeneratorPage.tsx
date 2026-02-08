@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, ReactNode, Dispatch, SetStateAction } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
-import { CONTACTS } from '../data/contacts';
 import { GILogo } from '../components/Logos';
 import { supabase } from '../lib/supabase';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
@@ -11,7 +10,7 @@ import type { ContactsMap, Order, LineItem, POFormData } from '../types';
 interface Props {
   contacts?: ContactsMap;
   orders?: Order[];
-  setOrders?: Dispatch<SetStateAction<Order[]>>;
+  setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
 }
 
@@ -79,7 +78,7 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ contacts = CONTACTS, orders = [], setOrders, onOrderCreated }: Props) {
+function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated }: Props) {
   const navigate = useNavigate();
 
   // Get next PO number for a specific buyer
@@ -1681,9 +1680,8 @@ function POGeneratorPage({ contacts = CONTACTS, orders = [], setOrders, onOrderC
           contentType: 'application/pdf',
           upsert: true,
         });
-        console.log(`PDF saved to storage: ${primaryFilename}`);
-      } catch (err) {
-        console.error('PDF storage upload failed:', err);
+      } catch {
+        // PDF storage upload failed silently
       }
     }
   };

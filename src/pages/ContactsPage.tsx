@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
-import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
 import ContactImportModal from '../components/ContactImportModal';
@@ -70,10 +69,9 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
   // Use a stable key (number of contacts) to detect when DB data actually changes
   const dbContactsCount = dbContacts !== undefined ? Object.keys(dbContacts).length : -1;
 
-  // Derive contacts from DB or fallback
+  // Derive contacts from DB
   const [contacts, setContacts] = useState<Contact[]>(() => {
-    const source = dbContacts !== undefined ? dbContacts : CONTACTS;
-    return mapToContacts(source);
+    return mapToContacts(dbContacts || {});
   });
 
   // Sync local state when DB data changes (e.g. after import/refresh)

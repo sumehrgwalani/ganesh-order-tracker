@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import StatsCard from '../components/StatsCard';
 import StageFilter from '../components/StageFilter';
 import OrderRow from '../components/OrderRow';
 import { ORDER_STAGES } from '../data/constants';
-import { productInquiries } from '../data/orders';
-import type { Order, Stats } from '../types';
+import type { Order, Stats, ProductInquiry } from '../types';
 
 interface Props {
   orders: Order[];
@@ -14,12 +12,11 @@ interface Props {
   filteredOrders: Order[];
   selectedStage: number | null;
   setSelectedStage: (stage: number | null) => void;
-  expandedOrder: string | null;
-  setExpandedOrder: (id: string | null) => void;
   onDeleteOrder?: (orderId: string) => Promise<void>;
+  productInquiries: ProductInquiry[];
 }
 
-function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, expandedOrder, setExpandedOrder, onDeleteOrder }: Props) {
+function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, onDeleteOrder, productInquiries }: Props) {
   const navigate = useNavigate();
   return (
     <>
@@ -37,10 +34,7 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
             {selectedStage ? `Orders at "${ORDER_STAGES[selectedStage-1]?.name}"` : 'Active Orders'}
             <span className="ml-2 text-sm font-normal text-gray-500">({filteredOrders.length} orders)</span>
           </h2>
-          <div className="flex gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"><Icon name="Filter" size={16} /><span className="text-sm">Filter</span></button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
-          </div>
+          <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
         </div>
 
         {/* Clickable Stage Filter */}
@@ -54,7 +48,7 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
         <div className="space-y-0">
           {filteredOrders.length > 0 ? (
             filteredOrders.map(order => (
-              <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + encodeURIComponent(order.id))} expanded={expandedOrder === order.id} onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} onDelete={onDeleteOrder} />
+              <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + encodeURIComponent(order.id))} onDelete={onDeleteOrder} />
             ))
           ) : (
             <div className="text-center py-12 text-gray-500">
