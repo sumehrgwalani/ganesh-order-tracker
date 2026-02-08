@@ -375,11 +375,11 @@ function OrderDetailPage({ order, onBack }: Props) {
     }
     const productDesc = productDescParts.join(', ') || order.product;
 
-    // Table header columns
-    const thStyle = 'border:1px solid #d1d5db;padding:8px 10px;text-align:left;font-size:13px;';
-    const thStyleR = 'border:1px solid #d1d5db;padding:8px 10px;text-align:right;font-size:13px;';
-    const tdStyle = 'border:1px solid #d1d5db;padding:7px 10px;font-size:13px;';
-    const tdStyleR = 'border:1px solid #d1d5db;padding:7px 10px;font-size:13px;text-align:right;';
+    // Table header columns — compact for single-page fit
+    const thStyle = 'border:1px solid #d1d5db;padding:4px 6px;text-align:left;font-size:12px;';
+    const thStyleR = 'border:1px solid #d1d5db;padding:4px 6px;text-align:right;font-size:12px;';
+    const tdStyle = 'border:1px solid #d1d5db;padding:3px 6px;font-size:12px;';
+    const tdStyleR = 'border:1px solid #d1d5db;padding:3px 6px;font-size:12px;text-align:right;';
 
     const headerCells = [
       `<th style="${thStyle}">Product</th>`,
@@ -429,47 +429,47 @@ function OrderDetailPage({ order, onBack }: Props) {
     } catch { /* ignore */ }
 
     return `
-      <div style="font-family:Arial,Helvetica,sans-serif;padding:30px 40px;max-width:800px;margin:0 auto;color:#1f2937;">
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:16px 24px;max-width:800px;margin:0 auto;color:#1f2937;font-size:12px;">
         <!-- Header -->
-        <div style="display:flex;align-items:center;margin-bottom:30px;padding-bottom:20px;border-bottom:2px solid #e5e7eb;">
+        <div style="display:flex;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;">
           <div>
-            <h2 style="font-size:22px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
-            <p style="font-size:12px;color:#6b7280;margin:4px 0 0;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-            <p style="font-size:12px;color:#6b7280;margin:2px 0 0;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+            <h2 style="font-size:18px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
+            <p style="font-size:11px;color:#6b7280;margin:2px 0 0;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
+            <p style="font-size:11px;color:#6b7280;margin:1px 0 0;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
           </div>
         </div>
 
         <!-- Date and PO Number -->
-        <table style="width:100%;margin-bottom:20px;"><tr>
-          <td style="font-size:13px;"><strong>Date:</strong> ${poDate}</td>
-          <td style="font-size:13px;text-align:right;"><strong>Purchase Order No:</strong> <span style="font-weight:700;">${order.id}</span></td>
+        <table style="width:100%;margin-bottom:10px;"><tr>
+          <td><strong>Date:</strong> ${poDate}</td>
+          <td style="text-align:right;"><strong>Purchase Order No:</strong> <span style="font-weight:700;">${order.id}</span></td>
         </tr></table>
 
         <!-- To Section -->
-        <div style="margin-bottom:20px;font-size:13px;line-height:1.5;">
+        <div style="margin-bottom:8px;line-height:1.4;">
           <p style="color:#6b7280;margin:0;">To,</p>
-          <p style="font-weight:700;margin:2px 0;">${supplierName || '[EXPORTER NAME]'}</p>
+          <p style="font-weight:700;margin:1px 0;">${supplierName || '[EXPORTER NAME]'}</p>
           ${supplierAddress ? `<p style="margin:0;color:#4b5563;">${supplierAddress}</p>` : ''}
           <p style="font-weight:500;margin:0;color:#4b5563;">${supplierCountry}</p>
         </div>
 
         <!-- Greeting -->
-        <div style="margin-bottom:20px;font-size:13px;line-height:1.6;">
+        <div style="margin-bottom:10px;line-height:1.4;">
           <p style="margin:0;">Dear Sirs,</p>
-          <p style="margin:10px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${buyerName}</strong>${destination ? `, <strong>${destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
+          <p style="margin:4px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${buyerName}</strong>${destination ? `, <strong>${destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
         </div>
 
         <!-- Product Table -->
-        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:10px;page-break-inside:avoid;">
           <thead><tr style="background:#f3f4f6;">${headerCells}</tr></thead>
           <tbody>${bodyRows}${totalRow}</tbody>
         </table>
 
         <!-- Terms -->
-        <div style="font-size:13px;line-height:1.8;margin-bottom:20px;">
+        <div style="line-height:1.5;margin-bottom:10px;">
           <p style="margin:0;"><strong>Total Value:</strong> U.S. $${grandTotal}</p>
-          <p style="font-size:11px;color:#6b7280;margin:2px 0 2px 16px;">*We need a quality control of photos before loading</p>
-          <p style="font-size:11px;color:#6b7280;margin:0 0 4px 16px;">*Different colors Tapes for different products &amp; Lots.</p>
+          <p style="font-size:10px;color:#6b7280;margin:1px 0 1px 14px;">*We need a quality control of photos before loading</p>
+          <p style="font-size:10px;color:#6b7280;margin:0 0 2px 14px;">*Different colors Tapes for different products &amp; Lots.</p>
           ${deliveryTerms || destination ? `<p style="margin:0;"><strong>Delivery Terms:</strong> ${deliveryTerms} ${destination}</p>` : ''}
           ${deliveryDate ? `<p style="margin:0;"><strong>Shipment Date:</strong> ${deliveryDate}</p>` : ''}
           <p style="margin:0;"><strong>Commission:</strong> ${commission || '___________________'} + 18% GST</p>
@@ -481,9 +481,9 @@ function OrderDetailPage({ order, onBack }: Props) {
         </div>
 
         <!-- Important Notes -->
-        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px;font-size:13px;margin-bottom:20px;">
-          <p style="font-weight:600;color:#92400e;margin:0 0 8px;">Important Notes:</p>
-          <ul style="color:#a16207;margin:0;padding-left:20px;line-height:1.7;">
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:10px;page-break-inside:avoid;">
+          <p style="font-weight:600;color:#92400e;margin:0 0 4px;font-size:12px;">Important Notes:</p>
+          <ul style="color:#a16207;margin:0;padding-left:18px;line-height:1.35;font-size:11px;">
             <li>Should be minimum 5 days free Dem/ Det/ Plug in on the B/L or on the shipping line's letterhead.</li>
             <li>Please send us Loading chart alongwith the docs &amp; it should be mentioned the lot/code number.</li>
             <li>Please make plastic certificate.</li>
@@ -493,32 +493,32 @@ function OrderDetailPage({ order, onBack }: Props) {
           </ul>
         </div>
 
-        ${shippingMarks ? `<p style="font-size:13px;margin-bottom:16px;"><strong>Shipping Marks:</strong> ${shippingMarks}</p>` : ''}
+        ${shippingMarks ? `<p style="margin-bottom:8px;"><strong>Shipping Marks:</strong> ${shippingMarks}</p>` : ''}
 
         <!-- Please Note -->
-        <div style="font-size:13px;color:#4b5563;margin-bottom:20px;line-height:1.6;">
-          <p style="font-weight:600;margin:0 0 8px;">Please Note:</p>
-          ${buyerBank ? `<p style="margin:0 0 8px;">After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in ${buyerBank}.</p>` : ''}
-          <p style="margin:0 0 8px;">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
+        <div style="color:#4b5563;margin-bottom:10px;line-height:1.35;page-break-inside:avoid;">
+          <p style="font-weight:600;margin:0 0 4px;">Please Note:</p>
+          ${buyerBank ? `<p style="margin:0 0 4px;">After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in ${buyerBank}.</p>` : ''}
+          <p style="margin:0 0 4px;">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
           <p style="margin:0;">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
         </div>
 
         <!-- Closing -->
-        <div style="font-size:13px;color:#374151;margin-bottom:30px;">
+        <div style="color:#374151;margin-bottom:10px;">
           <p style="margin:0;">Hope you find the above terms &amp; conditions in order. Please put your Seal and Signature and send it to us as a token of your confirmation.</p>
-          <p style="margin:16px 0 0;">Thanking You,</p>
+          <p style="margin:8px 0 0;">Thanking You,</p>
         </div>
 
         <!-- Signature -->
-        <div style="margin-top:30px;">
+        <div style="margin-top:12px;page-break-inside:avoid;">
           ${signatureImg}
           <p style="font-weight:700;margin:0;color:#1f2937;">Sumehr Rajnish Gwalani</p>
           <p style="color:#4b5563;margin:2px 0 0;">GANESH INTERNATIONAL</p>
-          <div style="margin-top:8px;display:inline-block;padding:4px 12px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:12px;">&#10003; Digitally Signed &amp; Approved</div>
+          <div style="margin-top:4px;display:inline-block;padding:2px 8px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:10px;">&#10003; Digitally Signed &amp; Approved</div>
         </div>
 
         <!-- Footer -->
-        <div style="margin-top:30px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;">
+        <div style="margin-top:12px;padding-top:6px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;">
           <p style="margin:0;">FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
         </div>
       </div>
@@ -543,7 +543,7 @@ function OrderDetailPage({ order, onBack }: Props) {
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({
-        margin: [10, 10, 10, 10],
+        margin: [6, 8, 6, 8],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -561,7 +561,7 @@ function OrderDetailPage({ order, onBack }: Props) {
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({
-        margin: [10, 10, 10, 10],
+        margin: [6, 8, 6, 8],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
