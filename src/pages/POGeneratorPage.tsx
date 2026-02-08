@@ -1090,7 +1090,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
   // Handle supplier selection - auto-fill payment from previous orders
   const handleSupplierChange = (email: string) => {
-    const supplier = suppliers.find(s => s.email === email);
+    // Look in suppliers first, then fall back to full contacts map
+    const supplier = suppliers.find(s => s.email === email) || (contacts[email] ? { email, ...contacts[email] } : null);
     const supplierName = supplier?.name?.toLowerCase() || '';
     const buyerCompany = poData.buyer?.toLowerCase() || '';
 
@@ -1101,10 +1102,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         o.company?.toLowerCase().includes(buyerCompany) &&
         o.supplier?.toLowerCase().includes(supplierName)
       );
-      // If we find matching orders, we'd pull payment terms from them
-      // For now, common defaults based on supplier
       if (matchingOrders.length > 0) {
-        autoPayment = 'LC at Sight'; // Default for most Indian seafood export
+        autoPayment = 'LC at Sight';
       }
     }
 
@@ -2009,16 +2008,39 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                   {showSupplierDropdown && (() => {
-                    const filtered = suppliers.filter(s =>
-                      s.company.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-                      (s.country || '').toLowerCase().includes(supplierSearch.toLowerCase())
+                    const search = supplierSearch.toLowerCase();
+                    const filteredSuppliers = suppliers.filter(s =>
+                      s.company.toLowerCase().includes(search) ||
+                      s.name.toLowerCase().includes(search) ||
+                      (s.country || '').toLowerCase().includes(search)
                     );
-                    return filtered.length > 0 ? (
+                    // Also search ALL contacts as fallback (those not tagged as supplier)
+                    const allContacts = Object.entries(contacts).map(([email, c]) => ({ email, ...c }));
+                    const otherMatches = allContacts.filter(c => {
+                      const r = (c.role || '').toLowerCase();
+                      const isSupplier = r.includes('supplier');
+                      const matchesSearch = c.company.toLowerCase().includes(search) ||
+                        c.name.toLowerCase().includes(search) ||
+                        (c.country || '').toLowerCase().includes(search);
+                      return !isSupplier && matchesSearch && search.length > 0;
+                    });
+                    return (filteredSuppliers.length > 0 || otherMatches.length > 0) ? (
                       <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {filtered.map(s => (
+                        {filteredSuppliers.map(s => (
                           <button key={s.email} type="button" onClick={() => { handleSupplierChange(s.email); setSupplierSearch(s.company + (s.country ? ` (${s.country})` : '')); setShowSupplierDropdown(false); }} className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex justify-between items-center">
                             <span className="font-medium">{s.company}</span>
                             {s.country && <span className="text-xs text-gray-400">{s.country}</span>}
+                          </button>
+                        ))}
+                        {otherMatches.length > 0 && filteredSuppliers.length > 0 && (
+                          <div className="px-3 py-1 bg-gray-50 border-t border-gray-200">
+                            <span className="text-xs text-gray-500 font-medium">Other contacts</span>
+                          </div>
+                        )}
+                        {otherMatches.map(c => (
+                          <button key={c.email} type="button" onClick={() => { handleSupplierChange(c.email); setSupplierSearch(c.company + (c.country ? ` (${c.country})` : '')); setShowSupplierDropdown(false); }} className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex justify-between items-center">
+                            <span className="font-medium">{c.company}</span>
+                            <span className="text-xs text-gray-400">{c.role || 'No role'}{c.country ? ` · ${c.country}` : ''}</span>
                           </button>
                         ))}
                       </div>
