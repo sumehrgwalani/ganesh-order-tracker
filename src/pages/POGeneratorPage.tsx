@@ -320,35 +320,53 @@ function POGeneratorPage({ contacts = CONTACTS, orders = [], setOrders, onOrderC
     }).filter((s: string) => s.length > 0);
     const textLower = text.toLowerCase();
 
-    // Buyer abbreviations mapping
-    const buyerAbbreviations: Record<string, string> = {
-      'eg': 'Pescados E Guillem',
-      'pescados': 'Pescados E Guillem',
-      'guillem': 'Pescados E Guillem',
-      'seapeix': 'Seapeix',
-      'noriberica': 'Noriberica',
-      'ruggiero': 'Ruggiero Seafood',
-      'fiorital': 'Fiorital',
-      'ferrittica': 'Ferrittica',
-      'compesca': 'Compesca',
-      'soguima': 'Soguima',
-      'mariberica': 'Mariberica',
-    };
+    // Build buyer abbreviations dynamically from contacts (always synced with DB)
+    const buyerAbbreviations: Record<string, string> = {};
+    const buyerContacts = Object.entries(contacts)
+      .filter(([_, c]) => (c.role || '').toLowerCase().includes('buyer'))
+      .map(([email, c]) => ({ email, ...c }));
+    for (const b of buyerContacts) {
+      const company = b.company;
+      buyerAbbreviations[company.toLowerCase()] = company;
+      const words = company.split(/[\s/.\-]+/).filter((w: string) => w.length > 1);
+      for (const word of words) {
+        if (!buyerAbbreviations[word.toLowerCase()]) {
+          buyerAbbreviations[word.toLowerCase()] = company;
+        }
+      }
+    }
+    // Custom buyer shortcuts (resolve against actual contacts)
+    const customBuyerCodes: Record<string, string> = { 'eg': 'guillem', 'dagustin': 'dagustin' };
+    for (const [code, searchTerm] of Object.entries(customBuyerCodes)) {
+      if (!buyerAbbreviations[code]) {
+        const match = buyerContacts.find(b => b.company.toLowerCase().includes(searchTerm));
+        if (match) buyerAbbreviations[code] = match.company;
+      }
+    }
 
-    // Supplier abbreviations mapping
-    const supplierAbbreviations: Record<string, string> = {
-      'silver': 'Silver Star',
-      'nila': 'Nila',
-      'raunaq': 'Raunaq/JJ',
-      'jj': 'Raunaq/JJ',
-      'abad': 'ABAD',
-      'arsha': 'Arsha',
-      'hainan': 'Hainan',
-      'fivestar': 'Fivestar',
-      'capithan': 'Capithan',
-      'premier': 'Premier',
-      'jinny': 'Jinny Marine',
-    };
+    // Build supplier abbreviations dynamically from contacts (always synced with DB)
+    const supplierAbbreviations: Record<string, string> = {};
+    const supplierContacts = Object.entries(contacts)
+      .filter(([_, c]) => (c.role || '').toLowerCase().includes('supplier'))
+      .map(([email, c]) => ({ email, ...c }));
+    for (const s of supplierContacts) {
+      const company = s.company;
+      supplierAbbreviations[company.toLowerCase()] = company;
+      const words = company.split(/[\s/.\-]+/).filter((w: string) => w.length > 1);
+      for (const word of words) {
+        if (!supplierAbbreviations[word.toLowerCase()]) {
+          supplierAbbreviations[word.toLowerCase()] = company;
+        }
+      }
+    }
+    // Custom supplier shortcuts (resolve against actual contacts)
+    const customSupplierCodes: Record<string, string> = { 'jj': 'raunaq' };
+    for (const [code, searchTerm] of Object.entries(customSupplierCodes)) {
+      if (!supplierAbbreviations[code]) {
+        const match = supplierContacts.find(s => s.company.toLowerCase().includes(searchTerm));
+        if (match) supplierAbbreviations[code] = match.company;
+      }
+    }
 
     // Spanish to English translations
     const translations: Record<string, string> = {
