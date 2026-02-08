@@ -11,8 +11,10 @@ export const ORDER_STAGES: OrderStage[] = [
   { id: 8, name: 'DHL Shipped', shortName: 'DHL Sent', description: 'DHL tracking number shared', color: 'green' },
 ];
 
-export const LOGO_URL: string = "https://raw.githubusercontent.com/sumehrgwalani/ganesh-order-tracker/main/FinalLogo%20Circle.png";
-export const GI_LOGO_URL: string = "https://raw.githubusercontent.com/sumehrgwalani/ganesh-order-tracker/main/logo2-2.png";
+// Logos served from public/ directory via Vite base path
+const BASE = import.meta.env.BASE_URL;
+export const LOGO_URL: string = `${BASE}wtt-logo.png`;
+export const GI_LOGO_URL: string = `${BASE}logo2-2.png`;
 
 // Buyer reference codes for PO numbering
 export const BUYER_CODES: Record<string, string> = {
