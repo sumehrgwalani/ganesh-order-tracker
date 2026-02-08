@@ -359,13 +359,21 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         if (detectedBuyer) setBuyerSearch(detectedBuyer);
       }
 
-      // Build product description from unique products (include freezing + glaze)
-      const productDesc = [...new Set(processedItems.map((item: any) => {
+      // Build product description from unique products (case-insensitive dedup, include freezing + glaze)
+      const seen = new Set<string>();
+      const uniqueDescs: string[] = [];
+      processedItems.forEach((item: any) => {
         const parts = [item.product];
         if (item.freezing) parts.push(item.freezing);
         if (item.glaze) parts.push(item.glaze);
-        return parts.filter(Boolean).join(' ');
-      }).filter(Boolean))].join(', ');
+        const desc = parts.filter(Boolean).join(' ');
+        const key = desc.toLowerCase();
+        if (desc && !seen.has(key)) {
+          seen.add(key);
+          uniqueDescs.push(desc);
+        }
+      });
+      const productDesc = uniqueDescs.join(', ');
       if (productDesc) {
         setPOData(prev => ({ ...prev, product: productDesc }));
       }
