@@ -19,7 +19,8 @@ export function useOrders(orgId: string | null) {
         .from('orders')
         .select(`
           *,
-          order_history (*)
+          order_history (*),
+          order_line_items (*)
         `)
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
@@ -45,6 +46,22 @@ export function useOrders(orgId: string | null) {
         totalValue: row.total_value || undefined,
         totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
         metadata: row.metadata || undefined,
+        lineItems: (row.order_line_items || [])
+          .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map((li: any) => ({
+            product: li.product || '',
+            brand: li.brand || '',
+            freezing: li.freezing || '',
+            size: li.size || '',
+            glaze: li.glaze || '',
+            glazeMarked: li.glaze_marked || '',
+            packing: li.packing || '',
+            cases: li.cases || 0,
+            kilos: li.kilos || 0,
+            pricePerKg: li.price_per_kg || 0,
+            currency: li.currency || 'USD',
+            total: li.total || 0,
+          })),
         history: (row.order_history || [])
           .sort((a: any, b: any) => a.stage - b.stage)
           .map((h: any): HistoryEntry => ({
@@ -124,8 +141,10 @@ export function useOrders(orgId: string | null) {
           order_id: newOrder.id,
           product: String(item.product || ''),
           brand: String(item.brand || ''),
+          freezing: String(item.freezing || ''),
           size: String(item.size || ''),
           glaze: String(item.glaze || ''),
+          glaze_marked: String(item.glazeMarked || ''),
           packing: String(item.packing || ''),
           cases: parseInt(String(item.cases)) || 0,
           kilos: parseFloat(String(item.kilos)) || 0,
