@@ -1666,11 +1666,17 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                     {bulkCreate && (
                       <div className="flex items-center gap-1">
                         <input
-                          type="number"
-                          min={2}
-                          max={50}
+                          type="text"
+                          inputMode="numeric"
                           value={bulkCount}
-                          onChange={(e) => setBulkCount(Math.max(2, Math.min(50, parseInt(e.target.value) || 2)))}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setBulkCount(val === '' ? ('' as any) : parseInt(val));
+                          }}
+                          onBlur={() => {
+                            const clamped = Math.max(2, Math.min(50, bulkCount || 2));
+                            setBulkCount(clamped);
+                          }}
                           className="w-16 px-2 py-1 border border-blue-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <span className="text-xs text-gray-500">POs</span>
