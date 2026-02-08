@@ -17,6 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { useContacts } from './hooks/useContacts';
 import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
+import { useToast } from './components/Toast';
 // Fallback data for offline/setup mode
 import { initialOrders, productInquiries as fallbackInquiries } from './data/orders';
 import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
@@ -24,7 +25,8 @@ import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 function App() {
   const { session, user, loading: authLoading, orgId, signOut } = useAuth();
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
-  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder, deleteOrder } = useOrders(orgId);
+  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder, restoreOrder } = useOrders(orgId);
+  const { showToast } = useToast();
   const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
   // When authenticated with DB, always use DB data (even if empty = fresh account)
@@ -105,10 +107,37 @@ function App() {
   };
 
   const handleDeleteOrder = async (orderId: string) => {
-    if (deleteOrder) {
-      await deleteOrder(orderId);
-    } else {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
+    try {
+      if (deleteOrder) {
+        await deleteOrder(orderId);
+      } else {
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+      }
+      showToast('Order archived successfully', 'success');
+    } catch {
+      showToast('Failed to archive order', 'error');
+    }
+  };
+
+  const handleUpdateStage = async (orderId: string, newStage: number, oldStage?: number) => {
+    try {
+      if (updateOrderStage) {
+        await updateOrderStage(orderId, newStage, oldStage);
+      }
+      showToast('Order stage updated', 'success');
+    } catch {
+      showToast('Failed to update stage', 'error');
+    }
+  };
+
+  const handleUpdateOrder = async (orderId: string, updates: Partial<Order>) => {
+    try {
+      if (updateOrder) {
+        await updateOrder(orderId, updates);
+      }
+      showToast('Order updated successfully', 'success');
+    } catch {
+      showToast('Failed to update order', 'error');
     }
   };
 
@@ -142,6 +171,9 @@ function App() {
             <Route path="/orders/:orderId" element={
               <OrderDetailPage
                 orders={activeOrders}
+                onUpdateStage={handleUpdateStage}
+                onUpdateOrder={handleUpdateOrder}
+                onDeleteOrder={handleDeleteOrder}
               />
             } />
             <Route path="/completed" element={

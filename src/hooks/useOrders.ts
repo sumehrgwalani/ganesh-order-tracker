@@ -14,7 +14,7 @@ export function useOrders(orgId: string | null) {
     }
     try {
       setLoading(true)
-      // Fetch orders with their history
+      // Fetch orders with their history — exclude soft-deleted orders
       const { data: orderRows, error: fetchError } = await supabase
         .from('orders')
         .select(`
@@ -23,60 +23,27 @@ export function useOrders(orgId: string | null) {
           order_line_items (*)
         `)
         .eq('organization_id', orgId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
 
-      if (fetchError) throw fetchError
+      if (fetchError) {
+        // Fallback: if deleted_at column doesn't exist yet, fetch without filter
+        if (fetchError.message?.includes('deleted_at')) {
+          const { data: fallbackRows, error: fallbackError } = await supabase
+            .from('orders')
+            .select(`*, order_history (*), order_line_items (*)`)
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+          if (fallbackError) throw fallbackError
+          setOrders(convertRows(fallbackRows || []))
+          setError(null)
+          setLoading(false)
+          return
+        }
+        throw fetchError
+      }
 
-      // Convert to app's Order format
-      const converted: Order[] = (orderRows || []).map((row: any) => ({
-        id: row.order_id,
-        poNumber: row.po_number || '',
-        piNumber: row.pi_number || undefined,
-        company: row.company,
-        brand: row.brand || undefined,
-        product: row.product,
-        specs: row.specs || '',
-        from: row.from_location || 'India',
-        to: row.to_location || '',
-        date: row.order_date || '',
-        currentStage: row.current_stage,
-        supplier: row.supplier,
-        artworkStatus: row.artwork_status || undefined,
-        awbNumber: row.awb_number || undefined,
-        totalValue: row.total_value || undefined,
-        totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
-        metadata: row.metadata || undefined,
-        lineItems: (row.order_line_items || [])
-          .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-          .map((li: any) => ({
-            product: li.product || '',
-            brand: li.brand || '',
-            freezing: li.freezing || '',
-            size: li.size || '',
-            glaze: li.glaze || '',
-            glazeMarked: li.glaze_marked || '',
-            packing: li.packing || '',
-            cases: li.cases || 0,
-            kilos: li.kilos || 0,
-            pricePerKg: li.price_per_kg || 0,
-            currency: li.currency || 'USD',
-            total: li.total || 0,
-          })),
-        history: (row.order_history || [])
-          .sort((a: any, b: any) => a.stage - b.stage)
-          .map((h: any): HistoryEntry => ({
-            stage: h.stage,
-            timestamp: h.timestamp,
-            from: h.from_address || '',
-            to: h.to_address || undefined,
-            subject: h.subject || '',
-            body: h.body || '',
-            hasAttachment: h.has_attachment || false,
-            attachments: h.attachments || undefined,
-          })),
-      }))
-
-      setOrders(converted)
+      setOrders(convertRows(orderRows || []))
       setError(null)
     } catch (err: any) {
       setError(err.message)
@@ -85,14 +52,65 @@ export function useOrders(orgId: string | null) {
     }
   }, [orgId])
 
+  // Convert DB rows to app's Order format
+  const convertRows = (orderRows: any[]): Order[] => {
+    return orderRows.map((row: any) => ({
+      id: row.order_id,
+      poNumber: row.po_number || '',
+      piNumber: row.pi_number || undefined,
+      company: row.company,
+      brand: row.brand || undefined,
+      product: row.product,
+      specs: row.specs || '',
+      from: row.from_location || 'India',
+      to: row.to_location || '',
+      date: row.order_date || '',
+      currentStage: row.current_stage,
+      supplier: row.supplier,
+      artworkStatus: row.artwork_status || undefined,
+      awbNumber: row.awb_number || undefined,
+      totalValue: row.total_value || undefined,
+      totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
+      metadata: row.metadata || undefined,
+      lineItems: (row.order_line_items || [])
+        .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((li: any) => ({
+          product: li.product || '',
+          brand: li.brand || '',
+          freezing: li.freezing || '',
+          size: li.size || '',
+          glaze: li.glaze || '',
+          glazeMarked: li.glaze_marked || '',
+          packing: li.packing || '',
+          cases: li.cases || 0,
+          kilos: li.kilos || 0,
+          pricePerKg: li.price_per_kg || 0,
+          currency: li.currency || 'USD',
+          total: li.total || 0,
+        })),
+      history: (row.order_history || [])
+        .sort((a: any, b: any) => a.stage - b.stage || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        .map((h: any): HistoryEntry => ({
+          stage: h.stage,
+          timestamp: h.timestamp,
+          from: h.from_address || '',
+          to: h.to_address || undefined,
+          subject: h.subject || '',
+          body: h.body || '',
+          hasAttachment: h.has_attachment || false,
+          attachments: h.attachments || undefined,
+        })),
+    }))
+  }
+
   useEffect(() => {
     fetchOrders()
   }, [fetchOrders])
 
+  // ── Create Order ──────────────────────────────────────────────────────
   const createOrder = async (order: Order) => {
     if (!orgId) return null
     try {
-      // Insert order
       const { data: newOrder, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -164,12 +182,75 @@ export function useOrders(orgId: string | null) {
     }
   }
 
-  const updateOrderStage = async (orderId: string, newStage: number) => {
+  // ── Update Order Stage (with audit log) ───────────────────────────────
+  const updateOrderStage = async (orderId: string, newStage: number, oldStage?: number) => {
     if (!orgId) return
     try {
+      // Get the DB UUID for this order
+      const { data: orderRow, error: lookupError } = await supabase
+        .from('orders')
+        .select('id, current_stage')
+        .eq('organization_id', orgId)
+        .eq('order_id', orderId)
+        .single()
+
+      if (lookupError) throw lookupError
+
+      const previousStage = oldStage ?? orderRow.current_stage
+
+      // Update the stage
       const { error: updateError } = await supabase
         .from('orders')
         .update({ current_stage: newStage, updated_at: new Date().toISOString() })
+        .eq('id', orderRow.id)
+
+      if (updateError) throw updateError
+
+      // Log stage change to order_history for audit trail
+      const stageNames: Record<number, string> = {
+        1: 'Order Confirmed', 2: 'Proforma Issued', 3: 'Artwork Approved',
+        4: 'Quality Check', 5: 'Schedule Confirmed', 6: 'Draft Documents',
+        7: 'Final Documents', 8: 'DHL Shipped',
+      }
+      await supabase.from('order_history').insert({
+        order_id: orderRow.id,
+        stage: newStage,
+        timestamp: new Date().toISOString(),
+        from_address: 'System',
+        subject: `Stage updated: ${stageNames[previousStage] || previousStage} → ${stageNames[newStage] || newStage}`,
+        body: `Order stage changed from "${stageNames[previousStage] || `Stage ${previousStage}`}" to "${stageNames[newStage] || `Stage ${newStage}`}".`,
+        has_attachment: false,
+      })
+
+      await fetchOrders()
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    }
+  }
+
+  // ── Update Order Details (full edit) ──────────────────────────────────
+  const updateOrder = async (orderId: string, updates: Partial<Order>) => {
+    if (!orgId) return
+    try {
+      // Build the DB update payload from the Order fields provided
+      const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
+      if (updates.company !== undefined) dbUpdates.company = updates.company
+      if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier
+      if (updates.product !== undefined) dbUpdates.product = updates.product
+      if (updates.specs !== undefined) dbUpdates.specs = updates.specs
+      if (updates.from !== undefined) dbUpdates.from_location = updates.from
+      if (updates.to !== undefined) dbUpdates.to_location = updates.to
+      if (updates.brand !== undefined) dbUpdates.brand = updates.brand || null
+      if (updates.piNumber !== undefined) dbUpdates.pi_number = updates.piNumber || null
+      if (updates.awbNumber !== undefined) dbUpdates.awb_number = updates.awbNumber || null
+      if (updates.totalValue !== undefined) dbUpdates.total_value = updates.totalValue || null
+      if (updates.totalKilos !== undefined) dbUpdates.total_kilos = updates.totalKilos || null
+      if (updates.artworkStatus !== undefined) dbUpdates.artwork_status = updates.artworkStatus || null
+
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update(dbUpdates)
         .eq('organization_id', orgId)
         .eq('order_id', orderId)
 
@@ -181,20 +262,51 @@ export function useOrders(orgId: string | null) {
     }
   }
 
+  // ── Soft Delete (archive) ─────────────────────────────────────────────
   const deleteOrder = async (orderId: string) => {
     if (!orgId) return
     try {
-      // Delete from Supabase — order_history and order_line_items should cascade
-      const { error: deleteError } = await supabase
+      // Try soft delete first (set deleted_at)
+      const { error: softDeleteError } = await supabase
         .from('orders')
-        .delete()
+        .update({ deleted_at: new Date().toISOString(), status: 'archived' })
         .eq('organization_id', orgId)
         .eq('order_id', orderId)
 
-      if (deleteError) throw deleteError
+      if (softDeleteError) {
+        // If deleted_at column doesn't exist yet, fall back to hard delete
+        if (softDeleteError.message?.includes('deleted_at')) {
+          const { error: hardDeleteError } = await supabase
+            .from('orders')
+            .delete()
+            .eq('organization_id', orgId)
+            .eq('order_id', orderId)
+          if (hardDeleteError) throw hardDeleteError
+        } else {
+          throw softDeleteError
+        }
+      }
 
-      // Remove from local state immediately
+      // Remove from local state immediately for responsive UI
       setOrders(prev => prev.filter(o => o.id !== orderId))
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    }
+  }
+
+  // ── Restore Order (undo soft delete) ──────────────────────────────────
+  const restoreOrder = async (orderId: string) => {
+    if (!orgId) return
+    try {
+      const { error: restoreError } = await supabase
+        .from('orders')
+        .update({ deleted_at: null, status: 'sent' })
+        .eq('organization_id', orgId)
+        .eq('order_id', orderId)
+
+      if (restoreError) throw restoreError
+      await fetchOrders()
     } catch (err: any) {
       setError(err.message)
       throw err
@@ -219,7 +331,9 @@ export function useOrders(orgId: string | null) {
     error,
     createOrder,
     updateOrderStage,
+    updateOrder,
     deleteOrder,
+    restoreOrder,
     setOrders: setOrdersCompat,
     refetch: fetchOrders,
   }

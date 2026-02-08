@@ -10,9 +10,12 @@ import { getAttachmentName, getAttachmentMeta } from '../types';
 
 interface Props {
   orders: Order[];
+  onUpdateStage?: (orderId: string, newStage: number, oldStage?: number) => Promise<void>;
+  onUpdateOrder?: (orderId: string, updates: Partial<Order>) => Promise<void>;
+  onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrderDetailPage({ orders }: Props) {
+function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
@@ -20,6 +23,9 @@ function OrderDetailPage({ orders }: Props) {
   const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({
     open: false, url: '', title: '', loading: false,
   });
+  const [editModal, setEditModal] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const order = orders.find(o => o.id === orderId);
 
@@ -548,9 +554,60 @@ function OrderDetailPage({ orders }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {onUpdateStage && order.currentStage > 1 && (
+            <button
+              onClick={() => onUpdateStage(order.id, order.currentStage - 1, order.currentStage)}
+              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Move to previous stage"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          )}
           <span className={`px-4 py-2 rounded-full text-sm font-medium ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
             {currentStageName}
           </span>
+          {onUpdateStage && order.currentStage < 8 && (
+            <button
+              onClick={() => onUpdateStage(order.id, order.currentStage + 1, order.currentStage)}
+              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Advance to next stage"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
+          {onUpdateOrder && (
+            <button
+              onClick={() => {
+                setEditForm({
+                  company: order.company || '',
+                  supplier: order.supplier || '',
+                  product: order.product || '',
+                  specs: order.specs || '',
+                  from: order.from || '',
+                  to: order.to || '',
+                  brand: order.brand || '',
+                  piNumber: order.piNumber || '',
+                  awbNumber: order.awbNumber || '',
+                  totalValue: order.totalValue || '',
+                  totalKilos: order.totalKilos ? String(order.totalKilos) : '',
+                });
+                setEditModal(true);
+              }}
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit order details"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          )}
+          {onDeleteOrder && (
+            <button
+              onClick={() => { if (confirm('Archive this order? You can restore it later.')) onDeleteOrder(order.id); }}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Archive order"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -704,6 +761,87 @@ function OrderDetailPage({ orders }: Props) {
           ))}
         </div>
       </div>
+
+      {/* Edit Order Modal */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setEditModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800">Edit Order Details</h3>
+              <button onClick={() => setEditModal(false)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                <Icon name="X" size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { key: 'company', label: 'Buyer' },
+                  { key: 'supplier', label: 'Supplier' },
+                  { key: 'product', label: 'Product' },
+                  { key: 'brand', label: 'Brand' },
+                  { key: 'from', label: 'Origin' },
+                  { key: 'to', label: 'Destination' },
+                  { key: 'piNumber', label: 'PI Number' },
+                  { key: 'awbNumber', label: 'AWB / Tracking' },
+                  { key: 'totalValue', label: 'Total Value (USD)' },
+                  { key: 'totalKilos', label: 'Total Kilos' },
+                ].map(field => (
+                  <div key={field.key}>
+                    <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={editForm[field.key] || ''}
+                      onChange={e => setEditForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Specs / Description</label>
+                <textarea
+                  value={editForm.specs || ''}
+                  onChange={e => setEditForm(prev => ({ ...prev, specs: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
+              <button onClick={() => setEditModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                disabled={saving}
+                onClick={async () => {
+                  if (!onUpdateOrder) return;
+                  setSaving(true);
+                  try {
+                    await onUpdateOrder(order.id, {
+                      company: editForm.company,
+                      supplier: editForm.supplier,
+                      product: editForm.product,
+                      specs: editForm.specs,
+                      from: editForm.from,
+                      to: editForm.to,
+                      brand: editForm.brand,
+                      piNumber: editForm.piNumber,
+                      awbNumber: editForm.awbNumber,
+                      totalValue: editForm.totalValue,
+                      totalKilos: editForm.totalKilos ? Number(editForm.totalKilos) : undefined,
+                    });
+                    setEditModal(false);
+                  } catch { /* error handled by parent */ }
+                  finally { setSaving(false); }
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PDF Preview Modal */}
       {pdfModal.open && (
