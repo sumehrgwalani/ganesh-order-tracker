@@ -297,7 +297,26 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       return;
     }
 
-    const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l);
+    // Pre-process: normalize input for consistent parsing
+    const rawLines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l);
+    const lines = rawLines.map((l: string) => {
+      let s = l;
+      // Normalize dashes: em-dash, en-dash → hyphen
+      s = s.replace(/[–—]/g, '-');
+      // Remove trailing periods/dots (common in informal input)
+      s = s.replace(/\.\s*$/, '');
+      // Normalize multiple spaces
+      s = s.replace(/\s{2,}/g, ' ');
+      // Strip line numbering (1., 2., a), b), etc.)
+      s = s.replace(/^\d+[.)]\s+/, '');
+      s = s.replace(/^[a-z][.)]\s+/i, '');
+      // Normalize kgs/kilos → kg
+      s = s.replace(/\bkgs\b/gi, 'kg');
+      s = s.replace(/\bkilos?\b/gi, 'kg');
+      // Normalize "metric ton(s)" → "MT"
+      s = s.replace(/\bmetric\s+tons?\b/gi, 'MT');
+      return s.trim();
+    }).filter((s: string) => s.length > 0);
     const textLower = text.toLowerCase();
 
     // Buyer abbreviations mapping
@@ -354,20 +373,38 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     // Product name translations
     const productTranslations: Record<string, string> = {
       'cuttlefish wc': 'Cuttlefish Whole Cleaned',
+      'cuttlefish whole cleaned': 'Cuttlefish Whole Cleaned',
       'cuttlefish squid mix': 'Cuttlefish Squid Mix',
       'skewers': 'Seafood Skewers',
-      'squid whole': 'Squid Whole IQF',
+      'squid whole cleaned': 'Squid Whole Cleaned',
+      'squid whole': 'Squid Whole',
       'squid rings': 'Squid Rings',
+      'squid ring': 'Squid Rings',
+      'squid tube': 'Squid Tubes',
+      'squid tubes': 'Squid Tubes',
+      'squid tentacle': 'Squid Tentacles',
+      'squid tentacles': 'Squid Tentacles',
       'baby squid': 'Baby Squid',
+      'baby octopus': 'Baby Octopus',
       'vannamei pud': 'Vannamei PUD',
       'vannamei hlso': 'Vannamei HLSO',
+      'vannamei pd': 'Vannamei PD',
+      'vannamei hoso': 'Vannamei HOSO',
       'calamar troceado': 'Cut Squid',
       'calamar entero': 'Whole Squid',
       'sepia entera': 'Whole Cuttlefish',
       'sepia troceada': 'Cut Cuttlefish',
+      'sepia limpia': 'Cuttlefish Whole Cleaned',
       'cut squid skin on': 'Cut Squid Skin On',
       'cut squid skinon': 'Cut Squid Skin On',
       'cut squid skin off': 'Cut Squid Skin Off',
+      'cut cuttlefish': 'Cut Cuttlefish',
+      'whole cuttlefish': 'Whole Cuttlefish',
+      'whole squid': 'Whole Squid',
+      'octopus whole': 'Octopus Whole',
+      'whole octopus': 'Whole Octopus',
+      'french fries': 'French Fries',
+      'potato wedges': 'Potato Wedges',
     };
 
     // Product abbreviation map
@@ -377,11 +414,17 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       'sqwc': 'Squid Whole Cleaned',
       'sq': 'Squid',
       'oct': 'Octopus',
+      'bsq': 'Baby Squid',
+      'vn': 'Vannamei',
+      'cskinon': 'Cut Squid Skin On',
+      'cskinoff': 'Cut Squid Skin Off',
     };
 
-    // Seafood keywords for auto-adding "Frozen" prefix
-    const seafoodKeywords = ['cuttlefish', 'squid', 'octopus', 'shrimp', 'prawn', 'fish', 'seafood', 'vannamei', 'lobster', 'crab', 'mussel', 'clam', 'scallop', 'anchovy', 'sardine', 'tuna', 'salmon', 'cod', 'hake', 'sole', 'skewer', 'roe'];
+    // Seafood keywords for auto-adding "Frozen" prefix and product detection
+    const seafoodKeywords = ['cuttlefish', 'squid', 'octopus', 'shrimp', 'prawn', 'fish', 'seafood', 'vannamei', 'lobster', 'crab', 'mussel', 'clam', 'scallop', 'anchovy', 'sardine', 'tuna', 'salmon', 'cod', 'hake', 'sole', 'skewer', 'roe', 'surimi', 'pangasius', 'tilapia', 'mackerel', 'swordfish', 'monkfish', 'seabass', 'seabream', 'grouper', 'snapper', 'pomfret', 'ribbon', 'croaker', 'threadfin', 'cuttle'];
     const friesKeywords = ['fries', 'french fries', 'potato', 'wedges'];
+    // Words that strongly indicate a product line (beyond seafood keywords)
+    const productIndicatorWords = ['cut', 'baby', 'ring', 'rings', 'tube', 'tubes', 'tentacle', 'tentacles', 'whole', 'frozen', 'cleaned', 'skinon', 'skinoff', 'skin', 'fillet', 'steak', 'portion', 'loin'];
 
     // Helper: resolve product name from abbreviations and translations, add Frozen prefix
     const resolveProductName = (rawName: string): string => {
@@ -432,15 +475,99 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       return productName;
     };
 
-    // Helper: extract packing from a line (e.g. "6kg Bulk", "6x1kg")
+    // Helper: extract packing from a line (e.g. "6kg Bulk", "6x1kg", "6 x 1 kg bags")
     const extractPacking = (text: string): string => {
-      const bulkMatch = text.match(/(\d+)\s*kg\s*bulk/i);
+      const tl = text.toLowerCase();
+      const bulkMatch = text.match(/(\d+)\s*kg\s*(?:bulk|granel)/i);
       if (bulkMatch) return bulkMatch[1] + ' kg Bulk';
       const multiMatch = text.match(/(\d+)\s*[xX]\s*(\d+)\s*kg/i);
-      if (multiMatch) return multiMatch[1] + 'x' + multiMatch[2] + ' kg';
+      if (multiMatch) {
+        let packing = multiMatch[1] + 'x' + multiMatch[2] + ' kg';
+        if (tl.includes('printed bag') || tl.includes('bolsa imprimida') || tl.includes('imprimida')) packing += ' Printed Bag';
+        else if (tl.includes('bolsa con rider') || tl.includes('con rider')) packing += ' Bag with Rider';
+        else if (tl.includes('bag') || tl.includes('bolsa')) packing += ' Bag';
+        else if (tl.includes('carton') || tl.includes('ctn')) packing += ' Carton';
+        else if (tl.includes('bulk') || tl.includes('granel')) packing += ' Bulk';
+        return packing;
+      }
       const directMatch = text.match(/(\d+)\s*kg/i);
-      if (directMatch && text.toLowerCase().includes('bulk')) return directMatch[1] + ' kg Bulk';
+      if (directMatch && (tl.includes('bulk') || tl.includes('granel'))) return directMatch[1] + ' kg Bulk';
       return '';
+    };
+
+    // Helper: extract packing descriptor from a line that has packing type info
+    const extractPackingDescriptor = (text: string): string => {
+      const tl = text.toLowerCase();
+      if (tl.includes('printed bag') || tl.includes('printed bags')) return 'Printed Bag';
+      if (tl.includes('bolsa con rider') || tl.includes('con rider')) return 'Bag with Rider';
+      if (tl.includes('bolsa imprimida') || tl.includes('imprimida')) return 'Printed Bag';
+      if (tl.includes('bag') || tl.includes('bolsa')) return 'Bag';
+      if (tl.includes('carton') || tl.includes('ctn') || tl.includes('cartons')) return 'Carton';
+      if (tl.includes('bulk') || tl.includes('granel')) return 'Bulk';
+      return '';
+    };
+
+    // Helper: detect currency from text (returns 'USD' or 'EUR')
+    const detectCurrency = (text: string): string => {
+      if (/€|eur\b/i.test(text)) return 'EUR';
+      return 'USD';
+    };
+
+    // Helper: extract price from a line (handles $, €, USD, EUR, bare numbers near keywords)
+    const extractPrice = (text: string): { price: string; currency: string } | null => {
+      // $4.50 or 4.50$ or €4.50 or 4.50€
+      const currSymbol = text.match(/[\$€]\s*([\d.]+)/) || text.match(/([\d.]+)\s*[\$€]/);
+      if (currSymbol) {
+        return { price: currSymbol[1], currency: /€/.test(text) ? 'EUR' : 'USD' };
+      }
+      // USD 4.50 or 4.50 USD or EUR 4.50 or 4.50 EUR
+      const currWord = text.match(/(?:USD|EUR)\s*([\d.]+)/i) || text.match(/([\d.]+)\s*(?:USD|EUR)/i);
+      if (currWord) {
+        return { price: currWord[1], currency: /eur/i.test(text) ? 'EUR' : 'USD' };
+      }
+      // "per kg" pattern: 4.50/kg or 4.50 per kg
+      const perKg = text.match(/([\d.]+)\s*(?:\/kg|per\s*kg)/i);
+      if (perKg) {
+        return { price: perKg[1], currency: detectCurrency(text) };
+      }
+      return null;
+    };
+
+    // Helper: check if a word is a known buyer or supplier abbreviation
+    const isKnownAbbreviation = (word: string): boolean => {
+      const w = word.toLowerCase();
+      return !!(buyerAbbreviations[w] || supplierAbbreviations[w]);
+    };
+
+    // Helper: score a line for how likely it is a product line
+    const scoreAsProduct = (line: string): number => {
+      const ll = line.toLowerCase();
+      let score = 0;
+      // Contains seafood/product keyword: strong signal
+      if ([...seafoodKeywords, ...friesKeywords].some(kw => ll.includes(kw))) score += 3;
+      // Contains product indicator word
+      if (productIndicatorWords.some(kw => new RegExp(`\\b${kw}\\b`).test(ll))) score += 2;
+      // Starts with a letter (not a number)
+      if (/^[a-zA-Z]/.test(line)) score += 1;
+      // Matches a known product abbreviation
+      const firstWord = ll.split(/[\s,./]+/)[0];
+      if (productAbbreviations[firstWord]) score += 4;
+      // Matches a known product translation
+      for (const key of Object.keys(productTranslations)) {
+        if (ll.includes(key)) { score += 3; break; }
+      }
+      // Negative signals: contains price, MT/ton, percentage, or known buyer/supplier abbreviation
+      if (/[\$€]/.test(line) || /\b(?:MT|tons?)\b/i.test(line)) score -= 2;
+      if (/\d+%/.test(line)) score -= 1;
+      if (/\d+\s*[xX]\s*\d+\s*kg/i.test(line)) score -= 2; // packing line
+      if (ll.includes('glaze') || ll.includes('glaseo')) score -= 2;
+      if (ll.includes('packing') || ll.includes('granel') || ll.includes('bolsa')) score -= 2;
+      if (ll.includes('marked as') || ll.includes('marked ')) score -= 2;
+      // If it's ONLY a buyer/supplier abbreviation (like "EG JJ"), it's not a product
+      const words = ll.split(/[\s,]+/).filter((w: string) => w.length > 0);
+      const allAbbreviations = words.every((w: string) => isKnownAbbreviation(w) || w.length <= 1);
+      if (allAbbreviations && words.length <= 4) score -= 5;
+      return score;
     };
 
     // Helper: extract brand from parentheses like "(Marca Oliver)", "( PBO )", "(Marca Bautismar)"
@@ -463,11 +590,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     // Helper: detect freezing method from text (IQF, Semi IQF, Blast, Block, Plate)
     const detectFreezing = (text: string): string => {
       const t = text.toLowerCase();
-      if (/\bsemi\s*iqf\b/i.test(t)) return 'Semi IQF';
-      if (/\biqf\b/i.test(t)) return 'IQF';
-      if (/\bblast\b/i.test(t)) return 'Blast';
-      if (/\bblock\s*(?:frozen|freeze)?\b/i.test(t)) return 'Block';
-      if (/\bplate\s*(?:frozen|freeze)?\b/i.test(t)) return 'Plate';
+      if (/\bsemi[\s-]*iqf\b/i.test(t)) return 'Semi IQF';
+      if (/\biqf\b/i.test(t) || /\bindividually\s+quick\s*frozen\b/i.test(t)) return 'IQF';
+      if (/\bair[\s-]*blast\b/i.test(t) || /\bblast[\s-]*(?:frozen|freeze|freezing)?\b/i.test(t)) return 'Blast';
+      if (/\bblock[\s-]*(?:frozen|freeze|freezing)?\b/i.test(t)) return 'Block';
+      if (/\bplate[\s-]*(?:frozen|freeze|freezing)?\b/i.test(t)) return 'Plate';
       return '';
     };
 
@@ -492,9 +619,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       if (lineLower.match(/^total\b/i)) continue;
       if (lineLower.match(/^container\s*\d+/i)) continue;
 
-      // Skip instruction lines (e.g. "please only prepare as they might add...")
-      if (lineLower.includes('please only prepare') || lineLower.includes('please prepare') ||
-          lineLower.includes('might add') || lineLower.includes('they may add')) continue;
+      // Skip instruction/comment lines (e.g. "please only prepare as they might add...")
+      const isInstructionLine = (
+        lineLower.includes('please only prepare') || lineLower.includes('please prepare') ||
+        lineLower.includes('might add') || lineLower.includes('they may add') ||
+        lineLower.startsWith('note:') || lineLower.startsWith('notes:') ||
+        lineLower.startsWith('special request') || lineLower.startsWith('important:') ||
+        lineLower.startsWith('attention:') || lineLower.startsWith('reminder:') ||
+        lineLower.startsWith('fyi') || lineLower.startsWith('ps:') || lineLower.startsWith('p.s') ||
+        (lineLower.includes('please') && lineLower.includes('confirm')) ||
+        (lineLower.includes('let me know') || lineLower.includes('let us know')) ||
+        lineLower.startsWith('thank') || lineLower.startsWith('regards') || lineLower.startsWith('best,')
+      );
+      if (isInstructionLine) continue;
 
       // === GLOBAL PACKING: "6x1kg printed bags for all products" or "packing for all: 6x1kg bag" ===
       if (lineLower.includes('for all') || lineLower.includes('all products') || lineLower.includes('all items')) {
@@ -623,8 +760,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       const productSizeMtMatch = line.match(/^([a-zA-Z][a-zA-Z\s]+?)\s*[-–]?\s*(\d+[-/]\d+|U[-/]\d+|\d+[-/](?:UP|up))?\s*(\d+)\s*(?:MT|tons?)\s*\$?\s*([\d.]+)\s*\$?/i);
       if (productSizeMtMatch && !isPackingLine && !lineLower.match(/^packing/i)) {
         const possibleProduct = productSizeMtMatch[1].trim();
-        const possibleProductLower = possibleProduct.toLowerCase();
-        const isProductName = [...seafoodKeywords, ...friesKeywords, 'cut', 'baby', 'ring', 'tube', 'tentacle', 'whole'].some(kw => possibleProductLower.includes(kw));
+        const isProductName = scoreAsProduct(possibleProduct) >= 2;
 
         if (isProductName) {
           if (currentBlock) productBlocks.push(currentBlock);
@@ -726,75 +862,86 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       }
 
       // === Buyer/Supplier abbreviation + packing description line ===
-      // e.g. "EG printed bags / cartons", "JJ cartons" — buyer/supplier + packing type for current block
-      const firstWordLowerTrimmed = lineLower.split(/[\s,./]+/)[0];
-      const isBuyerPackingLine = !!(buyerAbbreviations[firstWordLowerTrimmed] || supplierAbbreviations[firstWordLowerTrimmed]) &&
-        (lineLower.includes('bag') || lineLower.includes('carton') || lineLower.includes('printed') || lineLower.includes('bulk') || lineLower.includes('bolsa'));
+      // e.g. "EG printed bags / cartons", "JJ cartons", "eg cartons"
+      const lineWordsSplit = lineLower.split(/[\s,./]+/).filter((w: string) => w.length > 0);
+      const firstWordLowerTrimmed = lineWordsSplit[0] || '';
+      const hasPackingKeyword = lineLower.includes('bag') || lineLower.includes('carton') || lineLower.includes('ctn') || lineLower.includes('printed') || lineLower.includes('bulk') || lineLower.includes('bolsa') || lineLower.includes('granel');
+      const firstWordIsBuyerOrSupplier = !!(buyerAbbreviations[firstWordLowerTrimmed] || supplierAbbreviations[firstWordLowerTrimmed]);
+      const isBuyerPackingLine = firstWordIsBuyerOrSupplier && hasPackingKeyword;
       if (isBuyerPackingLine) {
         // Detect buyer/supplier
         if (buyerAbbreviations[firstWordLowerTrimmed]) detectedBuyer = buyerAbbreviations[firstWordLowerTrimmed];
         if (supplierAbbreviations[firstWordLowerTrimmed]) detectedSupplier = supplierAbbreviations[firstWordLowerTrimmed];
-        // Add packing type to current block
-        if (currentBlock && currentBlock.packing) {
-          if (lineLower.includes('printed bag') || lineLower.includes('printed bags')) {
-            currentBlock.packing += ' Printed Bag';
-          } else if (lineLower.includes('bag')) {
-            currentBlock.packing += ' Bag';
-          }
-          if (lineLower.includes('carton')) {
-            if (!currentBlock.packing.includes('Bag')) currentBlock.packing += ' Carton';
-            else currentBlock.packing = currentBlock.packing.replace('Bag', 'Printed Bag');
+        // Also check for a second buyer/supplier abbreviation on same line (e.g. "EG JJ cartons")
+        for (const w of lineWordsSplit.slice(1)) {
+          if (buyerAbbreviations[w] && !detectedBuyer) detectedBuyer = buyerAbbreviations[w];
+          if (supplierAbbreviations[w] && !detectedSupplier) detectedSupplier = supplierAbbreviations[w];
+        }
+        // Extract packing descriptor and apply to current block
+        const packDesc = extractPackingDescriptor(line);
+        if (currentBlock) {
+          if (currentBlock.packing && packDesc && !currentBlock.packing.includes(packDesc)) {
+            currentBlock.packing += ' ' + packDesc;
+          } else if (!currentBlock.packing && packDesc) {
+            // Try to extract full packing (with quantities) from this line
+            const fullPack = extractPacking(line);
+            currentBlock.packing = fullPack || packDesc;
           }
         }
         continue;
       }
 
       // === FORMAT 1: Original line-by-line format ===
-      // Check if this line starts a new product
-      const isProductLine = /^[a-zA-Z]/.test(line) &&
-        !lineLower.includes('glaseo') &&
-        !lineLower.includes('glaze') &&
-        !lineLower.includes('granel') &&
-        !lineLower.includes('bolsa') &&
-        !lineLower.includes('marked as') &&
-        !lineLower.includes('packing') &&
-        !lineLower.match(/^\d+\s*[xX]\s*\d+/) &&
-        !lineLower.match(/^\d+\s*(?:mt|tons?)\b/i) &&
-        !lineLower.match(/^\d+\s*kilo/i) &&
-        !lineLower.match(/^talla\b/i) &&
-        !lineLower.match(/^\d+-\d+\s*piezas/i) &&
-        line.length > 2;
+      // Use score-based product detection instead of rigid negative checks
+      const productScore = scoreAsProduct(line);
+      const isProductLine = productScore >= 2 && /^[a-zA-Z]/.test(line) && line.length > 2;
 
-      // Check for buyer/supplier instruction line (e.g. "Raunaq EG, please only prepare...")
+      // Check for buyer/supplier-only line (e.g. "EG JJ", "Raunaq EG")
       const isBuyerSupplierLine = (() => {
         // Check if all meaningful words are buyer/supplier abbreviations
-        const lineWords = line.split(/[\s,]+/).map((w: string) => w.toLowerCase()).filter((w: string) => w.length > 0);
-        const allAbbreviations = lineWords.every((w: string) =>
-          buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 3
+        const allAbbreviations = lineWordsSplit.every((w: string) =>
+          buyerAbbreviations[w] || supplierAbbreviations[w] || w.length <= 1
         );
-        if (allAbbreviations && line.length < 30) return true;
+        if (allAbbreviations && lineWordsSplit.length >= 1 && lineWordsSplit.length <= 4 && line.length < 30) return true;
         // Also check lines that mention names + instruction words
-        const hasAbbrev = lineWords.some((w: string) => buyerAbbreviations[w] || supplierAbbreviations[w]);
+        const hasAbbrev = lineWordsSplit.some((w: string) => buyerAbbreviations[w] || supplierAbbreviations[w]);
         const hasInstruction = lineLower.includes('please') || lineLower.includes('prepare') || lineLower.includes('only');
         return hasAbbrev && hasInstruction;
       })();
 
-      if (isProductLine && !isBuyerSupplierLine && !headerTemplate) {
+      // If it's a buyer/supplier line, extract buyer and supplier from it
+      if (isBuyerSupplierLine) {
+        for (const w of lineWordsSplit) {
+          if (buyerAbbreviations[w] && !detectedBuyer) detectedBuyer = buyerAbbreviations[w];
+          if (supplierAbbreviations[w] && !detectedSupplier) detectedSupplier = supplierAbbreviations[w];
+        }
+        continue;
+      }
+
+      if (isProductLine && !headerTemplate) {
         if (currentBlock) productBlocks.push(currentBlock);
 
         // Extract brand from parentheses (Marca Oliver, etc.) — processing styles (PBO) stay in product name
         const { brand, cleaned } = extractBrand(line);
         const productName = resolveProductName(cleaned);
 
+        // Multi-info: extract packing, glaze, freezing from the same product line
+        const inlinePacking = extractPacking(line);
+        const inlineGlazeMatch = line.match(/(\d+)%\s*(?:glaseo|glaze)/i) || (line.match(/(\d+)%/) && !line.match(/\d+%\s*(?:MT|tons?)/i) ? line.match(/(\d+)%/) : null);
+        const inlineGlaze = inlineGlazeMatch ? inlineGlazeMatch[1] + '% Glaze' : '';
+        // Extract inline price if present on same line
+        const inlinePrice = extractPrice(line);
+
         currentBlock = {
           product: productName,
           size: '',
-          glaze: '',
+          glaze: inlineGlaze,
           glazeMarked: '',
           freezing: detectFreezing(line),
           kilos: '',
-          pricePerKg: '',
-          packing: '',
+          pricePerKg: inlinePrice?.price || '',
+          currency: inlinePrice?.currency || '',
+          packing: inlinePacking,
           brand: brand,
           cases: '',
           notes: ''
@@ -875,16 +1022,31 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           currentBlock.notes = skewMatch[1] + ' pcs/skewer';
         }
 
-        // Standalone price ($5.05 or 3.90 $)
-        const priceMatch = line.match(/\$\s*([\d.]+)/) || line.match(/([\d.]+)\s*\$/);
-        if (priceMatch && !currentBlock.pricePerKg) {
-          currentBlock.pricePerKg = priceMatch[1];
+        // Standalone price ($5.05 or 3.90 $ or €4.50 or 4.50 EUR)
+        if (!currentBlock.pricePerKg) {
+          const priceExtracted = extractPrice(line);
+          if (priceExtracted) {
+            currentBlock.pricePerKg = priceExtracted.price;
+            currentBlock.currency = priceExtracted.currency;
+          }
         }
 
         // Standalone MT/tons (10MT, 5 ton, 5 tons)
         const mtMatch = line.match(/^(\d+)\s*(?:MT|tons?)$/i);
         if (mtMatch && !currentBlock.kilos) {
           currentBlock.kilos = (parseFloat(mtMatch[1]) * 1000).toString();
+        }
+
+        // Multi-info extraction: if this line has buyer/supplier abbreviations, capture them
+        for (const w of lineLower.split(/[\s,./]+/).filter((w: string) => w.length > 0)) {
+          if (buyerAbbreviations[w] && !detectedBuyer) detectedBuyer = buyerAbbreviations[w];
+          if (supplierAbbreviations[w] && !detectedSupplier) detectedSupplier = supplierAbbreviations[w];
+        }
+
+        // If this detail line also has packing descriptor and current block has packing without descriptor
+        if (currentBlock.packing && !currentBlock.packing.includes('Bag') && !currentBlock.packing.includes('Bulk') && !currentBlock.packing.includes('Carton')) {
+          const desc = extractPackingDescriptor(line);
+          if (desc) currentBlock.packing += ' ' + desc;
         }
       }
     }
@@ -902,16 +1064,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
     // Parse buyer and supplier from the text (may already be partially detected from inline parsing above)
 
-    // Check for abbreviations anywhere in text
-    const words = text.split(/[\s,]+/).map((w: string) => w.toLowerCase());
-    for (const word of words) {
+    // Check for abbreviations anywhere in text — split on spaces, commas, slashes, periods
+    const allWords = text.split(/[\s,./]+/).map((w: string) => w.toLowerCase()).filter((w: string) => w.length > 0);
+    for (const word of allWords) {
       if (buyerAbbreviations[word] && !detectedBuyer) {
         detectedBuyer = buyerAbbreviations[word];
       }
       if (supplierAbbreviations[word] && !detectedSupplier) {
         const companyName = supplierAbbreviations[word];
+        detectedSupplier = companyName;
+        // Try to match with contacts to get email
         const matchedSupplier = suppliers.find(s =>
-          s.company.toLowerCase().includes(companyName.toLowerCase())
+          s.company.toLowerCase().includes(companyName.toLowerCase()) ||
+          companyName.toLowerCase().includes(s.company.toLowerCase())
         );
         if (matchedSupplier) {
           detectedSupplier = matchedSupplier.company;
@@ -929,9 +1094,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       if (block.notes) sizeStr = sizeStr ? `${sizeStr} - ${block.notes}` : block.notes;
       if (!sizeStr) sizeStr = 'Assorted';
 
-      // Default freezing to IQF and kilos to 20MT (20000 kg) when not specified
+      // Default freezing to IQF; leave kilos empty if not specified (don't invent data)
       const finalFreezing = block.freezing || 'IQF';
-      const finalKilos = block.kilos || '20000';
+      const finalKilos = block.kilos || '';
       const finalKilosNum = parseFloat(finalKilos) || 0;
       const finalTotal = (finalKilosNum * price).toFixed(2);
 
@@ -945,7 +1110,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         cases: block.cases || '',
         kilos: finalKilos,
         pricePerKg: block.pricePerKg,
-        currency: 'USD',
+        currency: block.currency || 'USD',
         packing: block.packing,
         total: finalTotal
       };
