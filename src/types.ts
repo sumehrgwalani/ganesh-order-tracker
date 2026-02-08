@@ -40,13 +40,29 @@ export interface HistoryEntry {
   attachments?: AttachmentEntry[];
 }
 
+// Helper to normalize attachment entry (handles stringified JSON from DB)
+const normalizeAttachment = (att: AttachmentEntry): AttachmentEntry => {
+  if (typeof att === 'string') {
+    // Try to parse JSON strings that might have been stringified in DB
+    if (att.startsWith('{') && att.includes('"name"')) {
+      try { return JSON.parse(att); } catch { return att; }
+    }
+    return att;
+  }
+  return att;
+};
+
 // Helper to extract filename from attachment entry
-export const getAttachmentName = (att: AttachmentEntry): string =>
-  typeof att === 'string' ? att : att.name;
+export const getAttachmentName = (att: AttachmentEntry): string => {
+  const normalized = normalizeAttachment(att);
+  return typeof normalized === 'string' ? normalized : normalized.name;
+};
 
 // Helper to extract metadata from attachment entry
-export const getAttachmentMeta = (att: AttachmentEntry): Record<string, any> | undefined =>
-  typeof att === 'object' ? att.meta : undefined;
+export const getAttachmentMeta = (att: AttachmentEntry): Record<string, any> | undefined => {
+  const normalized = normalizeAttachment(att);
+  return typeof normalized === 'object' ? normalized.meta : undefined;
+};
 
 export interface Order {
   id: string;

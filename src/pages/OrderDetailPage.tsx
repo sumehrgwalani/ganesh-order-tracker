@@ -130,9 +130,6 @@ function OrderDetailPage({ order, onBack }: Props) {
                 View Purchase Order as PDF
               </button>
             </div>
-
-            {/* Attachments from stage 1 emails */}
-            {renderAttachments(1)}
           </div>
         );
 
