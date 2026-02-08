@@ -4,6 +4,7 @@ import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
 import { CONTACTS } from '../data/contacts';
 import { GILogo } from '../components/Logos';
+import { supabase } from '../lib/supabase';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
 
 interface Props {
@@ -1320,7 +1321,26 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     : poData.poNumber;
 
   // Send PO to supplier (supports bulk creation)
-  const sendPO = () => {
+  const sendPO = async () => {
+    // Step 1: Capture PDF blob from the live preview BEFORE any state changes
+    let pdfBlob: Blob | null = null;
+    const primaryFilename = `${poData.poNumber.replace(/\//g, '_')}.pdf`;
+    const primaryPdfUrl = supabase.storage.from('po-documents').getPublicUrl(primaryFilename).data.publicUrl;
+
+    if (poDocRef.current) {
+      try {
+        pdfBlob = await (html2pdf() as any).set({
+          margin: [10, 10, 10, 10],
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        }).from(poDocRef.current).output('blob');
+      } catch (err) {
+        console.error('PDF capture failed:', err);
+      }
+    }
+
+    // Step 2: Build order objects
     const count = bulkCreate ? bulkCount : 1;
     const newOrders: Order[] = [];
 
@@ -1329,6 +1349,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       for (let j = 0; j < i; j++) {
         currentPONumber = incrementPONumber(currentPONumber);
       }
+
+      const filename = `${currentPONumber.replace(/\//g, '_')}.pdf`;
+      const pdfUrl = supabase.storage.from('po-documents').getPublicUrl(filename).data.publicUrl;
 
       const newOrder: Order = {
         id: currentPONumber,
@@ -1344,6 +1367,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         totalValue: grandTotal,
         totalKilos: totalKilos,
         lineItems: lineItems,
+        metadata: { pdfUrl },
         history: [
           {
             stage: 1,
@@ -1356,6 +1380,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             attachments: [{
               name: `${currentPONumber.replace(/\//g, '_')}.pdf`,
               meta: {
+                pdfUrl,
                 supplier: poData.supplier,
                 supplierAddress: poData.supplierAddress || '',
                 supplierCountry: poData.supplierCountry || 'India',
@@ -1390,7 +1415,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       newOrders.push(newOrder);
     }
 
-    // Add all orders to orders list
+    // Step 3: Add orders to state + notify
     if (setOrders) {
       setOrders(prevOrders => [...newOrders, ...prevOrders]);
     }
@@ -1403,10 +1428,23 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       setNotification({ type: 'success', message: `📧 Purchase Order ${poData.poNumber} sent to ${poData.supplier}! New order created.` });
     }
 
-    // Callback to parent for each order
+    // Callback to parent for each order (saves to Supabase)
     if (onOrderCreated) {
       for (const order of newOrders) {
         onOrderCreated(order);
+      }
+    }
+
+    // Step 4: Upload captured PDF blob to Supabase Storage
+    if (pdfBlob) {
+      try {
+        await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+        console.log(`PDF saved to storage: ${primaryFilename}`);
+      } catch (err) {
+        console.error('PDF storage upload failed:', err);
       }
     }
   };

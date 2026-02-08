@@ -525,24 +525,39 @@ function OrderDetailPage({ order, onBack }: Props) {
     `;
   };
 
-  // Generate PO as PDF and show in modal
-  // First tries to load from Supabase Storage; falls back to on-the-fly generation
+  // Show stored PDF in modal — loads directly from Supabase Storage
+  // Falls back to on-the-fly generation only for old orders without a stored file
   const previewPOasPDF = async () => {
     setPdfModal({ open: true, url: '', title: `Purchase Order - ${order.id}`, loading: true });
 
-    // Check if a stored PDF URL exists in the attachment metadata
+    // Check for stored PDF URL (order metadata first, then attachment meta)
     const meta = getPOMeta();
-    if (meta?.pdfUrl) {
-      try {
-        const resp = await fetch(meta.pdfUrl, { method: 'HEAD' });
-        if (resp.ok) {
-          setPdfModal(prev => ({ ...prev, url: meta.pdfUrl, loading: false }));
-          return;
-        }
-      } catch { /* stored URL not reachable, fall through to generate */ }
+    const storedUrl = order.metadata?.pdfUrl || meta?.pdfUrl;
+
+    if (storedUrl) {
+      setPdfModal(prev => ({ ...prev, url: storedUrl, loading: false }));
+      return;
     }
 
-    // Fallback: generate from HTML
+    // Fallback for older orders: generate from HTML
+    try {
+      const html = buildPOHtml();
+      const blob = await (html2pdf() as any).set({
+        margin: [10, 10, 10, 10],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(html, 'string').output('blob');
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      setPdfModal(prev => ({ ...prev, url, loading: false }));
+    } catch {
+      setPdfModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  // Force regenerate PDF from data (for when stored file isn't available)
+  const regeneratePDF = async () => {
+    setPdfModal(prev => ({ ...prev, loading: true }));
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({
@@ -758,7 +773,7 @@ function OrderDetailPage({ order, onBack }: Props) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800 text-sm">{pdfModal.title}</h3>
-                  <p className="text-xs text-gray-500">PDF Preview</p>
+                  <p className="text-xs text-gray-500">{(order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Stored Document' : 'Generated Preview'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -772,6 +787,10 @@ function OrderDetailPage({ order, onBack }: Props) {
                     Download
                   </a>
                 )}
+                <button onClick={regeneratePDF} className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-1.5 font-medium" title="Regenerate PDF from order data">
+                  <Icon name="RefreshCw" size={14} />
+                  Regenerate
+                </button>
                 <button onClick={closePdfModal} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
                   <Icon name="X" size={20} className="text-gray-500" />
                 </button>
@@ -783,7 +802,7 @@ function OrderDetailPage({ order, onBack }: Props) {
               {pdfModal.loading ? (
                 <div className="h-full flex flex-col items-center justify-center gap-3">
                   <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-gray-600 font-medium">Generating PDF preview...</p>
+                  <p className="text-sm text-gray-600 font-medium">Loading document...</p>
                 </div>
               ) : pdfModal.url ? (
                 <iframe
