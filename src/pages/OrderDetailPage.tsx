@@ -15,6 +15,11 @@ interface Props {
 function OrderDetailPage({ orders }: Props) {
   const { orderId } = useParams<{ orderId: string }>();
   const navigate = useNavigate();
+  const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
+  const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({
+    open: false, url: '', title: '', loading: false,
+  });
+
   const order = orders.find(o => o.id === orderId);
 
   if (!order) {
@@ -32,10 +37,6 @@ function OrderDetailPage({ orders }: Props) {
       </div>
     );
   }
-  const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
-  const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({
-    open: false, url: '', title: '', loading: false,
-  });
 
   const currentStageName = ORDER_STAGES[order.currentStage - 1]?.name || 'Unknown';
   const isCompleted = order.currentStage === 8;
