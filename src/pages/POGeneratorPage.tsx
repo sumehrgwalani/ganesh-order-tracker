@@ -1133,19 +1133,6 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     return defaults;
   };
 
-  // Compute the current PO number for bulk preview navigation
-  const getCurrentBulkPONumber = (index: number): string => {
-    let num = poData.poNumber;
-    for (let i = 0; i < index; i++) {
-      num = incrementPONumber(num);
-    }
-    return num;
-  };
-
-  const currentPreviewPONumber = bulkCreate
-    ? getCurrentBulkPONumber(bulkPreviewIndex)
-    : poData.poNumber;
-
   // Submit for approval — go to sign-off page
   const submitForApproval = () => {
     if (!poData.supplier || !poData.buyer || lineItems.every(item => !item.product)) {
@@ -1214,6 +1201,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     }
     return poNumber + '-2';
   };
+
+  // Compute the current PO number for bulk preview navigation
+  const getCurrentBulkPONumber = (index: number): string => {
+    let num = poData.poNumber;
+    for (let i = 0; i < index; i++) {
+      num = incrementPONumber(num);
+    }
+    return num;
+  };
+
+  const currentPreviewPONumber = bulkCreate
+    ? getCurrentBulkPONumber(bulkPreviewIndex)
+    : poData.poNumber;
 
   // Send PO to supplier (supports bulk creation)
   const sendPO = () => {
