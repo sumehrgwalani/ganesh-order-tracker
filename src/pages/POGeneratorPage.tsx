@@ -327,12 +327,20 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     };
 
     // Helper: extract brand from parentheses like "(Marca Oliver)", "( PBO )", "(Marca Bautismar)"
-    const extractBrand = (text: string): { brand: string; cleaned: string } => {
+    // Processing styles that go in the product name, NOT as a brand
+    const processingStyles = ['pbo', 'pnd', 'pd', 'hlso', 'hoso', 'pud', 'pdto', 'cpto', 'pto', 'ezp', 'butterfly'];
+
+    const extractBrand = (text: string): { brand: string; cleaned: string; spec: string } => {
       const brandMatch = text.match(/\(\s*(?:Marca\s+)?(.+?)\s*\)/i);
       if (brandMatch) {
-        return { brand: brandMatch[1].trim(), cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ').trim() };
+        const inner = brandMatch[1].trim();
+        // If it's a processing style, keep it in the product name, not as a brand
+        if (processingStyles.some(ps => inner.toLowerCase() === ps.toLowerCase())) {
+          return { brand: '', cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ' + inner + ' ').trim(), spec: inner.toUpperCase() };
+        }
+        return { brand: inner, cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ').trim(), spec: '' };
       }
-      return { brand: '', cleaned: text };
+      return { brand: '', cleaned: text, spec: '' };
     };
 
     // Helper: detect freezing method from text (IQF, Semi IQF, Blast, Block, Plate)
@@ -572,7 +580,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       if (isProductLine && !isBuyerSupplierLine && !headerTemplate) {
         if (currentBlock) productBlocks.push(currentBlock);
 
-        // Extract brand from parentheses (Marca Oliver, PBO, etc.)
+        // Extract brand from parentheses (Marca Oliver, etc.) — processing styles (PBO) stay in product name
         const { brand, cleaned } = extractBrand(line);
         const productName = resolveProductName(cleaned);
 
@@ -744,8 +752,20 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       setLineItems(recalculateAllLineItems(newLineItems));
     }
 
-    // Get combined product description
-    const productDesc = productBlocks.map(b => b.product).join(', ');
+    // Get combined product description (deduplicated)
+    const seenProducts = new Set<string>();
+    const uniqueProducts: string[] = [];
+    for (const b of productBlocks) {
+      const key = `${b.product}|${b.freezing || ''}|${b.glaze || ''}`;
+      if (!seenProducts.has(key)) {
+        seenProducts.add(key);
+        let desc = b.product;
+        if (b.freezing && !desc.toLowerCase().includes(b.freezing.toLowerCase())) desc += ` ${b.freezing}`;
+        if (b.glaze) desc += ` ${b.glaze}`;
+        uniqueProducts.push(desc);
+      }
+    }
+    const productDesc = uniqueProducts.join(', ');
 
     setPOData(prev => ({
       ...prev,
@@ -1268,16 +1288,31 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
               <p className="text-gray-700 mt-2">
                 We are pleased to confirm our Purchase Order with you for the Export of{' '}
                 <span className="font-medium">
-                  {lineItems.filter(i => i.product).map((item, idx, arr) => {
-                    let desc = item.product;
-                    if (item.glaze && item.glazeMarked) {
-                      desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
-                    } else if (item.glaze) {
-                      desc += ` ${item.glaze}`;
+                  {(() => {
+                    // Deduplicate by product + freezing + glaze combo
+                    const seen = new Set<string>();
+                    const unique: typeof lineItems = [];
+                    for (const item of lineItems.filter(i => i.product)) {
+                      const key = `${item.product}|${item.freezing || ''}|${item.glaze || ''}|${item.glazeMarked || ''}`;
+                      if (!seen.has(key)) {
+                        seen.add(key);
+                        unique.push(item);
+                      }
                     }
-                    if (idx < arr.length - 1) return desc + ', ';
-                    return desc;
-                  }).join('') || '______________________'}
+                    return unique.map((item, idx, arr) => {
+                      let desc = item.product;
+                      if (item.freezing && !desc.toLowerCase().includes(item.freezing.toLowerCase())) {
+                        desc += ` ${item.freezing}`;
+                      }
+                      if (item.glaze && item.glazeMarked) {
+                        desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
+                      } else if (item.glaze) {
+                        desc += ` ${item.glaze}`;
+                      }
+                      if (idx < arr.length - 1) return desc + ', ';
+                      return desc;
+                    }).join('');
+                  })() || '______________________'}
                 </span>
                 {' '}to our Principals namely <span className="font-medium">M/s.{poData.buyer || '______________________'}</span>
                 {poData.destination && <>, <span className="font-medium">{poData.destination.toUpperCase()}</span></>}
