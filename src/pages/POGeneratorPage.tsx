@@ -724,19 +724,25 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       if (block.notes) sizeStr = sizeStr ? `${sizeStr} - ${block.notes}` : block.notes;
       if (!sizeStr) sizeStr = 'Assorted';
 
+      // Default freezing to IQF and kilos to 20MT (20000 kg) when not specified
+      const finalFreezing = block.freezing || 'IQF';
+      const finalKilos = block.kilos || '20000';
+      const finalKilosNum = parseFloat(finalKilos) || 0;
+      const finalTotal = (finalKilosNum * price).toFixed(2);
+
       return {
         product: block.product,
         size: sizeStr,
         glaze: block.glaze || '',
         glazeMarked: block.glazeMarked || '',
         brand: block.brand || '',
-        freezing: block.freezing || '',
+        freezing: finalFreezing,
         cases: block.cases || '',
-        kilos: block.kilos,
+        kilos: finalKilos,
         pricePerKg: block.pricePerKg,
         currency: 'USD',
         packing: block.packing,
-        total: (kilos * price).toFixed(2)
+        total: finalTotal
       };
     });
 
