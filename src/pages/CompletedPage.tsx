@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import PageHeader from '../components/PageHeader';
@@ -8,11 +9,10 @@ interface Props {
   orders: Order[];
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
-  setSelectedOrder: (order: Order) => void;
-  onBack: () => void;
 }
 
-function CompletedPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }: Props) {
+function CompletedPage({ orders, expandedOrder, setExpandedOrder }: Props) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const completedOrders = orders.filter(o => o.currentStage === 8);
 
@@ -28,7 +28,7 @@ function CompletedPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrd
       <PageHeader
         title="Completed Orders"
         subtitle={`${completedOrders.length} orders successfully delivered`}
-        onBack={onBack}
+        onBack={() => navigate('/')}
       />
 
       {/* Stats Summary */}

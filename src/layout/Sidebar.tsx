@@ -1,29 +1,25 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { WTTLogo } from '../components/Logos';
 
 interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   onSettingsClick: () => void;
-  onNavClick: () => void;
 }
 
-function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }: SidebarProps) {
-  const menuItems = [
-    { icon: 'Home', label: 'Dashboard', id: 'dashboard' },
-    { icon: 'FilePlus', label: 'Create PO', id: 'create-po' },
-    { icon: 'Inbox', label: 'Mailbox', id: 'mailbox' },
-    { icon: 'FileText', label: 'Orders', id: 'orders' },
-    { icon: 'Mail', label: 'Inquiries', id: 'inquiries' },
-    { icon: 'Package', label: 'Products', id: 'products' },
-    { icon: 'Users', label: 'Contacts', id: 'contacts' },
-  ];
+function Sidebar({ onSettingsClick }: SidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleNavClick = (tabId: string) => {
-    if (onNavClick) onNavClick(); // Clear selected order
-    setActiveTab(tabId);
-  };
+  const menuItems = [
+    { icon: 'Home', label: 'Dashboard', path: '/' },
+    { icon: 'FilePlus', label: 'Create PO', path: '/create-po' },
+    { icon: 'Inbox', label: 'Mailbox', path: '/mailbox' },
+    { icon: 'FileText', label: 'Orders', path: '/orders' },
+    { icon: 'Mail', label: 'Inquiries', path: '/inquiries' },
+    { icon: 'Package', label: 'Products', path: '/products' },
+    { icon: 'Users', label: 'Contacts', path: '/contacts' },
+  ];
 
   return (
     <div className="w-16 bg-gray-900 flex flex-col items-center py-4 space-y-2">
@@ -31,12 +27,15 @@ function Sidebar({ activeTab, setActiveTab, onSettingsClick, onNavClick }: Sideb
         <WTTLogo size={40} />
       </div>
       <div className="flex-1 space-y-2">
-        {menuItems.map((item) => (
-          <button key={item.id} onClick={() => handleNavClick(item.id)} className={`p-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
-            <Icon name={item.icon} size={20} />
-            <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">{item.label}</span>
-          </button>
-        ))}
+        {menuItems.map((item) => {
+          const isActive = location.pathname === item.path || (item.path === '/orders' && location.pathname.startsWith('/orders'));
+          return (
+            <button key={item.path} onClick={() => navigate(item.path)} className={`p-3 rounded-xl transition-all group relative ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+              <Icon name={item.icon} size={20} />
+              <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">{item.label}</span>
+            </button>
+          );
+        })}
       </div>
       <div className="space-y-2 pt-4 border-t border-gray-800">
         <button className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative">

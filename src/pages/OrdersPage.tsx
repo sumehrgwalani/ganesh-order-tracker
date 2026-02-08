@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
 import PageHeader from '../components/PageHeader';
@@ -10,12 +11,11 @@ interface Props {
   orders: Order[];
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
-  setSelectedOrder: (order: Order) => void;
-  onBack: () => void;
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack, onDeleteOrder }: Props) {
+function OrdersPage({ orders, expandedOrder, setExpandedOrder, onDeleteOrder }: Props) {
+  const navigate = useNavigate();
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -41,7 +41,7 @@ function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder,
       <PageHeader
         title="Active Orders"
         subtitle={`${activeOrders.length} orders in progress`}
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span>
@@ -128,7 +128,7 @@ function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder,
               <OrderRow
                 key={order.id}
                 order={order}
-                onClick={() => setSelectedOrder(order)}
+                onClick={() => navigate('/orders/' + order.id)}
                 expanded={expandedOrder === order.id}
                 onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
                 onDelete={onDeleteOrder}

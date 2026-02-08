@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
@@ -8,11 +9,29 @@ import type { Order, AttachmentEntry } from '../types';
 import { getAttachmentName, getAttachmentMeta } from '../types';
 
 interface Props {
-  order: Order;
-  onBack: () => void;
+  orders: Order[];
 }
 
-function OrderDetailPage({ order, onBack }: Props) {
+function OrderDetailPage({ orders }: Props) {
+  const { orderId } = useParams<{ orderId: string }>();
+  const navigate = useNavigate();
+  const order = orders.find(o => o.id === orderId);
+
+  if (!order) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <Icon name="AlertCircle" size={48} className="text-gray-300 mb-4" />
+        <p className="font-medium text-gray-500 mb-2">Order not found</p>
+        <p className="text-sm text-gray-400 mb-6">The order you're looking for doesn't exist.</p>
+        <button
+          onClick={() => navigate('/orders')}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Orders
+        </button>
+      </div>
+    );
+  }
   const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
   const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({
     open: false, url: '', title: '', loading: false,
@@ -590,7 +609,7 @@ function OrderDetailPage({ order, onBack }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6 relative z-10">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors z-20">
+          <button onClick={() => navigate('/orders')} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors z-20">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>

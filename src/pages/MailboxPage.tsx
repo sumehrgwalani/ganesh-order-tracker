@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { getContactInfo } from '../utils/helpers';
 
@@ -27,10 +28,10 @@ interface EmailItem {
 }
 
 interface Props {
-  onBack: () => void;
 }
 
-function MailboxPage({ onBack }: Props) {
+function MailboxPage({ }: Props) {
+  const navigate = useNavigate();
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [selectedEmail, setSelectedEmail] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -115,7 +116,7 @@ function MailboxPage({ onBack }: Props) {
       {/* Folder Sidebar */}
       <div className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
-          <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-4">
+          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
             <span className="text-sm">Back</span>
           </button>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, ReactNode, Dispatch, SetStateAction } from 'react';
+import { useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
@@ -8,7 +9,6 @@ import { supabase } from '../lib/supabase';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
 
 interface Props {
-  onBack: () => void;
   contacts?: ContactsMap;
   orders?: Order[];
   setOrders?: Dispatch<SetStateAction<Order[]>>;
@@ -79,7 +79,8 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, onOrderCreated }: Props) {
+function POGeneratorPage({ contacts = CONTACTS, orders = [], setOrders, onOrderCreated }: Props) {
+  const navigate = useNavigate();
 
   // Get next PO number for a specific buyer
   const getNextPONumber = (buyerName = '') => {
@@ -1708,7 +1709,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <button onClick={() => showPreview ? setShowPreview(false) : onBack()} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors">
+          <button onClick={() => showPreview ? setShowPreview(false) : navigate('/')} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors">
             <Icon name="ChevronRight" size={20} className="rotate-180 text-gray-500" />
           </button>
           <div>

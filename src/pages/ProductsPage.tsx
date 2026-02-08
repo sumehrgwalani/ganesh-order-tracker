@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import type { Order } from '../types';
@@ -15,10 +16,10 @@ interface Product {
 
 interface Props {
   orders: Order[];
-  onBack: () => void;
 }
 
-function ProductsPage({ orders, onBack }: Props) {
+function ProductsPage({ orders }: Props) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -54,7 +55,7 @@ function ProductsPage({ orders, onBack }: Props) {
       <PageHeader
         title="Products"
         subtitle={`${productsList.length} products in catalog`}
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Product</span>

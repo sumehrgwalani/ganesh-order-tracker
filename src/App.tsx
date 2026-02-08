@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Order, Stats } from './types';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
@@ -38,8 +39,7 @@ function App() {
   const activeOrders = isDbReady ? orders : localOrders;
   const setOrders = isDbReady ? setDbOrders : setLocalOrders;
 
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  // UI state that doesn't need routing
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -47,9 +47,16 @@ function App() {
   const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
+  const navigate = useNavigate();
+
   // Show login page if not authenticated
   if (!authLoading && !session) {
-    return <LoginPage onAuthSuccess={() => {}} />;
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage onAuthSuccess={() => {}} />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
 
   // Show loading while auth or data is loading
@@ -97,108 +104,83 @@ function App() {
     }
   };
 
-  // Render the current page based on activeTab
-  const renderPage = () => {
-    // If an order is selected, show the detail page
-    if (selectedOrder) {
-      return (
-        <OrderDetailPage
-          order={selectedOrder}
-          onBack={() => setSelectedOrder(null)}
-        />
-      );
-    }
-
-    switch(activeTab) {
-      case 'orders':
-        return (
-          <OrdersPage
-            orders={activeOrders}
-            expandedOrder={expandedOrder}
-            setExpandedOrder={setExpandedOrder}
-            setSelectedOrder={setSelectedOrder}
-            onBack={() => setActiveTab('dashboard')}
-            onDeleteOrder={async (orderId) => {
-              if (deleteOrder) {
-                await deleteOrder(orderId);
-              } else {
-                setOrders(prev => prev.filter(o => o.id !== orderId));
-              }
-            }}
-          />
-        );
-      case 'completed':
-        return (
-          <CompletedPage
-            orders={activeOrders}
-            expandedOrder={expandedOrder}
-            setExpandedOrder={setExpandedOrder}
-            setSelectedOrder={setSelectedOrder}
-            onBack={() => setActiveTab('dashboard')}
-          />
-        );
-      case 'mailbox':
-        return <MailboxPage onBack={() => setActiveTab('dashboard')} />;
-      case 'create-po':
-        return <POGeneratorPage
-          onBack={() => setActiveTab('dashboard')}
-          contacts={contacts}
-          orders={activeOrders}
-          setOrders={setOrders}
-          onOrderCreated={(newOrder) => {
-            if (orgId && createOrder) {
-              createOrder(newOrder).catch(console.error);
-            }
-            setSelectedOrder(newOrder);
-            setActiveTab('orders');
-          }}
-        />;
-      case 'inquiries':
-        return <InquiriesPage onBack={() => setActiveTab('dashboard')} />;
-      case 'contacts':
-        return <ContactsPage
-          onBack={() => setActiveTab('dashboard')}
-          dbContacts={isDbReady ? dbContacts : undefined}
-          onAddContact={isDbReady ? addContact : undefined}
-          onUpdateContact={isDbReady ? updateContact : undefined}
-          onDeleteContact={isDbReady ? deleteContact : undefined}
-          onBulkImport={isDbReady ? bulkUpsertContacts : undefined}
-          onBulkDelete={isDbReady ? bulkDeleteContacts : undefined}
-          onRefresh={isDbReady ? refetchContacts : undefined}
-        />;
-      case 'products':
-        return <ProductsPage orders={activeOrders} onBack={() => setActiveTab('dashboard')} />;
-      default:
-        return (
-          <DashboardContent
-            orders={activeOrders}
-            stats={stats}
-            setActiveTab={setActiveTab}
-            filteredOrders={filteredOrders}
-            selectedStage={selectedStage}
-            setSelectedStage={setSelectedStage}
-            expandedOrder={expandedOrder}
-            setExpandedOrder={setExpandedOrder}
-            setSelectedOrder={setSelectedOrder}
-            onDeleteOrder={async (orderId) => {
-              if (deleteOrder) {
-                await deleteOrder(orderId);
-              } else {
-                setOrders(prev => prev.filter(o => o.id !== orderId));
-              }
-            }}
-          />
-        );
+  const handleDeleteOrder = async (orderId: string) => {
+    if (deleteOrder) {
+      await deleteOrder(orderId);
+    } else {
+      setOrders(prev => prev.filter(o => o.id !== orderId));
     }
   };
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onSettingsClick={() => setShowSettings(true)} onNavClick={() => setSelectedOrder(null)} />
+      <Sidebar onSettingsClick={() => setShowSettings(true)} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} userEmail={user?.email} onSignOut={signOut} />
         <main className="flex-1 overflow-auto p-6">
-          {renderPage()}
+          <Routes>
+            <Route path="/" element={
+              <DashboardContent
+                orders={activeOrders}
+                stats={stats}
+                filteredOrders={filteredOrders}
+                selectedStage={selectedStage}
+                setSelectedStage={setSelectedStage}
+                expandedOrder={expandedOrder}
+                setExpandedOrder={setExpandedOrder}
+                onDeleteOrder={handleDeleteOrder}
+              />
+            } />
+            <Route path="/orders" element={
+              <OrdersPage
+                orders={activeOrders}
+                expandedOrder={expandedOrder}
+                setExpandedOrder={setExpandedOrder}
+                onDeleteOrder={handleDeleteOrder}
+              />
+            } />
+            <Route path="/orders/:orderId" element={
+              <OrderDetailPage
+                orders={activeOrders}
+              />
+            } />
+            <Route path="/completed" element={
+              <CompletedPage
+                orders={activeOrders}
+                expandedOrder={expandedOrder}
+                setExpandedOrder={setExpandedOrder}
+              />
+            } />
+            <Route path="/mailbox" element={<MailboxPage />} />
+            <Route path="/create-po" element={
+              <POGeneratorPage
+                contacts={contacts}
+                orders={activeOrders}
+                setOrders={setOrders}
+                onOrderCreated={(newOrder) => {
+                  if (orgId && createOrder) {
+                    createOrder(newOrder).catch(console.error);
+                  }
+                  navigate('/orders/' + newOrder.id);
+                }}
+              />
+            } />
+            <Route path="/inquiries" element={<InquiriesPage />} />
+            <Route path="/contacts" element={
+              <ContactsPage
+                dbContacts={isDbReady ? dbContacts : undefined}
+                onAddContact={isDbReady ? addContact : undefined}
+                onUpdateContact={isDbReady ? updateContact : undefined}
+                onDeleteContact={isDbReady ? deleteContact : undefined}
+                onBulkImport={isDbReady ? bulkUpsertContacts : undefined}
+                onBulkDelete={isDbReady ? bulkDeleteContacts : undefined}
+                onRefresh={isDbReady ? refetchContacts : undefined}
+              />
+            } />
+            <Route path="/products" element={<ProductsPage orders={activeOrders} />} />
+            {/* Redirect any unknown routes to dashboard */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 
@@ -16,10 +17,10 @@ interface InquiryItem {
 }
 
 interface Props {
-  onBack: () => void;
 }
 
-function InquiriesPage({ onBack }: Props) {
+function InquiriesPage({ }: Props) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received');
 
   const receivedInquiries: InquiryItem[] = [
@@ -57,7 +58,7 @@ function InquiriesPage({ onBack }: Props) {
       <PageHeader
         title="Product Inquiries"
         subtitle="Manage incoming and outgoing product inquiries"
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Inquiry</span>

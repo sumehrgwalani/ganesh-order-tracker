@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { CONTACTS } from '../data/contacts';
 import PageHeader from '../components/PageHeader';
@@ -23,7 +24,6 @@ interface Contact {
 }
 
 interface Props {
-  onBack: () => void;
   dbContacts?: ContactsMap;
   onAddContact?: (formData: ContactFormData) => Promise<any>;
   onUpdateContact?: (email: string, updates: Partial<Contact>) => Promise<void>;
@@ -53,7 +53,8 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
-function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
+function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
@@ -273,7 +274,7 @@ function ContactsPage({ onBack, dbContacts, onAddContact, onUpdateContact, onDel
       <PageHeader
         title="Contacts"
         subtitle={`${contacts.length} contacts across ${companies.length} companies`}
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <div className="flex flex-col items-stretch gap-2 w-44">
             <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
