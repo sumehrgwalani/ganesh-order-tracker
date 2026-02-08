@@ -306,6 +306,15 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         productName += ' IQF';
       }
 
+      // Preserve processing styles (PBO, PND, HLSO, etc.) from the original name
+      const processingStylesSet = ['pbo', 'pnd', 'pd', 'hlso', 'hoso', 'pud', 'pdto', 'cpto', 'pto', 'ezp', 'butterfly'];
+      for (const ps of processingStylesSet) {
+        const psRegex = new RegExp(`\\b${ps}\\b`, 'i');
+        if (psRegex.test(rawName) && !psRegex.test(productName)) {
+          productName += ' ' + ps.toUpperCase();
+        }
+      }
+
       // Auto-add "Frozen" prefix
       const productLower = productName.toLowerCase();
       const needsFrozen = [...seafoodKeywords, ...friesKeywords].some(kw => productLower.includes(kw));
