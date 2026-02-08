@@ -23,7 +23,7 @@ import { CONTACTS as FALLBACK_CONTACTS } from './data/contacts';
 function App() {
   const { session, user, loading: authLoading, orgId, signOut } = useAuth();
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
-  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder } = useOrders(orgId);
+  const { orders: dbOrders, setOrders: setDbOrders, loading: ordersLoading, createOrder, deleteOrder } = useOrders(orgId);
   const { inquiries: dbInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
 
   // When authenticated with DB, always use DB data (even if empty = fresh account)
@@ -118,6 +118,13 @@ function App() {
             setExpandedOrder={setExpandedOrder}
             setSelectedOrder={setSelectedOrder}
             onBack={() => setActiveTab('dashboard')}
+            onDeleteOrder={async (orderId) => {
+              if (deleteOrder) {
+                await deleteOrder(orderId);
+              } else {
+                setOrders(prev => prev.filter(o => o.id !== orderId));
+              }
+            }}
           />
         );
       case 'completed':

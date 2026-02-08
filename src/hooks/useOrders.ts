@@ -160,6 +160,26 @@ export function useOrders(orgId: string | null) {
     }
   }
 
+  const deleteOrder = async (orderId: string) => {
+    if (!orgId) return
+    try {
+      // Delete from Supabase — order_history and order_line_items should cascade
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('organization_id', orgId)
+        .eq('order_id', orderId)
+
+      if (deleteError) throw deleteError
+
+      // Remove from local state immediately
+      setOrders(prev => prev.filter(o => o.id !== orderId))
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    }
+  }
+
   // Setter function compatible with existing code: setOrders(fn)
   const setOrdersCompat = (updater: Order[] | ((prev: Order[]) => Order[])) => {
     if (typeof updater === 'function') {
@@ -178,6 +198,7 @@ export function useOrders(orgId: string | null) {
     error,
     createOrder,
     updateOrderStage,
+    deleteOrder,
     setOrders: setOrdersCompat,
     refetch: fetchOrders,
   }

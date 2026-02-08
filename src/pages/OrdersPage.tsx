@@ -12,9 +12,10 @@ interface Props {
   setExpandedOrder: (id: string | null) => void;
   setSelectedOrder: (order: Order) => void;
   onBack: () => void;
+  onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack }: Props) {
+function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder, onBack, onDeleteOrder }: Props) {
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -130,6 +131,7 @@ function OrdersPage({ orders, expandedOrder, setExpandedOrder, setSelectedOrder,
                 onClick={() => setSelectedOrder(order)}
                 expanded={expandedOrder === order.id}
                 onToggleExpand={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                onDelete={onDeleteOrder}
               />
             ))
           ) : (

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Order } from '../types';
 import Icon from './Icon';
 import { ORDER_STAGES } from '../data/constants';
@@ -10,13 +11,60 @@ interface Props {
   expanded: boolean;
   onToggleExpand: () => void;
   onClick: () => void;
+  onDelete?: (orderId: string) => Promise<void>;
 }
 
-function OrderRow({ order, expanded, onToggleExpand, onClick }: Props) {
+function OrderRow({ order, expanded, onToggleExpand, onClick, onDelete }: Props) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isCompleted = order.currentStage === 8;
   const lastUpdate = order.history[order.history.length - 1];
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(order.id);
+    } catch {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   return (
-    <div className="bg-white rounded-xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all mb-3">
+    <div className="bg-white rounded-xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all mb-3 relative">
+      {/* Delete Confirmation Overlay */}
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm rounded-xl z-10 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div className="text-center p-6 max-w-sm">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Icon name="AlertCircle" size={24} className="text-red-600" />
+            </div>
+            <h4 className="font-semibold text-gray-800 mb-1">Delete this order?</h4>
+            <p className="text-sm text-gray-500 mb-4">
+              <span className="font-mono font-medium text-gray-700">{order.id}</span> — {order.company} / {order.product}
+            </p>
+            <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(false); }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleting ? 'Deleting...' : 'Delete Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 cursor-pointer" onClick={onClick}>
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
@@ -42,7 +90,16 @@ function OrderRow({ order, expanded, onToggleExpand, onClick }: Props) {
             {order.awbNumber && <p className="text-xs text-blue-600 font-mono mt-1">AWB: {order.awbNumber}</p>}
           </div>
           <div className="text-right pl-6 text-xs text-gray-500 min-w-[100px]">{order.date}</div>
-          <Icon name="ChevronRight" className="ml-4 text-gray-300" size={20} />
+          {onDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+              className="ml-3 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete order"
+            >
+              <Icon name="Trash2" size={16} />
+            </button>
+          )}
+          <Icon name="ChevronRight" className="ml-2 text-gray-300" size={20} />
         </div>
         <div className="mt-3 pt-3 border-t border-gray-50">
           <CompactEmailPreview entry={lastUpdate} onClick={() => { onToggleExpand(); }} />
