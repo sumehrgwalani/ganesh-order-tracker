@@ -164,6 +164,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   const [showBuyerDropdown, setShowBuyerDropdown] = useState(false);
   const [bulkCreate, setBulkCreate] = useState(false);
   const [bulkCount, setBulkCount] = useState(2);
+  const [bulkPreviewIndex, setBulkPreviewIndex] = useState(0);
   const poDocRef = useRef<HTMLDivElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
@@ -1132,6 +1133,19 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     return defaults;
   };
 
+  // Compute the current PO number for bulk preview navigation
+  const getCurrentBulkPONumber = (index: number): string => {
+    let num = poData.poNumber;
+    for (let i = 0; i < index; i++) {
+      num = incrementPONumber(num);
+    }
+    return num;
+  };
+
+  const currentPreviewPONumber = bulkCreate
+    ? getCurrentBulkPONumber(bulkPreviewIndex)
+    : poData.poNumber;
+
   // Submit for approval — go to sign-off page
   const submitForApproval = () => {
     if (!poData.supplier || !poData.buyer || lineItems.every(item => !item.product)) {
@@ -1144,6 +1158,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     setStatus('pending_approval');
     setShowPreview(true);
     setShowSignOff(true);
+    setBulkPreviewIndex(0);
   };
 
   // Approve PO
@@ -1167,7 +1182,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     if (!poDocRef.current) return;
     setGeneratingPdf(true);
     try {
-      const filename = `${poData.poNumber.replace(/\//g, '_')}.pdf`;
+      const filename = `${currentPreviewPONumber.replace(/\//g, '_')}.pdf`;
       await html2pdf().set({
         margin: [10, 10, 10, 10],
         filename,
@@ -1317,7 +1332,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         <div className="flex items-center gap-3">
           <StatusBadge status={status} />
           {!showPreview && status === 'draft' && (
-            <button onClick={() => setShowPreview(true)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+            <button onClick={() => { setShowPreview(true); setBulkPreviewIndex(0); }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
               <Icon name="Eye" size={16} /> Preview
             </button>
           )}
@@ -1337,6 +1352,34 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           {showSignOff && status !== 'sent' && (
             <div className="bg-blue-50 border-b border-blue-200 p-3 text-center">
               <p className="text-sm font-medium text-blue-700">Review the Purchase Order below, then scroll down to sign off and send.</p>
+            </div>
+          )}
+
+          {/* Bulk Preview Navigation */}
+          {bulkCreate && bulkCount > 1 && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-3 flex items-center justify-between">
+              <button
+                onClick={() => setBulkPreviewIndex(Math.max(0, bulkPreviewIndex - 1))}
+                disabled={bulkPreviewIndex === 0}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <Icon name="ChevronLeft" size={16} /> Previous
+              </button>
+              <div className="text-center">
+                <span className="text-sm font-bold text-blue-700">
+                  PO {bulkPreviewIndex + 1} of {bulkCount}
+                </span>
+                <span className="block text-xs text-gray-500 mt-0.5 font-mono">
+                  {currentPreviewPONumber}
+                </span>
+              </div>
+              <button
+                onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
+                disabled={bulkPreviewIndex === bulkCount - 1}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Next <Icon name="ChevronRight" size={16} />
+              </button>
             </div>
           )}
 
@@ -1360,7 +1403,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate(poData.date)}</span></p>
               </div>
               <div className="text-sm">
-                <p className="font-medium text-gray-700">Purchase Order No: <span className="text-gray-900 font-bold">{poData.poNumber}</span></p>
+                <p className="font-medium text-gray-700">Purchase Order No: <span className="text-gray-900 font-bold">{currentPreviewPONumber}</span></p>
               </div>
             </div>
 
@@ -2001,7 +2044,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
               <h3 className="text-lg font-semibold text-blue-800 mb-4">Actions</h3>
               <div className="space-y-3">
-                <button onClick={() => setShowPreview(true)} className="w-full px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 border border-blue-200 flex items-center justify-center gap-2">
+                <button onClick={() => { setShowPreview(true); setBulkPreviewIndex(0); }} className="w-full px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 border border-blue-200 flex items-center justify-center gap-2">
                   <Icon name="Eye" size={16} /> Preview PO
                 </button>
                 <button onClick={submitForApproval} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
