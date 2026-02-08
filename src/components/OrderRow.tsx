@@ -3,22 +3,19 @@ import { Order } from '../types';
 import Icon from './Icon';
 import { ORDER_STAGES } from '../data/constants';
 import OrderProgressBar from './OrderProgressBar';
-import CompactEmailPreview from './CompactEmailPreview';
-import ExpandableEmailCard from './ExpandableEmailCard';
 
 interface Props {
   order: Order;
-  expanded: boolean;
-  onToggleExpand: () => void;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
   onClick: () => void;
   onDelete?: (orderId: string) => Promise<void>;
 }
 
-function OrderRow({ order, expanded, onToggleExpand, onClick, onDelete }: Props) {
+function OrderRow({ order, onClick, onDelete }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isCompleted = order.currentStage === 8;
-  const lastUpdate = order.history[order.history.length - 1];
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -110,25 +107,7 @@ function OrderRow({ order, expanded, onToggleExpand, onClick, onDelete }: Props)
           </div>
         </div>
 
-        {/* Email preview */}
-        <div className="pt-2 border-t border-gray-50">
-          <CompactEmailPreview entry={lastUpdate} onClick={() => { onToggleExpand(); }} />
-          <button onClick={(e) => { e.stopPropagation(); onToggleExpand(); }} className="mt-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-            <Icon name="ChevronDown" size={14} className={`transform transition-transform ${expanded ? 'rotate-180' : ''}`} />
-            {expanded ? 'Hide' : 'Show'} email history ({order.history.length} emails)
-          </button>
-        </div>
       </div>
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-gray-100">
-          <div className="mt-4 space-y-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Email History</p>
-            {[...order.history].reverse().map((entry, idx) => (
-              <ExpandableEmailCard key={idx} entry={entry} defaultExpanded={idx === 0} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
