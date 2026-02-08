@@ -162,6 +162,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
   const [buyerSearch, setBuyerSearch] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [showBuyerDropdown, setShowBuyerDropdown] = useState(false);
+  const [bulkCreate, setBulkCreate] = useState(false);
+  const [bulkCount, setBulkCount] = useState(2);
   const poDocRef = useRef<HTMLDivElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
@@ -1141,48 +1143,82 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     setGeneratingPdf(false);
   };
 
-  // Send PO to supplier
-  const sendPO = () => {
-    // Create new order from PO data
-    const newOrder: Order = {
-      id: poData.poNumber,
-      poNumber: poData.poNumber.split('/').pop() || poData.poNumber, // e.g., "EG-001" or "3044"
-      company: poData.buyer,
-      product: poData.product || lineItems.map(i => i.product).filter(p => p).join(', '),
-      specs: lineItems.map(i => `${i.size || ''} ${i.glaze ? `(${i.glaze})` : ''} ${i.packing || ''}`.trim()).filter(s => s).join(', '),
-      from: 'India',
-      to: poData.destination || poData.buyerBank || 'Spain',
-      date: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
-      currentStage: 1,
-      supplier: poData.supplier.split(' - ')[0] || poData.supplier, // Just the name
-      totalValue: grandTotal,
-      totalKilos: totalKilos,
-      lineItems: lineItems,
-      history: [
-        {
-          stage: 1,
-          timestamp: new Date().toISOString(),
-          from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
-          to: sendTo || poData.supplierEmail,
-          subject: emailSubject || `NEW PO ${poData.poNumber}`,
-          body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
-          hasAttachment: true,
-          attachments: [`${poData.poNumber.replace(/\//g, '_')}.pdf`]
-        }
-      ]
-    };
+  // Increment a PO number's sequence: "GI/PO/25-26/EG-001" → "GI/PO/25-26/EG-002"
+  const incrementPONumber = (poNumber: string): string => {
+    // Try buyer-code format: .../XX-001
+    const buyerMatch = poNumber.match(/^(.*\/)([A-Z]+-?)(\d+)$/);
+    if (buyerMatch) {
+      const nextNum = (parseInt(buyerMatch[3]) + 1).toString().padStart(buyerMatch[3].length, '0');
+      return buyerMatch[1] + buyerMatch[2] + nextNum;
+    }
+    // Try generic format: .../3044
+    const genericMatch = poNumber.match(/^(.*\/)(\d+)$/);
+    if (genericMatch) {
+      return genericMatch[1] + (parseInt(genericMatch[2]) + 1).toString();
+    }
+    return poNumber + '-2';
+  };
 
-    // Add to orders list
+  // Send PO to supplier (supports bulk creation)
+  const sendPO = () => {
+    const count = bulkCreate ? bulkCount : 1;
+    const newOrders: Order[] = [];
+
+    for (let i = 0; i < count; i++) {
+      let currentPONumber = poData.poNumber;
+      for (let j = 0; j < i; j++) {
+        currentPONumber = incrementPONumber(currentPONumber);
+      }
+
+      const newOrder: Order = {
+        id: currentPONumber,
+        poNumber: currentPONumber.split('/').pop() || currentPONumber,
+        company: poData.buyer,
+        product: poData.product || lineItems.map(li => li.product).filter(p => p).join(', '),
+        specs: lineItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(s => s).join(', '),
+        from: 'India',
+        to: poData.destination || poData.buyerBank || 'Spain',
+        date: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
+        currentStage: 1,
+        supplier: poData.supplier.split(' - ')[0] || poData.supplier,
+        totalValue: grandTotal,
+        totalKilos: totalKilos,
+        lineItems: lineItems,
+        history: [
+          {
+            stage: 1,
+            timestamp: new Date().toISOString(),
+            from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+            to: sendTo || poData.supplierEmail,
+            subject: `NEW PO ${currentPONumber}`,
+            body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+            hasAttachment: true,
+            attachments: [`${currentPONumber.replace(/\//g, '_')}.pdf`]
+          }
+        ]
+      };
+
+      newOrders.push(newOrder);
+    }
+
+    // Add all orders to orders list
     if (setOrders) {
-      setOrders(prevOrders => [newOrder, ...prevOrders]);
+      setOrders(prevOrders => [...newOrders, ...prevOrders]);
     }
 
     setStatus('sent');
-    setNotification({ type: 'success', message: `📧 Purchase Order ${poData.poNumber} sent to ${poData.supplier}! New order created.` });
+    if (count > 1) {
+      const lastPO = newOrders[newOrders.length - 1].id;
+      setNotification({ type: 'success', message: `📧 ${count} Purchase Orders created (${poData.poNumber} to ${lastPO}) for ${poData.supplier}!` });
+    } else {
+      setNotification({ type: 'success', message: `📧 Purchase Order ${poData.poNumber} sent to ${poData.supplier}! New order created.` });
+    }
 
-    // Callback to parent if provided
+    // Callback to parent for each order
     if (onOrderCreated) {
-      onOrderCreated(newOrder);
+      for (const order of newOrders) {
+        onOrderCreated(order);
+      }
     }
   };
 
@@ -1470,7 +1506,11 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <div className="max-w-2xl mx-auto space-y-5">
                   <div className="text-center mb-2">
                     <h3 className="text-lg font-bold text-gray-800">Sign-off & Send</h3>
-                    <p className="text-sm text-gray-500">Review the PO above, download the PDF, and send to the supplier.</p>
+                    <p className="text-sm text-gray-500">
+                      {bulkCreate
+                        ? `Bulk creating ${bulkCount} POs with sequential numbers starting from ${poData.poNumber}.`
+                        : 'Review the PO above, download the PDF, and send to the supplier.'}
+                    </p>
                   </div>
 
                   {/* Download PDF */}
@@ -1525,7 +1565,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                       disabled={!sendTo}
                       className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Icon name="Send" size={16} /> Approve & Send PO
+                      <Icon name="Send" size={16} /> {bulkCreate ? `Approve & Send ${bulkCount} POs` : 'Approve & Send PO'}
                     </button>
                   </div>
                 </div>
@@ -1613,6 +1653,30 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                   <input type="date" value={poData.date} onChange={(e) => setPOData({...poData, date: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  <div className="flex items-center gap-3 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={bulkCreate}
+                        onChange={(e) => setBulkCreate(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      Bulk Create
+                    </label>
+                    {bulkCreate && (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={2}
+                          max={50}
+                          value={bulkCount}
+                          onChange={(e) => setBulkCount(Math.max(2, Math.min(50, parseInt(e.target.value) || 2)))}
+                          className="w-16 px-2 py-1 border border-blue-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <span className="text-xs text-gray-500">POs</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="relative" ref={supplierDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
