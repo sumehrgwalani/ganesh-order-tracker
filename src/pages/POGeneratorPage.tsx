@@ -1090,7 +1090,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       {hasPacking && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.packing || '-'}</td>}
                       {hasCases && <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
                       <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
+                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
                       <td className="border border-gray-300 px-2 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
