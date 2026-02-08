@@ -986,7 +986,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           )}
 
           {/* PO Document Preview */}
-          <div ref={poDocRef} className="px-6 py-3 max-w-4xl mx-auto bg-white" style={{ fontSize: '12px', lineHeight: '1.35' }}>
+          <div ref={poDocRef} className="px-6 py-3 mx-auto bg-white" style={{ fontSize: '12px', lineHeight: '1.35', maxWidth: '1000px' }}>
             {/* Header with Logo */}
             <div className="flex items-center mb-2 pb-1.5 border-b-2 border-gray-200">
               <div className="mr-3">
@@ -1067,7 +1067,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
               return (
             <div className="mb-2" style={{ pageBreakInside: 'avoid' }}>
-              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '11px', tableLayout: 'auto' }}>
+              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '10.5px', tableLayout: 'auto' }}>
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border border-gray-300 px-2 py-1 text-left" style={{ minWidth: '130px' }}>Product</th>
