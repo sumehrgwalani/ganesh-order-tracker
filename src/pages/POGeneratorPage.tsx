@@ -1496,7 +1496,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     try {
       const filename = `${currentPreviewPONumber.replace(/\//g, '_')}.pdf`;
       await html2pdf().set({
-        margin: [6, 8, 6, 8],
+        margin: [4, 5, 4, 5],
         filename,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
@@ -1550,7 +1550,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     if (poDocRef.current) {
       try {
         pdfBlob = await (html2pdf() as any).set({
-          margin: [6, 8, 6, 8],
+          margin: [4, 5, 4, 5],
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -1785,21 +1785,21 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           )}
 
           {/* PO Document Preview */}
-          <div ref={poDocRef} className="px-6 py-4 max-w-4xl mx-auto bg-white" style={{ fontSize: '13px' }}>
+          <div ref={poDocRef} className="px-6 py-3 max-w-4xl mx-auto bg-white" style={{ fontSize: '12px', lineHeight: '1.35' }}>
             {/* Header with Logo */}
-            <div className="flex items-center mb-3 pb-2 border-b-2 border-gray-200">
-              <div className="mr-4">
-                <GILogo size={60} />
+            <div className="flex items-center mb-2 pb-1.5 border-b-2 border-gray-200">
+              <div className="mr-3">
+                <GILogo size={50} />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-800">GANESH INTERNATIONAL</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-                <p className="text-xs text-gray-500">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+                <h2 className="text-lg font-bold text-gray-800" style={{ marginBottom: '1px' }}>GANESH INTERNATIONAL</h2>
+                <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
+                <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
               </div>
             </div>
 
             {/* Date and PO Number */}
-            <div className="flex justify-between mb-3">
+            <div className="flex justify-between mb-2">
               <div>
                 <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate(poData.date)}</span></p>
               </div>
@@ -1809,7 +1809,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* To Section */}
-            <div className="mb-2 max-w-xs leading-snug">
+            <div className="mb-1.5 max-w-xs" style={{ lineHeight: '1.3' }}>
               <p className="text-gray-500">To,</p>
               <p className="font-bold text-gray-800">{poData.supplier || '[EXPORTER NAME]'}</p>
               {poData.supplierAddress && <p className="text-gray-600">{poData.supplierAddress}</p>}
@@ -1817,9 +1817,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* Greeting */}
-            <div className="mb-3">
+            <div className="mb-2">
               <p className="text-gray-700">Dear Sirs,</p>
-              <p className="text-gray-700 mt-1">
+              <p className="text-gray-700 mt-0.5">
                 We are pleased to confirm our Purchase Order with you for the Export of{' '}
                 <span className="font-medium">
                   {(() => {
@@ -1865,20 +1865,20 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
               const filledCols = [true, hasBrand, hasFreezing, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
               const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
               return (
-            <div className="mb-3" style={{ pageBreakInside: 'avoid' }}>
-              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '12px' }}>
+            <div className="mb-2" style={{ pageBreakInside: 'avoid' }}>
+              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '11px' }}>
                 <thead>
                   <tr className="bg-gray-100">
-                    <th className="border border-gray-300 px-2 py-1.5 text-left">Product</th>
-                    {hasBrand && <th className="border border-gray-300 px-2 py-1.5 text-left">Brand</th>}
-                    {hasFreezing && <th className="border border-gray-300 px-2 py-1.5 text-left">Freezing</th>}
-                    {hasSize && <th className="border border-gray-300 px-2 py-1.5 text-left">Size</th>}
-                    {hasGlaze && <th className="border border-gray-300 px-2 py-1.5 text-left">Glaze</th>}
-                    {hasPacking && <th className="border border-gray-300 px-2 py-1.5 text-left">Packing</th>}
-                    {hasCases && <th className="border border-gray-300 px-2 py-1.5 text-right">Cases</th>}
-                    <th className="border border-gray-300 px-2 py-1.5 text-right">Kilos</th>
-                    <th className="border border-gray-300 px-2 py-1.5 text-right">Price/Kg<br/><span style={{ fontSize: '10px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
-                    <th className="border border-gray-300 px-2 py-1.5 text-right">
+                    <th className="border border-gray-300 px-1.5 py-1 text-left">Product</th>
+                    {hasBrand && <th className="border border-gray-300 px-1.5 py-1 text-left">Brand</th>}
+                    {hasFreezing && <th className="border border-gray-300 px-1.5 py-1 text-left">Freezing</th>}
+                    {hasSize && <th className="border border-gray-300 px-1.5 py-1 text-left">Size</th>}
+                    {hasGlaze && <th className="border border-gray-300 px-1.5 py-1 text-left">Glaze</th>}
+                    {hasPacking && <th className="border border-gray-300 px-1.5 py-1 text-left">Packing</th>}
+                    {hasCases && <th className="border border-gray-300 px-1.5 py-1 text-right">Cases</th>}
+                    <th className="border border-gray-300 px-1.5 py-1 text-right">Kilos</th>
+                    <th className="border border-gray-300 px-1.5 py-1 text-right">Price/Kg<br/><span style={{ fontSize: '9px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
+                    <th className="border border-gray-300 px-1.5 py-1 text-right">
                       {lineItems.some(i => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}
                     </th>
                   </tr>
@@ -1886,24 +1886,24 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                 <tbody>
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
-                      <td className="border border-gray-300 px-2 py-1">{item.product || '-'}</td>
-                      {hasBrand && <td className="border border-gray-300 px-2 py-1">{item.brand || '-'}</td>}
-                      {hasFreezing && <td className="border border-gray-300 px-2 py-1">{item.freezing || '-'}</td>}
-                      {hasSize && <td className="border border-gray-300 px-2 py-1">{item.size || '-'}</td>}
-                      {hasGlaze && <td className="border border-gray-300 px-2 py-1">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
-                      {hasPacking && <td className="border border-gray-300 px-2 py-1">{item.packing || '-'}</td>}
-                      {hasCases && <td className="border border-gray-300 px-2 py-1 text-right">{item.cases || '-'}</td>}
-                      <td className="border border-gray-300 px-2 py-1 text-right">{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right font-medium">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-0.5">{item.product || '-'}</td>
+                      {hasBrand && <td className="border border-gray-300 px-1.5 py-0.5">{item.brand || '-'}</td>}
+                      {hasFreezing && <td className="border border-gray-300 px-1.5 py-0.5">{item.freezing || '-'}</td>}
+                      {hasSize && <td className="border border-gray-300 px-1.5 py-0.5">{item.size || '-'}</td>}
+                      {hasGlaze && <td className="border border-gray-300 px-1.5 py-0.5">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
+                      {hasPacking && <td className="border border-gray-300 px-1.5 py-0.5">{item.packing || '-'}</td>}
+                      {hasCases && <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.cases || '-'}</td>}
+                      <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.kilos || '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-0.5 text-right">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.pricePerKg}` : '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-0.5 text-right font-medium">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-2 py-1.5" colSpan={1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
-                    {hasCases && <td className="border border-gray-300 px-2 py-1.5 text-right">{totalCases}</td>}
-                    <td className="border border-gray-300 px-2 py-1.5 text-right">{totalKilos}</td>
-                    <td className="border border-gray-300 px-2 py-1.5"></td>
-                    <td className="border border-gray-300 px-2 py-1.5 text-right">U.S. ${grandTotal}</td>
+                    <td className="border border-gray-300 px-1.5 py-1" colSpan={1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
+                    {hasCases && <td className="border border-gray-300 px-1.5 py-1 text-right">{totalCases}</td>}
+                    <td className="border border-gray-300 px-1.5 py-1 text-right">{totalKilos}</td>
+                    <td className="border border-gray-300 px-1.5 py-1"></td>
+                    <td className="border border-gray-300 px-1.5 py-1 text-right">U.S. ${grandTotal}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1912,10 +1912,10 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             })()}
 
             {/* Terms Section */}
-            <div className="space-y-0.5 text-gray-700 mb-3" style={{ lineHeight: '1.5' }}>
+            <div className="text-gray-700 mb-2" style={{ lineHeight: '1.35' }}>
               <p><span className="font-medium">Total Value:</span> U.S. ${grandTotal}</p>
-              <p className="text-gray-500 ml-4" style={{ fontSize: '11px' }}>*We need a quality control of photos before loading</p>
-              <p className="text-gray-500 ml-4" style={{ fontSize: '11px' }}>*Different colors Tapes for different products & Lots.</p>
+              <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*We need a quality control of photos before loading</p>
+              <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*Different colors Tapes for different products & Lots.</p>
               {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
               {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
               <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
@@ -1927,9 +1927,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* Important Notes */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-3" style={{ pageBreakInside: 'avoid', fontSize: '12px' }}>
-              <p className="font-medium text-yellow-800 mb-1">Important Notes:</p>
-              <ul className="text-yellow-700 space-y-0 list-disc list-inside" style={{ lineHeight: '1.4' }}>
+            <div className="bg-yellow-50 border border-yellow-200 rounded px-2.5 py-1.5 mb-2" style={{ pageBreakInside: 'avoid', fontSize: '10.5px', lineHeight: '1.3' }}>
+              <p className="font-medium text-yellow-800 mb-0.5" style={{ fontSize: '11px' }}>Important Notes:</p>
+              <ul className="text-yellow-700 space-y-0 list-disc list-inside">
                 <li>Should be minimum 5 days free Dem/ Det/ Plug in on the B/L or on the shipping line's letterhead.</li>
                 <li>Please send us Loading chart alongwith the docs & it should be mentioned the lot/code number.</li>
                 <li>Please make plastic certificate.</li>
@@ -1940,44 +1940,44 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             </div>
 
             {/* Shipping Marks */}
-            {poData.shippingMarks && <p className="mb-2"><span className="font-medium">Shipping Marks:</span> {poData.shippingMarks}</p>}
+            {poData.shippingMarks && <p className="mb-1.5"><span className="font-medium">Shipping Marks:</span> {poData.shippingMarks}</p>}
 
             {/* Please Note Section */}
-            <div className="text-gray-600 mb-3" style={{ pageBreakInside: 'avoid', lineHeight: '1.4' }}>
-              <p className="font-medium mb-1">Please Note:</p>
+            <div className="text-gray-600 mb-2" style={{ pageBreakInside: 'avoid', fontSize: '11px', lineHeight: '1.3' }}>
+              <p className="font-medium mb-0.5">Please Note:</p>
               {poData.buyerBank && <p>After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in {poData.buyerBank}.</p>}
-              <p className="mt-1">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
-              <p className="mt-1">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
+              <p className="mt-0.5">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
+              <p className="mt-0.5">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
             </div>
 
             {/* Closing */}
-            <div className="text-gray-700 mb-3">
+            <div className="text-gray-700 mb-1" style={{ fontSize: '11px', lineHeight: '1.3' }}>
               <p>Hope you find the above terms & conditions in order. Please put your Seal and Signature and send it to us as a token of your confirmation.</p>
-              <p className="mt-2">Thanking You,</p>
+              <p className="mt-1">Thanking You,</p>
             </div>
 
             {/* Signature */}
-            <div className="mt-4" style={{ pageBreakInside: 'avoid' }}>
+            <div className="mt-2" style={{ pageBreakInside: 'avoid' }}>
               {signatureData && (status === 'pending_approval' || status === 'approved' || status === 'sent') && (
-                <div className="mb-1">
-                  <img src={signatureData} alt="Signature" className="h-12 object-contain" style={{ maxWidth: '180px' }} />
+                <div className="mb-0.5">
+                  <img src={signatureData} alt="Signature" className="h-10 object-contain" style={{ maxWidth: '150px' }} />
                 </div>
               )}
-              <p className="font-bold text-gray-800">Sumehr Rajnish Gwalani</p>
-              <p className="text-gray-600">GANESH INTERNATIONAL</p>
+              <p className="font-bold text-gray-800" style={{ fontSize: '11px' }}>Sumehr Rajnish Gwalani</p>
+              <p className="text-gray-600" style={{ fontSize: '11px' }}>GANESH INTERNATIONAL</p>
               {(status === 'approved' || status === 'sent') && signatureData ? (
-                <div className="mt-1 inline-block px-2 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '11px' }}>
+                <div className="mt-0.5 inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '10px' }}>
                   ✓ Digitally Signed & Approved
                 </div>
               ) : (status === 'approved' || status === 'sent') ? (
-                <div className="mt-1 inline-block px-2 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '11px' }}>
+                <div className="mt-0.5 inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '10px' }}>
                   ✓ Approved
                 </div>
               ) : null}
             </div>
 
             {/* Footer Note */}
-            <div className="mt-4 pt-2 border-t border-gray-200 text-gray-500" style={{ fontSize: '10px' }}>
+            <div className="mt-2 pt-1 border-t border-gray-200 text-gray-500" style={{ fontSize: '9px' }}>
               <p>FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
             </div>
           </div>

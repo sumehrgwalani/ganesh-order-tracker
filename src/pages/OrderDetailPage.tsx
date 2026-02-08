@@ -429,24 +429,24 @@ function OrderDetailPage({ order, onBack }: Props) {
     } catch { /* ignore */ }
 
     return `
-      <div style="font-family:Arial,Helvetica,sans-serif;padding:16px 24px;max-width:800px;margin:0 auto;color:#1f2937;font-size:12px;">
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
         <!-- Header -->
-        <div style="display:flex;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;">
+        <div style="display:flex;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">
           <div>
-            <h2 style="font-size:18px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
-            <p style="font-size:11px;color:#6b7280;margin:2px 0 0;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-            <p style="font-size:11px;color:#6b7280;margin:1px 0 0;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+            <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
+            <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
+            <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
           </div>
         </div>
 
         <!-- Date and PO Number -->
-        <table style="width:100%;margin-bottom:10px;"><tr>
+        <table style="width:100%;margin-bottom:8px;"><tr>
           <td><strong>Date:</strong> ${poDate}</td>
           <td style="text-align:right;"><strong>Purchase Order No:</strong> <span style="font-weight:700;">${order.id}</span></td>
         </tr></table>
 
         <!-- To Section -->
-        <div style="margin-bottom:8px;line-height:1.4;">
+        <div style="margin-bottom:6px;line-height:1.3;">
           <p style="color:#6b7280;margin:0;">To,</p>
           <p style="font-weight:700;margin:1px 0;">${supplierName || '[EXPORTER NAME]'}</p>
           ${supplierAddress ? `<p style="margin:0;color:#4b5563;">${supplierAddress}</p>` : ''}
@@ -454,22 +454,22 @@ function OrderDetailPage({ order, onBack }: Props) {
         </div>
 
         <!-- Greeting -->
-        <div style="margin-bottom:10px;line-height:1.4;">
+        <div style="margin-bottom:8px;line-height:1.35;">
           <p style="margin:0;">Dear Sirs,</p>
-          <p style="margin:4px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${buyerName}</strong>${destination ? `, <strong>${destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
+          <p style="margin:2px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${buyerName}</strong>${destination ? `, <strong>${destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
         </div>
 
         <!-- Product Table -->
-        <table style="width:100%;border-collapse:collapse;margin-bottom:10px;page-break-inside:avoid;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px;page-break-inside:avoid;font-size:10.5px;">
           <thead><tr style="background:#f3f4f6;">${headerCells}</tr></thead>
           <tbody>${bodyRows}${totalRow}</tbody>
         </table>
 
         <!-- Terms -->
-        <div style="line-height:1.5;margin-bottom:10px;">
+        <div style="line-height:1.35;margin-bottom:8px;">
           <p style="margin:0;"><strong>Total Value:</strong> U.S. $${grandTotal}</p>
-          <p style="font-size:10px;color:#6b7280;margin:1px 0 1px 14px;">*We need a quality control of photos before loading</p>
-          <p style="font-size:10px;color:#6b7280;margin:0 0 2px 14px;">*Different colors Tapes for different products &amp; Lots.</p>
+          <p style="font-size:9px;color:#6b7280;margin:1px 0 1px 14px;">*We need a quality control of photos before loading</p>
+          <p style="font-size:9px;color:#6b7280;margin:0 0 2px 14px;">*Different colors Tapes for different products &amp; Lots.</p>
           ${deliveryTerms || destination ? `<p style="margin:0;"><strong>Delivery Terms:</strong> ${deliveryTerms} ${destination}</p>` : ''}
           ${deliveryDate ? `<p style="margin:0;"><strong>Shipment Date:</strong> ${deliveryDate}</p>` : ''}
           <p style="margin:0;"><strong>Commission:</strong> ${commission || '___________________'} + 18% GST</p>
@@ -481,9 +481,9 @@ function OrderDetailPage({ order, onBack }: Props) {
         </div>
 
         <!-- Important Notes -->
-        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:10px;page-break-inside:avoid;">
-          <p style="font-weight:600;color:#92400e;margin:0 0 4px;font-size:12px;">Important Notes:</p>
-          <ul style="color:#a16207;margin:0;padding-left:18px;line-height:1.35;font-size:11px;">
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:8px;page-break-inside:avoid;">
+          <p style="font-weight:600;color:#92400e;margin:0 0 2px;font-size:11px;">Important Notes:</p>
+          <ul style="color:#a16207;margin:0;padding-left:16px;line-height:1.3;font-size:10px;">
             <li>Should be minimum 5 days free Dem/ Det/ Plug in on the B/L or on the shipping line's letterhead.</li>
             <li>Please send us Loading chart alongwith the docs &amp; it should be mentioned the lot/code number.</li>
             <li>Please make plastic certificate.</li>
@@ -493,32 +493,32 @@ function OrderDetailPage({ order, onBack }: Props) {
           </ul>
         </div>
 
-        ${shippingMarks ? `<p style="margin-bottom:8px;"><strong>Shipping Marks:</strong> ${shippingMarks}</p>` : ''}
+        ${shippingMarks ? `<p style="margin-bottom:6px;"><strong>Shipping Marks:</strong> ${shippingMarks}</p>` : ''}
 
         <!-- Please Note -->
-        <div style="color:#4b5563;margin-bottom:10px;line-height:1.35;page-break-inside:avoid;">
-          <p style="font-weight:600;margin:0 0 4px;">Please Note:</p>
-          ${buyerBank ? `<p style="margin:0 0 4px;">After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in ${buyerBank}.</p>` : ''}
-          <p style="margin:0 0 4px;">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
+        <div style="color:#4b5563;margin-bottom:6px;line-height:1.3;page-break-inside:avoid;font-size:10.5px;">
+          <p style="font-weight:600;margin:0 0 2px;">Please Note:</p>
+          ${buyerBank ? `<p style="margin:0 0 2px;">After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in ${buyerBank}.</p>` : ''}
+          <p style="margin:0 0 2px;">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
           <p style="margin:0;">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
         </div>
 
         <!-- Closing -->
-        <div style="color:#374151;margin-bottom:10px;">
+        <div style="color:#374151;margin-bottom:4px;font-size:10.5px;line-height:1.3;">
           <p style="margin:0;">Hope you find the above terms &amp; conditions in order. Please put your Seal and Signature and send it to us as a token of your confirmation.</p>
-          <p style="margin:8px 0 0;">Thanking You,</p>
+          <p style="margin:4px 0 0;">Thanking You,</p>
         </div>
 
         <!-- Signature -->
-        <div style="margin-top:12px;page-break-inside:avoid;">
+        <div style="margin-top:6px;page-break-inside:avoid;">
           ${signatureImg}
-          <p style="font-weight:700;margin:0;color:#1f2937;">Sumehr Rajnish Gwalani</p>
-          <p style="color:#4b5563;margin:2px 0 0;">GANESH INTERNATIONAL</p>
-          <div style="margin-top:4px;display:inline-block;padding:2px 8px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:10px;">&#10003; Digitally Signed &amp; Approved</div>
+          <p style="font-weight:700;margin:0;color:#1f2937;font-size:11px;">Sumehr Rajnish Gwalani</p>
+          <p style="color:#4b5563;margin:1px 0 0;font-size:11px;">GANESH INTERNATIONAL</p>
+          <div style="margin-top:2px;display:inline-block;padding:2px 6px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:9px;">&#10003; Digitally Signed &amp; Approved</div>
         </div>
 
         <!-- Footer -->
-        <div style="margin-top:12px;padding-top:6px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;">
+        <div style="margin-top:8px;padding-top:4px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;">
           <p style="margin:0;">FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
         </div>
       </div>
@@ -543,7 +543,7 @@ function OrderDetailPage({ order, onBack }: Props) {
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({
-        margin: [6, 8, 6, 8],
+        margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -561,7 +561,7 @@ function OrderDetailPage({ order, onBack }: Props) {
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({
-        margin: [6, 8, 6, 8],
+        margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
