@@ -69,88 +69,14 @@ function OrderDetailPage({ orders }: Props) {
     switch (sectionId) {
       case 'purchaseOrder':
         return (
-          <div className="space-y-4">
-            {/* PO Header */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">PO Number</p>
-                <p className="font-mono font-semibold text-gray-800">{order.id}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Date</p>
-                <p className="text-sm text-gray-800">{order.date}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier</p>
-                <p className="font-medium text-gray-800">{order.supplier}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</p>
-                <p className="font-medium text-gray-800">{order.company}</p>
-              </div>
-            </div>
-
-            {/* Line Items Table */}
-            {lineItems.length > 0 && (
-              <div className="mt-3">
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Products</p>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Product</th>
-                        {lineItems.some(i => i.size) && <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Size</th>}
-                        {lineItems.some(i => i.freezing) && <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Freezing</th>}
-                        {lineItems.some(i => i.packing) && <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Packing</th>}
-                        <th className="text-right px-3 py-2 text-xs font-medium text-gray-500">Kilos</th>
-                        <th className="text-right px-3 py-2 text-xs font-medium text-gray-500">Price/Kg</th>
-                        <th className="text-right px-3 py-2 text-xs font-medium text-gray-500">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {lineItems.filter(i => i.product).map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="px-3 py-2 font-medium text-gray-800">{String(item.product)}</td>
-                          {lineItems.some(i => i.size) && <td className="px-3 py-2 text-gray-600">{String(item.size || '-')}</td>}
-                          {lineItems.some(i => i.freezing) && <td className="px-3 py-2 text-gray-600">{String(item.freezing || '-')}</td>}
-                          {lineItems.some(i => i.packing) && <td className="px-3 py-2 text-gray-600">{String(item.packing || '-')}</td>}
-                          <td className="px-3 py-2 text-right text-gray-600">{Number(item.kilos || 0).toLocaleString()}</td>
-                          <td className="px-3 py-2 text-right text-gray-600">${Number(item.pricePerKg || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium text-gray-800">${Number(item.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Totals */}
-            <div className="flex justify-end gap-8 pt-2 border-t border-gray-100">
-              {order.totalKilos && (
-                <div className="text-right">
-                  <p className="text-xs text-gray-500">Total Quantity</p>
-                  <p className="font-semibold text-gray-800">{Number(order.totalKilos).toLocaleString()} Kg</p>
-                </div>
-              )}
-              {order.totalValue && (
-                <div className="text-right">
-                  <p className="text-xs text-gray-500">Total Value</p>
-                  <p className="font-semibold text-blue-700">USD {order.totalValue}</p>
-                </div>
-              )}
-            </div>
-
-            {/* View as PDF button */}
-            <div className="pt-3 border-t border-gray-100">
-              <button
-                onClick={previewPOasPDF}
-                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                <Icon name="FileText" size={16} />
-                View Purchase Order as PDF
-              </button>
-            </div>
+          <div>
+            <button
+              onClick={previewPOasPDF}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+            >
+              <Icon name="FileText" size={16} />
+              View Purchase Order as PDF
+            </button>
           </div>
         );
 
