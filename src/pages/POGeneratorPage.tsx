@@ -593,14 +593,31 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     const processingStyles = ['pbo', 'pnd', 'pd', 'hlso', 'hoso', 'pud', 'pdto', 'cpto', 'pto', 'ezp', 'butterfly'];
 
     const extractBrand = (text: string): { brand: string; cleaned: string; spec: string } => {
+      // 1) Check for parenthesized brands: (Marca Oliver), (Bautismar), etc.
       const brandMatch = text.match(/\(\s*(?:Marca\s+)?(.+?)\s*\)/i);
       if (brandMatch) {
         const inner = brandMatch[1].trim();
         // If it's a processing style, keep it in the product name, not as a brand
         if (processingStyles.some(ps => inner.toLowerCase() === ps.toLowerCase())) {
-          return { brand: '', cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ' + inner + ' ').trim(), spec: inner.toUpperCase() };
+          // Processing style found in parens — remove parens, keep style in name
+          const cleanedText = text.replace(/\s*\(.*?\)\s*/g, ' ' + inner + ' ').trim();
+          // Still check for a standalone brand outside the parens, e.g. "BABY SQUID IQF ( PBO ) EG brand"
+          const standaloneBrand = cleanedText.match(/\b(\w+)\s+brand\b/i);
+          if (standaloneBrand) {
+            const brandName = standaloneBrand[1].trim();
+            const finalCleaned = cleanedText.replace(/\s*\b\w+\s+brand\b/i, '').trim();
+            return { brand: brandName, cleaned: finalCleaned, spec: inner.toUpperCase() };
+          }
+          return { brand: '', cleaned: cleanedText, spec: inner.toUpperCase() };
         }
         return { brand: inner, cleaned: text.replace(/\s*\(.*?\)\s*/g, ' ').trim(), spec: '' };
+      }
+      // 2) Check for standalone brand pattern: "EG Brand", "Oliver brand", etc. (no parentheses)
+      const standaloneBrand = text.match(/\b(\w+)\s+brand\b/i);
+      if (standaloneBrand) {
+        const brandName = standaloneBrand[1].trim();
+        const cleaned = text.replace(/\s*\b\w+\s+brand\b/i, '').trim();
+        return { brand: brandName, cleaned, spec: '' };
       }
       return { brand: '', cleaned: text, spec: '' };
     };
