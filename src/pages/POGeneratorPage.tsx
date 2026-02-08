@@ -1357,29 +1357,39 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
           {/* Bulk Preview Navigation */}
           {bulkCreate && bulkCount > 1 && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-3 flex items-center justify-between">
-              <button
-                onClick={() => setBulkPreviewIndex(Math.max(0, bulkPreviewIndex - 1))}
-                disabled={bulkPreviewIndex === 0}
-                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                <Icon name="ChevronLeft" size={16} /> Previous
-              </button>
-              <div className="text-center">
-                <span className="text-sm font-bold text-blue-700">
-                  PO {bulkPreviewIndex + 1} of {bulkCount}
-                </span>
-                <span className="block text-xs text-gray-500 mt-0.5 font-mono">
-                  {currentPreviewPONumber}
-                </span>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-3">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setBulkPreviewIndex(Math.max(0, bulkPreviewIndex - 1))}
+                  disabled={bulkPreviewIndex === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <Icon name="ChevronLeft" size={16} /> Previous
+                </button>
+                <div className="text-center">
+                  <span className="text-sm font-bold text-blue-700">
+                    PO {bulkPreviewIndex + 1} of {bulkCount}
+                  </span>
+                  <span className="block text-xs text-gray-500 mt-0.5 font-mono">
+                    {currentPreviewPONumber}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
+                  disabled={bulkPreviewIndex === bulkCount - 1}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  Next <Icon name="ChevronRight" size={16} />
+                </button>
               </div>
-              <button
-                onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
-                disabled={bulkPreviewIndex === bulkCount - 1}
-                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                Next <Icon name="ChevronRight" size={16} />
-              </button>
+              {/* Submit for Sign-off button inside navigation bar */}
+              {!showSignOff && status === 'draft' && (
+                <div className="flex justify-center mt-3 pt-3 border-t border-blue-200">
+                  <button onClick={submitForApproval} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm text-sm">
+                    <Icon name="CheckCircle" size={16} /> Submit All {bulkCount} POs for Sign-off
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1580,7 +1590,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                   <Icon name="Edit" size={16} /> Back to Edit
                 </button>
                 <button onClick={submitForApproval} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm">
-                  <Icon name="CheckCircle" size={16} /> Submit for Sign-off
+                  <Icon name="CheckCircle" size={16} /> {bulkCreate ? `Submit All ${bulkCount} POs for Sign-off` : 'Submit for Sign-off'}
                 </button>
               </div>
             </div>
@@ -1592,7 +1602,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                     <h3 className="text-lg font-bold text-gray-800">Sign-off & Send</h3>
                     <p className="text-sm text-gray-500">
                       {bulkCreate
-                        ? `Bulk creating ${bulkCount} POs with sequential numbers starting from ${poData.poNumber}.`
+                        ? `${bulkCount} separate emails will be sent — one for each PO.`
                         : 'Review the PO above, download the PDF, and send to the supplier.'}
                     </p>
                   </div>
@@ -1604,20 +1614,51 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
                     </button>
                   </div>
 
-                  {/* Subject */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                    <input
-                      type="text"
-                      value={emailSubject}
-                      onChange={(e) => setEmailSubject(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
+                  {/* Bulk Email List - show each PO's subject */}
+                  {bulkCreate && bulkCount > 1 && (
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Emails to be sent ({bulkCount} separate emails)</span>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto divide-y divide-gray-100">
+                        {Array.from({ length: bulkCount }, (_, i) => {
+                          const poNum = getCurrentBulkPONumber(i);
+                          return (
+                            <div key={i} className={`px-4 py-2 flex items-center gap-3 text-sm ${i === bulkPreviewIndex ? 'bg-blue-50' : ''}`}>
+                              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-800 truncate">NEW PO {poNum}</p>
+                                <p className="text-xs text-gray-500 truncate">To: {sendTo || poData.supplierEmail || 'supplier@company.com'}</p>
+                              </div>
+                              <button
+                                onClick={() => setBulkPreviewIndex(i)}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium flex-shrink-0"
+                              >
+                                View
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subject - shows current PO subject for single mode, or note for bulk */}
+                  {!bulkCreate && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                      <input
+                        type="text"
+                        value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  )}
 
                   {/* Send To */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Send To *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Send To *{bulkCreate ? ' (same for all POs)' : ''}</label>
                     <input
                       type="email"
                       value={sendTo}
@@ -1629,7 +1670,7 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
                   {/* CC */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">CC <span className="text-gray-400 font-normal">(separate multiple with commas)</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CC{bulkCreate ? ' (same for all POs)' : ''} <span className="text-gray-400 font-normal">(separate multiple with commas)</span></label>
                     <input
                       type="text"
                       value={ccEmails}
@@ -1656,9 +1697,13 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
               ) : (
                 <div className="text-center py-4 space-y-3">
                   <div className="inline-flex items-center gap-2 px-6 py-3 bg-green-100 text-green-700 rounded-xl font-medium text-lg">
-                    <Icon name="CheckCircle" size={20} /> Purchase Order Sent Successfully
+                    <Icon name="CheckCircle" size={20} /> {bulkCreate ? `${bulkCount} Purchase Orders Sent Successfully` : 'Purchase Order Sent Successfully'}
                   </div>
-                  <p className="text-sm text-gray-500">Sent to {sendTo}{ccEmails ? `, CC: ${ccEmails}` : ''}</p>
+                  <p className="text-sm text-gray-500">
+                    {bulkCreate
+                      ? `${bulkCount} separate emails sent to ${sendTo}${ccEmails ? `, CC: ${ccEmails}` : ''}`
+                      : `Sent to ${sendTo}${ccEmails ? `, CC: ${ccEmails}` : ''}`}
+                  </p>
                   <button onClick={downloadPDF} disabled={generatingPdf} className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2 mx-auto mt-2">
                     <Icon name="Download" size={16} /> {generatingPdf ? 'Generating...' : 'Download PDF'}
                   </button>
