@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
@@ -12,6 +13,9 @@ interface Props {
 
 function OrderDetailPage({ order, onBack }: Props) {
   const [activeDocSection, setActiveDocSection] = useState<string | null>(null);
+  const [pdfModal, setPdfModal] = useState<{ open: boolean; url: string; title: string; loading: boolean }>({
+    open: false, url: '', title: '', loading: false,
+  });
 
   const currentStageName = ORDER_STAGES[order.currentStage - 1]?.name || 'Unknown';
   const isCompleted = order.currentStage === 8;
@@ -113,6 +117,17 @@ function OrderDetailPage({ order, onBack }: Props) {
                   <p className="font-semibold text-blue-700">USD {order.totalValue}</p>
                 </div>
               )}
+            </div>
+
+            {/* View as PDF button */}
+            <div className="pt-3 border-t border-gray-100">
+              <button
+                onClick={previewPOasPDF}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Icon name="FileText" size={16} />
+                View Purchase Order as PDF
+              </button>
             </div>
 
             {/* Attachments from stage 1 emails */}
@@ -281,16 +296,131 @@ function OrderDetailPage({ order, onBack }: Props) {
       <div className="pt-3 border-t border-gray-100">
         <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Attachments</p>
         <div className="space-y-1.5">
-          {allAttachments.map((att, idx) => (
-            <div key={idx} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
-              <Icon name="Paperclip" size={14} className="text-gray-400" />
-              <span className="font-medium text-gray-700 flex-1">{att.name}</span>
-              <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
-            </div>
-          ))}
+          {allAttachments.map((att, idx) => {
+            const isPdf = att.name.toLowerCase().endsWith('.pdf');
+            return (
+              <button
+                key={idx}
+                onClick={() => handleAttachmentClick(att.name, stage)}
+                className="w-full flex items-center gap-2 text-sm bg-gray-50 hover:bg-blue-50 rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer"
+              >
+                <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
+                <span className="font-medium text-gray-700 flex-1 group-hover:text-blue-700 transition-colors">{att.name}</span>
+                {isPdf && <span className="text-xs font-medium text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to preview</span>}
+                <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
+  };
+
+  // Build PO HTML for PDF generation
+  const buildPOHtml = (): string => {
+    const hasSize = lineItems.some((i: any) => i.size);
+    const hasFreezing = lineItems.some((i: any) => i.freezing);
+    const hasPacking = lineItems.some((i: any) => i.packing);
+
+    const headerCols = [
+      '<th style="padding:10px 12px;text-align:left;font-size:13px;">Product</th>',
+      hasSize ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Size</th>' : '',
+      hasFreezing ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Freezing</th>' : '',
+      hasPacking ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Packing</th>' : '',
+      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Kilos</th>',
+      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Price/Kg</th>',
+      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Total</th>',
+    ].filter(Boolean).join('');
+
+    const rows = lineItems.filter((i: any) => i.product).map((item: any) => {
+      const cells = [
+        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:500;">${String(item.product)}</td>`,
+        hasSize ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.size || '-')}</td>` : '',
+        hasFreezing ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.freezing || '-')}</td>` : '',
+        hasPacking ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.packing || '-')}</td>` : '',
+        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${Number(item.kilos || 0).toLocaleString()}</td>`,
+        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">$${Number(item.pricePerKg || 0).toFixed(2)}</td>`,
+        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">$${Number(item.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`,
+      ].filter(Boolean).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    return `
+      <div style="font-family:Arial,sans-serif;padding:40px;max-width:800px;margin:0 auto;">
+        <div style="text-align:center;margin-bottom:30px;border-bottom:3px solid #1e40af;padding-bottom:20px;">
+          <h1 style="color:#1e40af;font-size:28px;margin:0;">GANESH INTERNATIONAL</h1>
+          <p style="color:#6b7280;margin:5px 0 0;font-size:14px;">Frozen Seafood Traders</p>
+        </div>
+        <h2 style="text-align:center;color:#1e40af;margin-bottom:25px;font-size:22px;">PURCHASE ORDER</h2>
+        <table style="width:100%;margin-bottom:25px;"><tr>
+          <td style="vertical-align:top;">
+            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 4px;">PO Number</p>
+            <p style="font-weight:700;font-size:16px;margin:0;">${order.id}</p>
+          </td>
+          <td style="text-align:right;vertical-align:top;">
+            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 4px;">Date</p>
+            <p style="font-weight:600;margin:0;">${order.date}</p>
+          </td>
+        </tr></table>
+        <table style="width:100%;margin-bottom:25px;"><tr>
+          <td style="width:48%;vertical-align:top;background:#f9fafb;padding:15px;border-radius:8px;">
+            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 8px;">Supplier</p>
+            <p style="font-weight:600;margin:0;">${order.supplier}</p>
+            <p style="color:#6b7280;margin:4px 0 0;font-size:13px;">${order.from}</p>
+          </td>
+          <td style="width:4%;"></td>
+          <td style="width:48%;vertical-align:top;background:#f9fafb;padding:15px;border-radius:8px;">
+            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 8px;">Buyer</p>
+            <p style="font-weight:600;margin:0;">${order.company}</p>
+            ${order.brand ? `<p style="color:#7c3aed;margin:4px 0 0;font-size:13px;">${order.brand}</p>` : ''}
+          </td>
+        </tr></table>
+        ${lineItems.length > 0 ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          <thead><tr style="background:#1e40af;color:white;">${headerCols}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : ''}
+        <table style="width:100%;"><tr>
+          <td style="text-align:right;background:#eff6ff;padding:15px;border-radius:8px;">
+            ${order.totalKilos ? `<span style="color:#6b7280;font-size:12px;">Total Qty: </span><span style="font-weight:700;font-size:16px;margin-right:30px;">${Number(order.totalKilos).toLocaleString()} Kg</span>` : ''}
+            ${order.totalValue ? `<span style="color:#6b7280;font-size:12px;">Total Value: </span><span style="font-weight:700;font-size:18px;color:#1e40af;">USD ${order.totalValue}</span>` : ''}
+          </td>
+        </tr></table>
+      </div>
+    `;
+  };
+
+  // Generate PO as PDF and show in modal
+  const previewPOasPDF = async () => {
+    setPdfModal({ open: true, url: '', title: `Purchase Order - ${order.id}`, loading: true });
+    try {
+      const html = buildPOHtml();
+      const blob = await (html2pdf() as any).set({
+        margin: [10, 10, 10, 10],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(html, 'string').output('blob');
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      setPdfModal(prev => ({ ...prev, url, loading: false }));
+    } catch {
+      setPdfModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  // Handle clicking an attachment
+  const handleAttachmentClick = (name: string, stage: number) => {
+    if (name.toLowerCase().endsWith('.pdf') && stage === 1) {
+      previewPOasPDF();
+    } else {
+      // For other files — show placeholder modal
+      setPdfModal({ open: true, url: '', title: name, loading: false });
+    }
+  };
+
+  const closePdfModal = () => {
+    if (pdfModal.url) URL.revokeObjectURL(pdfModal.url);
+    setPdfModal({ open: false, url: '', title: '', loading: false });
   };
 
   return (
@@ -465,6 +595,78 @@ function OrderDetailPage({ order, onBack }: Props) {
           ))}
         </div>
       </div>
+
+      {/* PDF Preview Modal */}
+      {pdfModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={closePdfModal}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[90vw] h-[85vh] max-w-5xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center">
+                  <Icon name="FileText" size={18} className="text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm">{pdfModal.title}</h3>
+                  <p className="text-xs text-gray-500">PDF Preview</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {pdfModal.url && (
+                  <a
+                    href={pdfModal.url}
+                    download={pdfModal.title.replace(/[^a-zA-Z0-9-_.]/g, '_') + '.pdf'}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 font-medium"
+                  >
+                    <Icon name="Download" size={14} />
+                    Download
+                  </a>
+                )}
+                <button onClick={closePdfModal} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                  <Icon name="X" size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 bg-gray-200 overflow-hidden">
+              {pdfModal.loading ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3">
+                  <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-gray-600 font-medium">Generating PDF preview...</p>
+                </div>
+              ) : pdfModal.url ? (
+                <iframe
+                  src={pdfModal.url}
+                  className="w-full h-full border-0"
+                  title="PDF Preview"
+                />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center gap-4 text-center p-8">
+                  <div className="w-20 h-20 bg-gray-300 rounded-2xl flex items-center justify-center">
+                    <Icon name="FileText" size={36} className="text-gray-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-700 mb-2">{pdfModal.title}</p>
+                    <p className="text-sm text-gray-500 max-w-md">
+                      This document was received via email. Preview will be available once file storage is connected.
+                    </p>
+                  </div>
+                  {pdfModal.title.toLowerCase().includes('po') && (
+                    <button
+                      onClick={previewPOasPDF}
+                      className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
+                    >
+                      <Icon name="FileText" size={16} />
+                      Generate PO Preview Instead
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
