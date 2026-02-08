@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HistoryEntry } from '../types';
+import { HistoryEntry, getAttachmentName } from '../types';
 import Icon from './Icon';
 import ContactAvatar from './ContactAvatar';
 import { getContactInfo } from '../utils/helpers';
@@ -61,7 +61,7 @@ function ExpandableEmailCard({ entry, defaultExpanded = false }: Props) {
               <div className="flex flex-wrap gap-2">
                 {entry.attachments.map((att, idx) => (
                   <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-700 hover:bg-gray-200 cursor-pointer">
-                    <Icon name="Paperclip" size={12} /> {att} <Icon name="ExternalLink" size={10} className="text-gray-400" />
+                    <Icon name="Paperclip" size={12} /> {getAttachmentName(att)} <Icon name="ExternalLink" size={10} className="text-gray-400" />
                   </span>
                 ))}
               </div>

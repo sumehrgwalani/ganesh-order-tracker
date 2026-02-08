@@ -1353,7 +1353,36 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
             subject: `NEW PO ${currentPONumber}`,
             body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
             hasAttachment: true,
-            attachments: [`${currentPONumber.replace(/\//g, '_')}.pdf`]
+            attachments: [{
+              name: `${currentPONumber.replace(/\//g, '_')}.pdf`,
+              meta: {
+                supplier: poData.supplier,
+                supplierAddress: poData.supplierAddress || '',
+                supplierCountry: poData.supplierCountry || 'India',
+                buyer: poData.buyer,
+                buyerBank: poData.buyerBank || '',
+                destination: poData.destination || '',
+                deliveryTerms: poData.deliveryTerms || '',
+                deliveryDate: poData.deliveryDate || '',
+                commission: poData.commission || '',
+                overseasCommission: poData.overseasCommission || '',
+                overseasCommissionCompany: poData.overseasCommissionCompany || '',
+                payment: poData.payment || '',
+                shippingMarks: poData.shippingMarks || '',
+                loteNumber: poData.loteNumber || '',
+                date: poData.date,
+                product: poData.product || '',
+                totalCases: totalCases,
+                totalKilos: totalKilos,
+                grandTotal: grandTotal,
+                lineItems: lineItems.map(li => ({
+                  product: li.product, brand: li.brand || '', freezing: li.freezing || '',
+                  size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
+                  packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
+                  pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
+                })),
+              }
+            }]
           }
         ]
       };

@@ -27,6 +27,8 @@ export interface ContactFormData {
 
 export type ContactsMap = Record<string, Contact>;
 
+export type AttachmentEntry = string | { name: string; meta?: Record<string, any> };
+
 export interface HistoryEntry {
   stage: number;
   timestamp: string;
@@ -35,8 +37,16 @@ export interface HistoryEntry {
   subject: string;
   body: string;
   hasAttachment?: boolean;
-  attachments?: string[];
+  attachments?: AttachmentEntry[];
 }
+
+// Helper to extract filename from attachment entry
+export const getAttachmentName = (att: AttachmentEntry): string =>
+  typeof att === 'string' ? att : att.name;
+
+// Helper to extract metadata from attachment entry
+export const getAttachmentMeta = (att: AttachmentEntry): Record<string, any> | undefined =>
+  typeof att === 'object' ? att.meta : undefined;
 
 export interface Order {
   id: string;

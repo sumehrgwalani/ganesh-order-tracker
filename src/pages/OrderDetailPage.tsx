@@ -4,7 +4,8 @@ import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
-import type { Order } from '../types';
+import type { Order, AttachmentEntry } from '../types';
+import { getAttachmentName, getAttachmentMeta } from '../types';
 
 interface Props {
   order: Order;
@@ -287,10 +288,21 @@ function OrderDetailPage({ order, onBack }: Props) {
     }
   };
 
+  // Extract PO metadata from stage 1 attachment (if stored as object with meta)
+  const getPOMeta = (): Record<string, any> | null => {
+    const stage1 = order.history.find(h => h.stage === 1 && h.attachments?.length);
+    if (!stage1?.attachments) return null;
+    for (const att of stage1.attachments) {
+      const meta = getAttachmentMeta(att);
+      if (meta) return meta;
+    }
+    return null;
+  };
+
   // Render attachment list for a given stage
   const renderAttachments = (stage: number) => {
     const stageEmails = order.history.filter(h => h.stage === stage && h.hasAttachment && h.attachments?.length);
-    const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => ({ name: att, date: h.timestamp })));
+    const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => ({ name: getAttachmentName(att), date: h.timestamp })));
     if (allAttachments.length === 0) return null;
     return (
       <div className="pt-3 border-t border-gray-100">
@@ -316,76 +328,199 @@ function OrderDetailPage({ order, onBack }: Props) {
     );
   };
 
-  // Build PO HTML for PDF generation
+  // Build PO HTML for PDF generation — matches the actual PO preview layout
   const buildPOHtml = (): string => {
-    const hasSize = lineItems.some((i: any) => i.size);
-    const hasFreezing = lineItems.some((i: any) => i.freezing);
-    const hasPacking = lineItems.some((i: any) => i.packing);
+    // Try to get rich metadata from the attachment; fall back to basic order data
+    const meta = getPOMeta();
+    const items: any[] = meta?.lineItems || lineItems;
+    const hasBrand = items.some((i: any) => i.brand);
+    const hasFreezing = items.some((i: any) => i.freezing);
+    const hasSize = items.some((i: any) => i.size);
+    const hasGlaze = items.some((i: any) => i.glaze);
+    const hasPacking = items.some((i: any) => i.packing);
+    const hasCases = items.some((i: any) => i.cases);
 
-    const headerCols = [
-      '<th style="padding:10px 12px;text-align:left;font-size:13px;">Product</th>',
-      hasSize ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Size</th>' : '',
-      hasFreezing ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Freezing</th>' : '',
-      hasPacking ? '<th style="padding:10px 12px;text-align:left;font-size:13px;">Packing</th>' : '',
-      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Kilos</th>',
-      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Price/Kg</th>',
-      '<th style="padding:10px 12px;text-align:right;font-size:13px;">Total</th>',
+    const supplierName = meta?.supplier || order.supplier;
+    const supplierAddress = meta?.supplierAddress || '';
+    const supplierCountry = (meta?.supplierCountry || order.from || 'India').toUpperCase();
+    const buyerName = meta?.buyer || order.company;
+    const buyerBank = meta?.buyerBank || '';
+    const destination = meta?.destination || order.to || '';
+    const deliveryTerms = meta?.deliveryTerms || '';
+    const deliveryDate = meta?.deliveryDate || '';
+    const commission = meta?.commission || '';
+    const overseasCommission = meta?.overseasCommission || '';
+    const overseasCommissionCompany = meta?.overseasCommissionCompany || '';
+    const payment = meta?.payment || '';
+    const shippingMarks = meta?.shippingMarks || '';
+    const loteNumber = meta?.loteNumber || '';
+    const poDate = meta?.date || order.date;
+    const grandTotal = meta?.grandTotal || order.totalValue || '';
+    const metaTotalKilos = meta?.totalKilos || order.totalKilos || 0;
+    const metaTotalCases = meta?.totalCases || 0;
+
+    // Build product description for intro paragraph (deduplicated)
+    const seen = new Set<string>();
+    const productDescParts: string[] = [];
+    for (const item of items.filter((i: any) => i.product)) {
+      const key = `${item.product}|${item.freezing || ''}|${item.glaze || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        let desc = String(item.product);
+        if (item.freezing && !desc.toLowerCase().includes(String(item.freezing).toLowerCase())) desc += ` ${item.freezing}`;
+        if (item.glaze && item.glazeMarked) desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
+        else if (item.glaze) desc += ` ${item.glaze}`;
+        productDescParts.push(desc);
+      }
+    }
+    const productDesc = productDescParts.join(', ') || order.product;
+
+    // Table header columns
+    const thStyle = 'border:1px solid #d1d5db;padding:8px 10px;text-align:left;font-size:13px;';
+    const thStyleR = 'border:1px solid #d1d5db;padding:8px 10px;text-align:right;font-size:13px;';
+    const tdStyle = 'border:1px solid #d1d5db;padding:7px 10px;font-size:13px;';
+    const tdStyleR = 'border:1px solid #d1d5db;padding:7px 10px;font-size:13px;text-align:right;';
+
+    const headerCells = [
+      `<th style="${thStyle}">Product</th>`,
+      hasBrand ? `<th style="${thStyle}">Brand</th>` : '',
+      hasFreezing ? `<th style="${thStyle}">Freezing</th>` : '',
+      hasSize ? `<th style="${thStyle}">Size</th>` : '',
+      hasGlaze ? `<th style="${thStyle}">Glaze</th>` : '',
+      hasPacking ? `<th style="${thStyle}">Packing</th>` : '',
+      hasCases ? `<th style="${thStyleR}">Cases</th>` : '',
+      `<th style="${thStyleR}">Kilos</th>`,
+      `<th style="${thStyleR}">Price/Kg<br><span style="font-size:11px;font-weight:normal;">${deliveryTerms} ${destination || '___'}</span></th>`,
+      `<th style="${thStyleR}">${items.some((i: any) => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}</th>`,
     ].filter(Boolean).join('');
 
-    const rows = lineItems.filter((i: any) => i.product).map((item: any) => {
+    const totalColSpan = 1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0);
+
+    const bodyRows = items.filter((i: any) => i.product).map((item: any) => {
+      const cur = (!item.currency || item.currency === 'USD') ? '$' : item.currency + ' ';
       const cells = [
-        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:500;">${String(item.product)}</td>`,
-        hasSize ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.size || '-')}</td>` : '',
-        hasFreezing ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.freezing || '-')}</td>` : '',
-        hasPacking ? `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${String(item.packing || '-')}</td>` : '',
-        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${Number(item.kilos || 0).toLocaleString()}</td>`,
-        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">$${Number(item.pricePerKg || 0).toFixed(2)}</td>`,
-        `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">$${Number(item.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`,
+        `<td style="${tdStyle}">${item.product || '-'}</td>`,
+        hasBrand ? `<td style="${tdStyle}">${item.brand || '-'}</td>` : '',
+        hasFreezing ? `<td style="${tdStyle}">${item.freezing || '-'}</td>` : '',
+        hasSize ? `<td style="${tdStyle}">${item.size || '-'}</td>` : '',
+        hasGlaze ? `<td style="${tdStyle}">${item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>` : '',
+        hasPacking ? `<td style="${tdStyle}">${item.packing || '-'}</td>` : '',
+        hasCases ? `<td style="${tdStyleR}">${item.cases || '-'}</td>` : '',
+        `<td style="${tdStyleR}">${item.kilos || '-'}</td>`,
+        `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${item.pricePerKg}` : '-'}</td>`,
+        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${item.total}` : '-'}</td>`,
       ].filter(Boolean).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
 
+    const totalRow = `<tr style="background:#f9fafb;font-weight:700;">
+      <td style="${tdStyle}" colspan="${totalColSpan}">Total</td>
+      ${hasCases ? `<td style="${tdStyleR}">${metaTotalCases}</td>` : ''}
+      <td style="${tdStyleR}">${metaTotalKilos}</td>
+      <td style="${tdStyleR}"></td>
+      <td style="${tdStyleR}">U.S. $${grandTotal}</td>
+    </tr>`;
+
+    // Try to load signature from localStorage
+    let signatureImg = '';
+    try {
+      const sig = localStorage.getItem('gi_signature');
+      if (sig) signatureImg = `<div style="margin-bottom:8px;"><img src="${sig}" style="height:60px;max-width:200px;object-fit:contain;" /></div>`;
+    } catch { /* ignore */ }
+
     return `
-      <div style="font-family:Arial,sans-serif;padding:40px;max-width:800px;margin:0 auto;">
-        <div style="text-align:center;margin-bottom:30px;border-bottom:3px solid #1e40af;padding-bottom:20px;">
-          <h1 style="color:#1e40af;font-size:28px;margin:0;">GANESH INTERNATIONAL</h1>
-          <p style="color:#6b7280;margin:5px 0 0;font-size:14px;">Frozen Seafood Traders</p>
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:30px 40px;max-width:800px;margin:0 auto;color:#1f2937;">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;margin-bottom:30px;padding-bottom:20px;border-bottom:2px solid #e5e7eb;">
+          <div>
+            <h2 style="font-size:22px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
+            <p style="font-size:12px;color:#6b7280;margin:4px 0 0;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
+            <p style="font-size:12px;color:#6b7280;margin:2px 0 0;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+          </div>
         </div>
-        <h2 style="text-align:center;color:#1e40af;margin-bottom:25px;font-size:22px;">PURCHASE ORDER</h2>
-        <table style="width:100%;margin-bottom:25px;"><tr>
-          <td style="vertical-align:top;">
-            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 4px;">PO Number</p>
-            <p style="font-weight:700;font-size:16px;margin:0;">${order.id}</p>
-          </td>
-          <td style="text-align:right;vertical-align:top;">
-            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 4px;">Date</p>
-            <p style="font-weight:600;margin:0;">${order.date}</p>
-          </td>
+
+        <!-- Date and PO Number -->
+        <table style="width:100%;margin-bottom:20px;"><tr>
+          <td style="font-size:13px;"><strong>Date:</strong> ${poDate}</td>
+          <td style="font-size:13px;text-align:right;"><strong>Purchase Order No:</strong> <span style="font-weight:700;">${order.id}</span></td>
         </tr></table>
-        <table style="width:100%;margin-bottom:25px;"><tr>
-          <td style="width:48%;vertical-align:top;background:#f9fafb;padding:15px;border-radius:8px;">
-            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 8px;">Supplier</p>
-            <p style="font-weight:600;margin:0;">${order.supplier}</p>
-            <p style="color:#6b7280;margin:4px 0 0;font-size:13px;">${order.from}</p>
-          </td>
-          <td style="width:4%;"></td>
-          <td style="width:48%;vertical-align:top;background:#f9fafb;padding:15px;border-radius:8px;">
-            <p style="color:#6b7280;font-size:11px;text-transform:uppercase;margin:0 0 8px;">Buyer</p>
-            <p style="font-weight:600;margin:0;">${order.company}</p>
-            ${order.brand ? `<p style="color:#7c3aed;margin:4px 0 0;font-size:13px;">${order.brand}</p>` : ''}
-          </td>
-        </tr></table>
-        ${lineItems.length > 0 ? `
+
+        <!-- To Section -->
+        <div style="margin-bottom:20px;font-size:13px;line-height:1.5;">
+          <p style="color:#6b7280;margin:0;">To,</p>
+          <p style="font-weight:700;margin:2px 0;">${supplierName || '[EXPORTER NAME]'}</p>
+          ${supplierAddress ? `<p style="margin:0;color:#4b5563;">${supplierAddress}</p>` : ''}
+          <p style="font-weight:500;margin:0;color:#4b5563;">${supplierCountry}</p>
+        </div>
+
+        <!-- Greeting -->
+        <div style="margin-bottom:20px;font-size:13px;line-height:1.6;">
+          <p style="margin:0;">Dear Sirs,</p>
+          <p style="margin:10px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${buyerName}</strong>${destination ? `, <strong>${destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
+        </div>
+
+        <!-- Product Table -->
         <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-          <thead><tr style="background:#1e40af;color:white;">${headerCols}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>` : ''}
-        <table style="width:100%;"><tr>
-          <td style="text-align:right;background:#eff6ff;padding:15px;border-radius:8px;">
-            ${order.totalKilos ? `<span style="color:#6b7280;font-size:12px;">Total Qty: </span><span style="font-weight:700;font-size:16px;margin-right:30px;">${Number(order.totalKilos).toLocaleString()} Kg</span>` : ''}
-            ${order.totalValue ? `<span style="color:#6b7280;font-size:12px;">Total Value: </span><span style="font-weight:700;font-size:18px;color:#1e40af;">USD ${order.totalValue}</span>` : ''}
-          </td>
-        </tr></table>
+          <thead><tr style="background:#f3f4f6;">${headerCells}</tr></thead>
+          <tbody>${bodyRows}${totalRow}</tbody>
+        </table>
+
+        <!-- Terms -->
+        <div style="font-size:13px;line-height:1.8;margin-bottom:20px;">
+          <p style="margin:0;"><strong>Total Value:</strong> U.S. $${grandTotal}</p>
+          <p style="font-size:11px;color:#6b7280;margin:2px 0 2px 16px;">*We need a quality control of photos before loading</p>
+          <p style="font-size:11px;color:#6b7280;margin:0 0 4px 16px;">*Different colors Tapes for different products &amp; Lots.</p>
+          ${deliveryTerms || destination ? `<p style="margin:0;"><strong>Delivery Terms:</strong> ${deliveryTerms} ${destination}</p>` : ''}
+          ${deliveryDate ? `<p style="margin:0;"><strong>Shipment Date:</strong> ${deliveryDate}</p>` : ''}
+          <p style="margin:0;"><strong>Commission:</strong> ${commission || '___________________'} + 18% GST</p>
+          ${overseasCommission ? `<p style="margin:0;"><strong>Overseas Commission:</strong> ${overseasCommission}${overseasCommissionCompany ? `, payable to ${overseasCommissionCompany}` : ''}</p>` : ''}
+          ${payment ? `<p style="margin:0;"><strong>Payment:</strong> ${payment}</p>` : ''}
+          <p style="margin:0;"><strong>Variation:</strong> +/- 5% in Quantity &amp; Value</p>
+          <p style="margin:0;"><strong>Labelling Details:</strong> As per previous. (pls send for approval)</p>
+          ${loteNumber ? `<p style="margin:0;"><strong>Lote number:</strong> ${loteNumber}</p>` : ''}
+        </div>
+
+        <!-- Important Notes -->
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px;font-size:13px;margin-bottom:20px;">
+          <p style="font-weight:600;color:#92400e;margin:0 0 8px;">Important Notes:</p>
+          <ul style="color:#a16207;margin:0;padding-left:20px;line-height:1.7;">
+            <li>Should be minimum 5 days free Dem/ Det/ Plug in on the B/L or on the shipping line's letterhead.</li>
+            <li>Please send us Loading chart alongwith the docs &amp; it should be mentioned the lot/code number.</li>
+            <li>Please make plastic certificate.</li>
+            <li>REQUIRED CERTIFICATE OF QUALITY OR FOOD SECURITY CERTIFICATE SUCH AS BRC, GLOBAL GAP ETC.</li>
+            <li>Please use different color carton's tapes for different code.</li>
+            <li>No Damaged boxes to be shipped.</li>
+          </ul>
+        </div>
+
+        ${shippingMarks ? `<p style="font-size:13px;margin-bottom:16px;"><strong>Shipping Marks:</strong> ${shippingMarks}</p>` : ''}
+
+        <!-- Please Note -->
+        <div style="font-size:13px;color:#4b5563;margin-bottom:20px;line-height:1.6;">
+          <p style="font-weight:600;margin:0 0 8px;">Please Note:</p>
+          ${buyerBank ? `<p style="margin:0 0 8px;">After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in ${buyerBank}.</p>` : ''}
+          <p style="margin:0 0 8px;">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
+          <p style="margin:0;">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
+        </div>
+
+        <!-- Closing -->
+        <div style="font-size:13px;color:#374151;margin-bottom:30px;">
+          <p style="margin:0;">Hope you find the above terms &amp; conditions in order. Please put your Seal and Signature and send it to us as a token of your confirmation.</p>
+          <p style="margin:16px 0 0;">Thanking You,</p>
+        </div>
+
+        <!-- Signature -->
+        <div style="margin-top:30px;">
+          ${signatureImg}
+          <p style="font-weight:700;margin:0;color:#1f2937;">Sumehr Rajnish Gwalani</p>
+          <p style="color:#4b5563;margin:2px 0 0;">GANESH INTERNATIONAL</p>
+          <div style="margin-top:8px;display:inline-block;padding:4px 12px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:12px;">&#10003; Digitally Signed &amp; Approved</div>
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top:30px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;">
+          <p style="margin:0;">FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
+        </div>
       </div>
     `;
   };
