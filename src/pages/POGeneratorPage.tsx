@@ -368,6 +368,9 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
     let currentBlock: any = null;
     // Template for header-with-subrows format (stores shared product/packing/glaze)
     let headerTemplate: any = null;
+    // Global packing/glaze that applies to all products (e.g. "6x1kg printed bags for all products")
+    let globalPacking = '';
+    let globalGlaze = '';
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -380,6 +383,37 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
       // Skip instruction lines (e.g. "please only prepare as they might add...")
       if (lineLower.includes('please only prepare') || lineLower.includes('please prepare') ||
           lineLower.includes('might add') || lineLower.includes('they may add')) continue;
+
+      // === GLOBAL PACKING: "6x1kg printed bags for all products" or "packing for all: 6x1kg bag" ===
+      if (lineLower.includes('for all') || lineLower.includes('all products') || lineLower.includes('all items')) {
+        const packMatch = line.match(/(\d+\s*[xX]\s*\d+\s*(?:kilo?|kg)?)/i);
+        if (packMatch) {
+          let packing = packMatch[1].replace(/kilo/i, 'kg');
+          if (lineLower.includes('printed bag') || lineLower.includes('bolsa imprimida') || lineLower.includes('imprimida')) {
+            packing += ' Printed Bag';
+          } else if (lineLower.includes('bolsa con rider') || lineLower.includes('con rider')) {
+            packing += ' Bag with Rider';
+          } else if (lineLower.includes('bag') || lineLower.includes('bolsa')) {
+            packing += ' Bag';
+          } else if (lineLower.includes('bulk') || lineLower.includes('granel')) {
+            packing += ' Bulk';
+          }
+          globalPacking = packing;
+        }
+        const bulkMatch = line.match(/(\d+)\s*(?:kg|kilo)\s*(?:bulk|granel)/i);
+        if (bulkMatch && !packMatch) {
+          globalPacking = bulkMatch[1] + ' kg Bulk';
+        }
+        // Check for glaze in the same line
+        const glazeMatch = line.match(/(\d+)%\s*(?:glaseo|glaze)/i);
+        if (glazeMatch) {
+          globalGlaze = glazeMatch[1] + '% Glaze';
+        }
+        // Apply to current block if it exists
+        if (currentBlock && !currentBlock.packing) currentBlock.packing = globalPacking;
+        if (currentBlock && !currentBlock.glaze && globalGlaze) currentBlock.glaze = globalGlaze;
+        continue;
+      }
 
       // === FORMAT 3: "PACKING - 6 X 1 KG BAG 25% GLAZE" line (belongs to previous product block) ===
       const isPackingLine = lineLower.match(/^packing\s*[-–:]/i);
@@ -448,13 +482,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         continue;
       }
 
-      // === FORMAT 5: Compact "Product-QuantityMT $Price" like "Cut Squid-3MT $3.90" or "Cut Squid 20MT $3.90" ===
-      const productMtPriceMatch = line.match(/^([a-zA-Z][a-zA-Z\s]+?)\s*[-–]?\s*(\d+)\s*MT\s*\$?\s*([\d.]+)\s*\$?/i);
-      if (productMtPriceMatch && !isPackingLine && !lineLower.match(/^packing/i)) {
-        // Make sure this isn't a detail line for an existing block
-        const possibleProduct = productMtPriceMatch[1].trim();
+      // === FORMAT 5: Compact "Product-QuantityMT $Price" or "Product-Size QuantityMT $Price" ===
+      // Handles: "Cut Squid-3MT $3.90", "Cut Squid 20MT $3.90", "Cut Squid-20/40 3MT $3.90"
+      const productSizeMtMatch = line.match(/^([a-zA-Z][a-zA-Z\s]+?)\s*[-–]?\s*(\d+\/\d+|U\/\d+|\d+\/UP)?\s*(\d+)\s*MT\s*\$?\s*([\d.]+)\s*\$?/i);
+      if (productSizeMtMatch && !isPackingLine && !lineLower.match(/^packing/i)) {
+        const possibleProduct = productSizeMtMatch[1].trim();
         const possibleProductLower = possibleProduct.toLowerCase();
-        // Only treat as product line if it has a seafood/product keyword
         const isProductName = [...seafoodKeywords, ...friesKeywords, 'cut', 'baby', 'ring', 'tube', 'tentacle', 'whole'].some(kw => possibleProductLower.includes(kw));
 
         if (isProductName) {
@@ -462,12 +495,12 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
           const productName = resolveProductName(possibleProduct);
           currentBlock = {
             product: productName,
-            size: '',
+            size: productSizeMtMatch[2] || '',
             glaze: '',
             glazeMarked: '',
             freezing: detectFreezing(possibleProduct),
-            kilos: (parseFloat(productMtPriceMatch[2]) * 1000).toString(),
-            pricePerKg: productMtPriceMatch[3],
+            kilos: (parseFloat(productSizeMtMatch[3]) * 1000).toString(),
+            pricePerKg: productSizeMtMatch[4],
             packing: '',
             brand: '',
             cases: '',
@@ -693,6 +726,14 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
 
     // Don't forget the last block
     if (currentBlock) productBlocks.push(currentBlock);
+
+    // Apply global packing/glaze to all blocks that don't have their own
+    if (globalPacking || globalGlaze) {
+      for (const block of productBlocks) {
+        if (!block.packing && globalPacking) block.packing = globalPacking;
+        if (!block.glaze && globalGlaze) block.glaze = globalGlaze;
+      }
+    }
 
     // Parse buyer and supplier from the text
     let detectedBuyer = '';
