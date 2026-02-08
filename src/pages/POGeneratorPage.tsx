@@ -301,10 +301,8 @@ function POGeneratorPage({ onBack, contacts = CONTACTS, orders = [], setOrders, 
         productName = productName.replace(/\s+wc/i, ' Whole Cleaned');
       }
 
-      // Add IQF if it was in the original name
-      if (rawName.toLowerCase().includes('iqf') && !productName.toLowerCase().includes('iqf')) {
-        productName += ' IQF';
-      }
+      // Remove freezing method keywords from product name (these go in the separate Freezing field)
+      productName = productName.replace(/\s+(?:semi\s*)?iqf\b/gi, '').replace(/\s+blast\b/gi, '').replace(/\s+block\b/gi, '').replace(/\s+plate\b/gi, '').trim();
 
       // Preserve processing styles (PBO, PND, HLSO, etc.) from the original name
       const processingStylesSet = ['pbo', 'pnd', 'pd', 'hlso', 'hoso', 'pud', 'pdto', 'cpto', 'pto', 'ezp', 'butterfly'];
