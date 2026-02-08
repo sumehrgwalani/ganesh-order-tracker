@@ -44,6 +44,7 @@ export function useOrders(orgId: string | null) {
         awbNumber: row.awb_number || undefined,
         totalValue: row.total_value || undefined,
         totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
+        metadata: row.metadata || undefined,
         history: (row.order_history || [])
           .sort((a: any, b: any) => a.stage - b.stage)
           .map((h: any): HistoryEntry => ({
@@ -94,6 +95,7 @@ export function useOrders(orgId: string | null) {
           total_value: order.totalValue || null,
           total_kilos: order.totalKilos || null,
           status: 'sent',
+          metadata: order.metadata || {},
         })
         .select()
         .single()

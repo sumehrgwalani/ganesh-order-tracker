@@ -526,8 +526,23 @@ function OrderDetailPage({ order, onBack }: Props) {
   };
 
   // Generate PO as PDF and show in modal
+  // First tries to load from Supabase Storage; falls back to on-the-fly generation
   const previewPOasPDF = async () => {
     setPdfModal({ open: true, url: '', title: `Purchase Order - ${order.id}`, loading: true });
+
+    // Check if a stored PDF URL exists in the attachment metadata
+    const meta = getPOMeta();
+    if (meta?.pdfUrl) {
+      try {
+        const resp = await fetch(meta.pdfUrl, { method: 'HEAD' });
+        if (resp.ok) {
+          setPdfModal(prev => ({ ...prev, url: meta.pdfUrl, loading: false }));
+          return;
+        }
+      } catch { /* stored URL not reachable, fall through to generate */ }
+    }
+
+    // Fallback: generate from HTML
     try {
       const html = buildPOHtml();
       const blob = await (html2pdf() as any).set({

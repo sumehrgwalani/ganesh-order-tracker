@@ -66,6 +66,7 @@ export interface Order {
   totalValue?: string;
   totalKilos?: number;
   lineItems?: Record<string, string | number | boolean>[];
+  metadata?: Record<string, any>;
   history: HistoryEntry[];
 }
 
