@@ -120,28 +120,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     return `GI/PO/${yearPrefix}/${buyerCode}-${seqStr}`;
   };
 
-  // Auto-generate the next lote number (format: xxxx/Year, sequential)
-  const getNextLoteNumber = (): string => {
-    const currentYear = new Date().getFullYear();
-    let maxSeq = 0;
-
-    for (const order of orders) {
-      // Check lote number in order history metadata
-      const meta = order.history?.[0]?.attachments?.[0]?.meta;
-      const lote = meta?.loteNumber || '';
-      if (lote) {
-        const match = lote.match(/^(\d+)\//);
-        if (match) {
-          const seq = parseInt(match[1]);
-          if (seq > maxSeq) maxSeq = seq;
-        }
-      }
-    }
-
-    const nextSeq = (maxSeq + 1).toString().padStart(4, '0');
-    return `${nextSeq}/${currentYear}`;
-  };
-
   const [poData, setPOData] = useState({
     poNumber: getNextPONumber(),
     date: new Date().toISOString().split('T')[0],
@@ -161,7 +139,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     payment: '',
     packing: '',
     deliveryDate: '',
-    loteNumber: getNextLoteNumber(),
+    loteNumber: '',
     shippingMarks: '',
     buyerBank: '',
     notes: '',
@@ -188,7 +166,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [bulkCreate, setBulkCreate] = useState(false);
   const [bulkCount, setBulkCount] = useState(2);
   const [bulkPreviewIndex, setBulkPreviewIndex] = useState(0);
-  const [bulkDates, setBulkDates] = useState<string[]>([]);
   const [signatureData, setSignatureData] = useState<string>('');
   const [isDrawing, setIsDrawing] = useState(false);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -196,38 +173,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
-  const bulkDateRef = useRef<HTMLInputElement>(null);
-
-  // Initialize/sync bulk shipment dates when bulk mode, count, or base delivery date changes
-  useEffect(() => {
-    if (bulkCreate && bulkCount > 0) {
-      setBulkDates(prev => {
-        const baseDate = poData.deliveryDate || '';
-        const newDates = Array.from({ length: bulkCount }, (_, i) => prev[i] || baseDate);
-        return newDates;
-      });
-    }
-  }, [bulkCreate, bulkCount, poData.deliveryDate]);
-
-  // Native event listener for bulk date input (Chrome's date picker doesn't always trigger React onChange)
-  useEffect(() => {
-    const el = bulkDateRef.current;
-    if (!el) return;
-    const handler = () => {
-      const val = el.value;
-      setBulkDates(prev => {
-        const copy = [...prev];
-        copy[bulkPreviewIndex] = val;
-        return copy;
-      });
-    };
-    el.addEventListener('change', handler);
-    el.addEventListener('input', handler);
-    return () => {
-      el.removeEventListener('change', handler);
-      el.removeEventListener('input', handler);
-    };
-  }, [bulkPreviewIndex, bulkCreate]);
 
   // Click outside to close dropdowns
   useEffect(() => {
@@ -486,26 +431,21 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     return null;
   };
 
-  // Calculate cases, adjusted kilos, and total (bidirectional: kilos↔cases)
+  // Calculate cases, adjusted kilos, and total
   const calculateLineItem = (item: any) => {
     const inputKilos = parseFloat(item.kilos) || 0;
-    const inputCases = item.cases ? parseInt(item.cases as string) : 0;
     const price = parseFloat(item.pricePerKg) || 0;
     const kgPerCarton = parsePackingKg(item.packing);
 
-    let cases = inputCases;
+    let cases = item.cases ? parseInt(item.cases as string) : 0;
     let adjustedKilos = inputKilos;
 
-    if (kgPerCarton) {
-      if (inputKilos > 0) {
-        // Kilos given → calculate cases and adjust kilos to whole cartons
-        cases = Math.ceil(inputKilos / kgPerCarton);
-        adjustedKilos = cases * kgPerCarton;
-      } else if (inputCases > 0) {
-        // Cases given but no kilos → calculate kilos from cases
-        cases = inputCases;
-        adjustedKilos = inputCases * kgPerCarton;
-      }
+    // If we have packing info and kilos, calculate cases and adjust kilos
+    if (kgPerCarton && inputKilos > 0) {
+      // Calculate cases (round up to ensure we have enough)
+      cases = Math.ceil(inputKilos / kgPerCarton);
+      // Adjust kilos to match whole cartons
+      adjustedKilos = cases * kgPerCarton;
     }
 
     // Calculate total (rounded to 2 decimal places)
@@ -548,7 +488,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setLineItems(updated);
   };
 
-  // Recalculate all line items (used after parsing) — handles both kilos→cases and cases→kilos
+  // Recalculate all line items (used after parsing)
   const recalculateAllLineItems = (items: any[]) => {
     return items.map(item => {
       const calculated = calculateLineItem(item);
@@ -556,7 +496,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       return {
         ...item,
         cases: calculated.cases,
-        kilos: kgPerCarton ? calculated.adjustedKilos : (item.kilos || calculated.adjustedKilos),
+        kilos: kgPerCarton ? calculated.adjustedKilos : item.kilos,
         total: calculated.total
       };
     });
@@ -771,6 +711,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(poDocRef.current).save();
       setNotification({ type: 'success', message: `PDF downloaded as ${filename}` });
       setTimeout(() => setNotification(null), 3000);
@@ -810,11 +751,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     ? getCurrentBulkPONumber(bulkPreviewIndex)
     : poData.poNumber;
 
-  // Get the delivery date for the currently previewed bulk PO (or the shared date if not bulk)
-  const currentPreviewDeliveryDate = bulkCreate && bulkDates.length > bulkPreviewIndex
-    ? bulkDates[bulkPreviewIndex]
-    : poData.deliveryDate;
-
   // Send PO to supplier (supports bulk creation)
   const sendPO = async () => {
     // Step 1: Capture PDF blob from the live preview BEFORE any state changes
@@ -843,15 +779,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       let currentPONumber = poData.poNumber;
       for (let j = 0; j < i; j++) {
         currentPONumber = incrementPONumber(currentPONumber);
-      }
-
-      // Increment lote number for each bulk PO
-      let currentLoteNumber = poData.loteNumber || '';
-      if (currentLoteNumber && i > 0) {
-        const loteMatch = currentLoteNumber.match(/^(\d+)(\/\d{4})$/);
-        if (loteMatch) {
-          currentLoteNumber = (parseInt(loteMatch[1]) + i).toString().padStart(loteMatch[1].length, '0') + loteMatch[2];
-        }
       }
 
       const filename = `${currentPONumber.replace(/\//g, '_')}.pdf`;
@@ -892,13 +819,13 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 buyerBank: poData.buyerBank || '',
                 destination: poData.destination || '',
                 deliveryTerms: poData.deliveryTerms || '',
-                deliveryDate: (bulkCreate && bulkDates[i]) ? bulkDates[i] : (poData.deliveryDate || ''),
+                deliveryDate: poData.deliveryDate || '',
                 commission: poData.commission || '',
                 overseasCommission: poData.overseasCommission || '',
                 overseasCommissionCompany: poData.overseasCommissionCompany || '',
                 payment: poData.payment || '',
                 shippingMarks: poData.shippingMarks || '',
-                loteNumber: currentLoteNumber || '',
+                loteNumber: poData.loteNumber || '',
                 date: poData.date,
                 product: poData.product || '',
                 totalCases: totalCases,
@@ -1031,13 +958,12 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
           {/* Bulk Preview Navigation */}
           {bulkCreate && bulkCount > 1 && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-4">
-              {/* Top row: Navigation */}
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-3">
+              <div className="flex items-center justify-between">
                 <button
                   onClick={() => setBulkPreviewIndex(Math.max(0, bulkPreviewIndex - 1))}
                   disabled={bulkPreviewIndex === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <Icon name="ChevronLeft" size={16} /> Previous
                 </button>
@@ -1052,28 +978,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 <button
                   onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
                   disabled={bulkPreviewIndex === bulkCount - 1}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   Next <Icon name="ChevronRight" size={16} />
                 </button>
-              </div>
-              {/* Shipment Date for this PO */}
-              <div className="bg-white rounded-lg border border-blue-200 px-4 py-2.5 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-2">
-                  <Icon name="Calendar" size={16} className="text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">Shipment Date</span>
-                </div>
-                <input
-                  ref={bulkDateRef}
-                  type="date"
-                  value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
-                  onChange={(e) => {
-                    const newDates = [...bulkDates];
-                    newDates[bulkPreviewIndex] = e.target.value;
-                    setBulkDates(newDates);
-                  }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
               </div>
               {/* Submit for Sign-off button inside navigation bar */}
               {!showSignOff && status === 'draft' && (
@@ -1167,20 +1075,20 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               const filledCols = [true, hasBrand, hasFreezing, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
               const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
               return (
-            <div className="mb-2" style={{ pageBreakInside: 'avoid' }}>
-              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '10.5px', tableLayout: 'auto' }}>
+            <div className="mb-2">
+              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '10px', tableLayout: 'auto' }}>
                 <thead>
                   <tr className="bg-gray-100">
-                    <th className="border border-gray-300 px-2 py-1 text-left" style={{ minWidth: '130px' }}>Product</th>
-                    {hasBrand && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Brand</th>}
-                    {hasFreezing && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Freezing</th>}
-                    {hasSize && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Size</th>}
-                    {hasGlaze && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Glaze</th>}
-                    {hasPacking && <th className="border border-gray-300 px-2 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Packing</th>}
-                    {hasCases && <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Cases</th>}
-                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Kilos</th>
-                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Price/Kg<br/><span style={{ fontSize: '9px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
-                    <th className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>
+                    <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ minWidth: '100px' }}>Product</th>
+                    {hasBrand && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Brand</th>}
+                    {hasFreezing && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Freezing</th>}
+                    {hasSize && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Size</th>}
+                    {hasGlaze && <th className="border border-gray-300 px-1.5 py-1 text-left">Glaze</th>}
+                    {hasPacking && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Packing</th>}
+                    {hasCases && <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Cases</th>}
+                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Kilos</th>
+                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Price/Kg<br/><span style={{ fontSize: '8px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
+                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>
                       {lineItems.some(i => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}
                     </th>
                   </tr>
@@ -1188,16 +1096,16 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 <tbody>
                   {lineItems.map((item, idx) => (
                     <tr key={idx}>
-                      <td className="border border-gray-300 px-2 py-1">{item.product || '-'}</td>
-                      {hasBrand && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.brand || '-'}</td>}
-                      {hasFreezing && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.freezing || '-'}</td>}
-                      {hasSize && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.size || '-'}</td>}
-                      {hasGlaze && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
-                      {hasPacking && <td className="border border-gray-300 px-2 py-1" style={{ whiteSpace: 'nowrap' }}>{item.packing || '-'}</td>}
-                      {hasCases && <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
-                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-1">{item.product || '-'}</td>
+                      {hasBrand && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.brand || '-'}</td>}
+                      {hasFreezing && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.freezing || '-'}</td>}
+                      {hasSize && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.size || '-'}</td>}
+                      {hasGlaze && <td className="border border-gray-300 px-1.5 py-1">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
+                      {hasPacking && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.packing || '-'}</td>}
+                      {hasCases && <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
+                      <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
@@ -1219,7 +1127,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*We need a quality control of photos before loading</p>
               <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*Different colors Tapes for different products & Lots.</p>
               {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
-              {(currentPreviewDeliveryDate || poData.deliveryDate) && <p><span className="font-medium">Shipment Date:</span> {formatDate(currentPreviewDeliveryDate || poData.deliveryDate)}</p>}
+              {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
               <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
               {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
               {poData.payment && <p><span className="font-medium">Payment:</span> {poData.payment}</p>}
@@ -1401,7 +1309,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">{i + 1}</span>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-gray-800 truncate">NEW PO {poNum}</p>
-                                <p className="text-xs text-gray-500 truncate">To: {sendTo || poData.supplierEmail || 'supplier@company.com'}{bulkDates[i] ? ` | Ship: ${formatDate(bulkDates[i])}` : ''}</p>
+                                <p className="text-xs text-gray-500 truncate">To: {sendTo || poData.supplierEmail || 'supplier@company.com'}</p>
                               </div>
                               <button
                                 onClick={() => setBulkPreviewIndex(i)}
@@ -1524,7 +1432,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                     <button
                       onClick={() => parseNaturalLanguage(rawInput)}
                       disabled={isParsingAI}
-                      className={`px-5 py-2.5 text-white rounded-xl flex items-center justify-center gap-2 font-medium ${isParsingAI ? 'bg-blue-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}
+                      className={`px-5 py-2.5 text-white rounded-xl flex items-center gap-2 font-medium ${isParsingAI ? 'bg-blue-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                       {isParsingAI ? (
                         <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Parsing with AI...</>
@@ -1799,16 +1707,8 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Delivery / Shipment Date
-                    {bulkCreate && <span className="text-xs text-blue-500 font-normal ml-1">(shared — change per PO in Preview)</span>}
-                  </label>
-                  <input type="date" value={poData.deliveryDate} onChange={(e) => {
-                    setPOData({...poData, deliveryDate: e.target.value});
-                    if (bulkCreate) {
-                      setBulkDates(prev => prev.map(d => d || e.target.value));
-                    }
-                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery / Shipment Date</label>
+                  <input type="date" value={poData.deliveryDate} onChange={(e) => setPOData({...poData, deliveryDate: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Commission</label>
