@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Icon from '../components/Icon';
 import { WTTLogo } from '../components/Logos';
+import NotificationPanel from '../components/NotificationPanel';
+import type { AppNotification } from '../types';
 
 interface HeaderProps {
   searchTerm: string;
@@ -10,10 +12,22 @@ interface HeaderProps {
   onSyncClick: () => void;
   userEmail?: string;
   onSignOut?: () => void;
+  notifications: AppNotification[];
+  unreadCount: number;
+  onMarkAsRead: (id: string) => void;
+  onMarkAllAsRead: () => void;
+  onAcceptInvitation: (notification: AppNotification) => void;
+  onDeclineInvitation: (notification: AppNotification) => void;
 }
 
-function Header({ searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick, userEmail, onSignOut }: HeaderProps) {
+function Header({
+  searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick,
+  userEmail, onSignOut,
+  notifications, unreadCount, onMarkAsRead, onMarkAllAsRead,
+  onAcceptInvitation, onDeclineInvitation,
+}: HeaderProps) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -57,7 +71,31 @@ function Header({ searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick, u
         </button>
         <div className="flex items-center gap-1 text-xs text-gray-400"><Icon name="Clock" size={12} /><span>{formatLastSync(lastSync)}</span></div>
         <button className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-3 py-2 rounded-full font-medium hover:from-blue-600 hover:to-blue-700 text-sm">withthetide</button>
-        <div className="relative"><Icon name="Bell" size={20} className="text-gray-500" /><span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">3</span></div>
+
+        {/* Bell icon with notification dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <Icon name="Bell" size={20} className="text-gray-500" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+          <NotificationPanel
+            notifications={notifications}
+            unreadCount={unreadCount}
+            isOpen={showNotifications}
+            onClose={() => setShowNotifications(false)}
+            onMarkAsRead={onMarkAsRead}
+            onMarkAllAsRead={onMarkAllAsRead}
+            onAcceptInvitation={onAcceptInvitation}
+            onDeclineInvitation={onDeclineInvitation}
+          />
+        </div>
 
         {/* Profile avatar with dropdown */}
         <div className="relative" ref={menuRef}>
