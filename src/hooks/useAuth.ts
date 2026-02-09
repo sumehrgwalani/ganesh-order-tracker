@@ -56,72 +56,96 @@ export function useAuth() {
         return
       }
 
-      // New user — check if they have a pending invitation
-      if (userEmail) {
-        const { data: invitation } = await supabase
-          .from('invitations')
-          .select('organization_id, department_id, role')
-          .eq('email', userEmail)
-          .eq('status', 'pending')
-          .limit(1)
-          .maybeSingle()
+      // New user â check if they have pending invitations
+      // Instead of auto-accepting, create a personal org and send a notification
+      // so the user can choose to accept or decline
 
-        if (invitation) {
-          // Accept the invitation — join the inviting org
-          const { data: newMember, error: memberError } = await supabase
-            .from('organization_members')
-            .insert({
-              organization_id: invitation.organization_id,
-              user_id: userId,
-              role: invitation.role || 'member',
-              department_id: invitation.department_id,
-              email: userEmail,
-            })
-            .select('id')
-            .single()
+      // Create a new org for the user first (they need somewhere to land)
+      // (The database trigger will auto-create default departments)
+      const { data: newOrg, error: orgError } = await supabase
+        .from('organizations')
+        .insert({ name: 'My Organization', slug: 'org-' + userId.slice(0, 8) })
+        .select()
+        .single()
 
-          if (!memberError && newMember) {
-            // Also add to member_departments if a department was assigned
-            if (invitation.department_id) {
-              await supabase
-                .from('member_departments')
-                .insert({ member_id: newMember.id, department_id: invitation.department_id })
-            }
-
-            // Mark invitation as accepted
-            await supabase
-              .from('invitations')
-              .update({ status: 'accepted' })
-              .eq('email', userEmail)
-              .eq('organization_id', invitation.organization_id)
-              .eq('status', 'pending')
-
-            setOrgId(invitation.organization_id)
-            setUserRole(invitation.role || 'member')
-            setUserDepartment(invitation.department_id)
-            return
-          }
-        }
-      }
-
-      // No membership and no invitation — create a new org + membership atomically
-      // Uses a SECURITY DEFINER function to bypass RLS chicken-and-egg problem
-      const { data: newOrgId, error: rpcError } = await supabase
-        .rpc('create_org_and_membership', {
-          p_org_name: 'My Organization',
-          p_org_slug: 'org-' + userId.slice(0, 8),
-          p_user_id: userId,
-          p_user_email: userEmail,
-        })
-
-      if (rpcError) {
-        console.error('Error creating organization:', rpcError)
+      if (orgError) {
+        console.error('Error creating organization:', orgError)
         return
       }
 
-      if (newOrgId) {
-        setOrgId(newOrgId)
+      if (newOrg) {
+        const { error: memberError } = await supabase
+          .from('organization_members')
+          .insert({ organization_id: newOrg.id, user_id: userId, role: 'owner', email: userEmail })
+
+        if (memberError) {
+          console.error('Error creating membership:', memberError)
+          return
+        }
+
+        setOrgId(newOrg.id)
         setUserRole('owner')
+
+        // Now check for pending invitations and create notifications
+        if (userEmail) {
+          const { data: pendingInvites } = await supabase
+            .from('invitations')
+            .select('id, organization_id, department_id, role, invited_by')
+            .eq('email', userEmail)
+            .eq('status', 'pending')
+
+          if (pendingInvites && pendingInvites.length > 0) {
+            for (const inv of pendingInvites) {
+              // Get the org name for the notification
+              const { data: invOrg } = await supabase
+                .from('organizations')
+                .select('name')
+                .eq('id', inv.organization_id)
+                .maybeSingle()
+
+              // Get department name if assigned
+              let deptName = ''
+              if (inv.department_id) {
+                const { data: dept } = await supabase
+                  .from('departments')
+                  .select('name')
+                  .eq('id', inv.department_id)
+                  .maybeSingle()
+                deptName = dept?.name || ''
+              }
+
+              // Get inviter email
+              let inviterEmail = ''
+              if (inv.invited_by) {
+                const { data: inviterMember } = await supabase
+                  .from('organization_members')
+                  .select('email')
+                  .eq('user_id', inv.invited_by)
+                  .maybeSingle()
+                inviterEmail = inviterMember?.email || ''
+              }
+
+              const orgName = invOrg?.name || 'an organization'
+
+              await supabase.from('notifications').insert({
+                user_id: userId,
+                organization_id: inv.organization_id,
+                type: 'invitation',
+                title: `You've been invited to join ${orgName}`,
+                message: deptName
+                  ? `Role: ${inv.role || 'member'} in ${deptName} department`
+                  : `Role: ${inv.role || 'member'}`,
+                data: {
+                  invitation_id: inv.id,
+                  org_name: orgName,
+                  invited_by_email: inviterEmail,
+                  department_name: deptName,
+                  role: inv.role || 'member',
+                },
+              })
+            }
+          }
+        }
       }
     } catch (err) {
       console.error('Error in fetchOrgId:', err)
