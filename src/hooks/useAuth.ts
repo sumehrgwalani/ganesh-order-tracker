@@ -95,30 +95,23 @@ export function useAuth() {
         }
       }
 
-      // No membership and no invitation — create a new org
-      // (The database trigger will auto-create default departments)
-      const { data: newOrg, error: orgError } = await supabase
-        .from('organizations')
-        .insert({ name: 'My Organization', slug: 'org-' + userId.slice(0, 8) })
-        .select()
-        .single()
+      // No membership and no invitation — create a new org + membership atomically
+      // Uses a SECURITY DEFINER function to bypass RLS chicken-and-egg problem
+      const { data: newOrgId, error: rpcError } = await supabase
+        .rpc('create_org_and_membership', {
+          p_org_name: 'My Organization',
+          p_org_slug: 'org-' + userId.slice(0, 8),
+          p_user_id: userId,
+          p_user_email: userEmail,
+        })
 
-      if (orgError) {
-        console.error('Error creating organization:', orgError)
+      if (rpcError) {
+        console.error('Error creating organization:', rpcError)
         return
       }
 
-      if (newOrg) {
-        const { error: memberError } = await supabase
-          .from('organization_members')
-          .insert({ organization_id: newOrg.id, user_id: userId, role: 'owner', email: userEmail })
-
-        if (memberError) {
-          console.error('Error creating membership:', memberError)
-          return
-        }
-
-        setOrgId(newOrg.id)
+      if (newOrgId) {
+        setOrgId(newOrgId)
         setUserRole('owner')
       }
     } catch (err) {
