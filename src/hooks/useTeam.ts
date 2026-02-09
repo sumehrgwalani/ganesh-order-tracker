@@ -39,7 +39,6 @@ export function useTeam(orgId: string | null) {
 
       if (memberError) throw memberError
 
-      // Enrich with user email from auth (via a workaround — store email on invite acceptance)
       const enrichedMembers: TeamMember[] = (memberData || []).map((m: any) => ({
         id: m.id,
         user_id: m.user_id,
@@ -48,6 +47,7 @@ export function useTeam(orgId: string | null) {
         department_id: m.department_id,
         department: m.departments || undefined,
         created_at: m.created_at,
+        email: m.email || undefined,
       }))
       setMembers(enrichedMembers)
 

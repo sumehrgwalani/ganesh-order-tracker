@@ -110,6 +110,19 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
         )}
       </div>
 
+      {/* Owner access info */}
+      {isOwner && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <Icon name="Eye" size={16} className="text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-blue-800">Owner Access</p>
+            <p className="text-xs text-blue-600">As the owner, you have full access to all data across every department. Department assignments help organize your team's responsibilities.</p>
+          </div>
+        </div>
+      )}
+
       {/* Invite Form */}
       {showInviteForm && isOwner && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
@@ -230,6 +243,19 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
                       </div>
                       <div className="flex items-center gap-2">
                         {getRoleBadge(member.role)}
+                        {isOwner && (
+                          <select
+                            className="text-xs border border-gray-300 rounded px-1.5 py-0.5 bg-white"
+                            value={member.department_id || ''}
+                            onChange={(e) => {
+                              if (e.target.value) updateMemberDepartment(member.id, e.target.value);
+                            }}
+                          >
+                            {departments.map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        )}
                         {isOwner && member.role !== 'owner' && (
                           <button
                             onClick={() => removeMember(member.id)}
@@ -270,7 +296,7 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
                   <span className="text-sm font-medium text-gray-800">{member.email || `User ${member.user_id.slice(0, 8)}`}</span>
                   {getRoleBadge(member.role)}
                 </div>
-                {isOwner && member.role !== 'owner' && (
+                {isOwner && (
                   <select
                     className="text-sm border border-gray-300 rounded px-2 py-1"
                     defaultValue=""

@@ -75,6 +75,7 @@ export function useAuth() {
               user_id: userId,
               role: invitation.role || 'member',
               department_id: invitation.department_id,
+              email: userEmail,
             })
 
           if (!memberError) {
@@ -110,7 +111,7 @@ export function useAuth() {
       if (newOrg) {
         const { error: memberError } = await supabase
           .from('organization_members')
-          .insert({ organization_id: newOrg.id, user_id: userId, role: 'owner' })
+          .insert({ organization_id: newOrg.id, user_id: userId, role: 'owner', email: userEmail })
 
         if (memberError) {
           console.error('Error creating membership:', memberError)
