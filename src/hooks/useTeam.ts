@@ -129,7 +129,56 @@ export function useTeam(orgId: string | null) {
       .select()
       .single()
 
-    if (!error) {
+    if (!error && data) {
+      // Check if the invited user already exists (has a Supabase account)
+      // If so, create a notification for them right away
+      const invitedEmail = email.toLowerCase().trim()
+
+      // Look up the user by email in organization_members (since auth.users isn't directly queryable)
+      const { data: existingMember } = await supabase
+        .from('organization_members')
+        .select('user_id')
+        .eq('email', invitedEmail)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingMember) {
+        // User exists â create a notification for them
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', orgId)
+          .maybeSingle()
+
+        let deptName = ''
+        if (departmentId) {
+          const dept = departments.find(d => d.id === departmentId)
+          deptName = dept?.name || ''
+        }
+
+        const { data: inviterData } = await supabase.auth.getUser()
+        const inviterEmail = inviterData?.user?.email || ''
+
+        const orgName = orgData?.name || 'an organization'
+
+        await supabase.from('notifications').insert({
+          user_id: existingMember.user_id,
+          organization_id: orgId,
+          type: 'invitation',
+          title: `You've been invited to join ${orgName}`,
+          message: deptName
+            ? `Role: ${role} in ${deptName} department`
+            : `Role: ${role}`,
+          data: {
+            invitation_id: data.id,
+            org_name: orgName,
+            invited_by_email: inviterEmail,
+            department_name: deptName,
+            role: role,
+          },
+        })
+      }
+
       await fetchTeam()
     }
     return { data, error }
@@ -180,7 +229,7 @@ export function useTeam(orgId: string | null) {
     }))
   }, [departments])
 
-  // Add a member to a department (multi-dept) — optimistic
+  // Add a member to a department (multi-dept) â optimistic
   const addMemberToDept = async (memberId: string, departmentId: string) => {
     updateMemberDeptLocally(memberId, departmentId, 'add')
     const { error } = await supabase
@@ -194,7 +243,7 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
-  // Remove a member from a department (multi-dept) — optimistic
+  // Remove a member from a department (multi-dept) â optimistic
   const removeMemberFromDept = async (memberId: string, departmentId: string) => {
     updateMemberDeptLocally(memberId, departmentId, 'remove')
     const { error } = await supabase
@@ -210,7 +259,7 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
-  // Toggle a department for a member — optimistic
+  // Toggle a department for a member â optimistic
   const toggleMemberDept = async (memberId: string, departmentId: string) => {
     const member = members.find(m => m.id === memberId)
     if (!member) return { error: 'Member not found' }
