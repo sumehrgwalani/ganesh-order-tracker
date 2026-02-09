@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
-import { ORDER_STAGES } from '../data/constants';
+import { ORDER_STAGES, GI_LOGO_URL } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
 import type { Order, AttachmentEntry } from '../types';
@@ -383,12 +383,13 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
     return `
       <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
         <!-- Header -->
-        <div style="display:flex;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">
           <div>
             <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
             <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
             <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
           </div>
+          <img src="${GI_LOGO_URL}" alt="Ganesh International" style="width:60px;height:60px;object-fit:contain;" crossorigin="anonymous" />
         </div>
 
         <!-- Date and PO Number -->
@@ -497,7 +498,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
       const blob = await (html2pdf() as any).set({
         margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
+        html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
@@ -516,7 +517,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
       const blob = await (html2pdf() as any).set({
         margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
+        html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
