@@ -979,12 +979,13 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
           {/* Bulk Preview Navigation */}
           {bulkCreate && bulkCount > 1 && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-3">
-              <div className="flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-6 py-4">
+              {/* Top row: Navigation */}
+              <div className="flex items-center justify-between mb-3">
                 <button
                   onClick={() => setBulkPreviewIndex(Math.max(0, bulkPreviewIndex - 1))}
                   disabled={bulkPreviewIndex === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                 >
                   <Icon name="ChevronLeft" size={16} /> Previous
                 </button>
@@ -995,37 +996,43 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <span className="block text-xs text-gray-500 mt-0.5 font-mono">
                     {currentPreviewPONumber}
                   </span>
-                  <div className="flex items-center gap-2 mt-1.5 justify-center">
-                    <Icon name="Calendar" size={14} className="text-blue-500" />
-                    <input
-                      type="date"
-                      value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
-                      onChange={(e) => {
-                        const newDates = [...bulkDates];
-                        newDates[bulkPreviewIndex] = e.target.value;
-                        setBulkDates(newDates);
-                      }}
-                      className="px-2 py-0.5 border border-blue-300 rounded text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <button
-                      onClick={() => {
-                        const dateToApply = bulkDates[bulkPreviewIndex] || poData.deliveryDate || '';
-                        setBulkDates(Array.from({ length: bulkCount }, () => dateToApply));
-                      }}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap underline"
-                      title="Set this shipment date for all POs"
-                    >
-                      Apply to all
-                    </button>
-                  </div>
                 </div>
                 <button
                   onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
                   disabled={bulkPreviewIndex === bulkCount - 1}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                 >
                   Next <Icon name="ChevronRight" size={16} />
                 </button>
+              </div>
+              {/* Bottom row: Shipment Date picker */}
+              <div className="bg-white rounded-lg border border-blue-200 px-4 py-2.5 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Icon name="Calendar" size={16} className="text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">Shipment Date for PO {bulkPreviewIndex + 1}:</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
+                    onChange={(e) => {
+                      const newDates = [...bulkDates];
+                      newDates[bulkPreviewIndex] = e.target.value;
+                      setBulkDates(newDates);
+                    }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <button
+                    onClick={() => {
+                      const dateToApply = bulkDates[bulkPreviewIndex] || poData.deliveryDate || '';
+                      setBulkDates(Array.from({ length: bulkCount }, () => dateToApply));
+                    }}
+                    className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium whitespace-nowrap rounded-lg border border-blue-200 transition-colors"
+                    title="Set this shipment date for all POs"
+                  >
+                    Apply to all POs
+                  </button>
+                </div>
               </div>
               {/* Submit for Sign-off button inside navigation bar */}
               {!showSignOff && status === 'draft' && (
@@ -1751,8 +1758,16 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery / Shipment Date</label>
-                  <input type="date" value={poData.deliveryDate} onChange={(e) => setPOData({...poData, deliveryDate: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Delivery / Shipment Date
+                    {bulkCreate && <span className="text-xs text-blue-500 font-normal ml-1">(shared — change per PO in Preview)</span>}
+                  </label>
+                  <input type="date" value={poData.deliveryDate} onChange={(e) => {
+                    setPOData({...poData, deliveryDate: e.target.value});
+                    if (bulkCreate) {
+                      setBulkDates(prev => prev.map(d => d || e.target.value));
+                    }
+                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Commission</label>
