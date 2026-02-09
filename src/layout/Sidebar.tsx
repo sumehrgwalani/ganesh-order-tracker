@@ -5,9 +5,11 @@ import { WTTLogo } from '../components/Logos';
 
 interface SidebarProps {
   onSettingsClick: () => void;
+  unreadCount?: number;
+  onBellClick?: () => void;
 }
 
-function Sidebar({ onSettingsClick }: SidebarProps) {
+function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -39,8 +41,15 @@ function Sidebar({ onSettingsClick }: SidebarProps) {
         })}
       </div>
       <div className="space-y-2 pt-4 border-t border-gray-800">
-        <button className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative">
-          <Icon name="Bell" size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
+        <button
+          onClick={onBellClick}
+          className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative group"
+        >
+          <Icon name="Bell" size={20} />
+          {unreadCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-gray-900"></span>
+          )}
+          <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Notifications</span>
         </button>
         <button onClick={onSettingsClick} className={`p-3 rounded-xl transition-all ${location.pathname === '/settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}><Icon name="Settings" size={20} /></button>
       </div>
