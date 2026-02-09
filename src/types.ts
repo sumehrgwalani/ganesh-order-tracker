@@ -219,3 +219,24 @@ export interface UserPreferences {
   notify_stage_changed: boolean | null;
   notify_new_inquiry: boolean | null;
 }
+
+// ===== Notification Types =====
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  organization_id: string | null;
+  type: 'invitation' | 'order_update' | 'inquiry' | 'general';
+  title: string;
+  message: string | null;
+  data: {
+    invitation_id?: string;
+    org_name?: string;
+    invited_by_email?: string;
+    department_name?: string;
+    role?: string;
+    [key: string]: any;
+  };
+  read: boolean;
+  created_at: string;
+}
