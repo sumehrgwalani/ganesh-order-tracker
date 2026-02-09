@@ -37,8 +37,8 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
       "packing": "string - packing format (e.g., '6 X 1 KG Bag', '10 KG Bulk') or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - freezing method: 'IQF', 'Semi IQF', 'Blast', 'Block', 'Plate'. Default to 'IQF' if not specified",
-      "cases": "",
-      "kilos": "number - total kilograms (if MT given, multiply by 1000)",
+      "cases": "number - total cartons/cases, or empty string if unknown. Calculate from kilos÷kgPerCarton if possible",
+      "kilos": "number - total kilograms (if MT given, multiply by 1000). Calculate from cases×kgPerCarton if possible",
       "pricePerKg": "number - price per kilogram",
       "currency": "string - 'USD' or 'EUR' based on $ or euro symbols. Default 'USD'",
       "total": ""
@@ -84,8 +84,18 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - Brand can appear in parentheses with or without "Marca", or after the product with "brand/Brand"
 
 ### Quantities & Pricing
-- "07 MT" or "7 MT" = 7000 kg (multiply MT by 1000)
-- "5 MT" = 5000 kg
+- Quantities can be given in KILOS, METRIC TONS, or CARTONS/CASES — these are different units!
+- "07 MT" or "7 MT" = 7000 kg (multiply MT by 1000) → put in "kilos"
+- "5000 kg" or "5000 kilos" → put in "kilos"
+- "500 cartons" or "500 cases" or "500 cajas" or "500 ctns" or "500 ctn" → put in "cases"
+- If quantity is given in CARTONS and packing is known, CALCULATE kilos: kilos = cases × kg-per-carton
+  Example: "500 cartons, packing 6x1kg" → cases=500, kilos=500×6=3000
+  Example: "200 cajas, packing 10kg bulk" → cases=200, kilos=200×10=2000
+- If quantity is given in KILOS and packing is known, CALCULATE cases: cases = kilos ÷ kg-per-carton (round up)
+  Example: "3000 kg, packing 6x1kg" → kilos=3000, cases=3000÷6=500
+- If you cannot calculate one from the other (no packing info), just fill in what you have
+- "cases" should be a number (integer) or empty string if unknown
+- "kilos" should be a number or empty string if unknown
 - "3.30 $" or "$3.30" or "3.30 USD" = price per kg of $3.30
 - "euro 4.50" or "4.50 EUR" = price of 4.50 EUR
 
@@ -112,7 +122,8 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - Products sharing the same packing/glaze should each get those values
 
 ### Important
-- Leave "cases" and "total" as empty strings - these are calculated by the frontend
+- Leave "total" as empty string - this is calculated by the frontend
+- "cases" can be a number (integer) if known or calculable, or empty string if truly unknown
 - "kilos" and "pricePerKg" should be numbers, not strings
 - If glaze is mentioned with "marked as" or "marked", put in glazeMarked
 - If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`;
@@ -219,7 +230,7 @@ serve(async (req) => {
       packing: String(item.packing || ''),
       brand: String(item.brand || ''),
       freezing: String(item.freezing || 'IQF'),
-      cases: '',
+      cases: typeof item.cases === 'number' ? item.cases : (parseInt(item.cases) || ''),
       kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || ''),
       pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || ''),
       currency: String(item.currency || 'USD'),

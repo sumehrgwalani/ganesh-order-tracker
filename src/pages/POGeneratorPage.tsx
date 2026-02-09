@@ -431,21 +431,26 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     return null;
   };
 
-  // Calculate cases, adjusted kilos, and total
+  // Calculate cases, adjusted kilos, and total (bidirectional: kilos↔cases)
   const calculateLineItem = (item: any) => {
     const inputKilos = parseFloat(item.kilos) || 0;
+    const inputCases = item.cases ? parseInt(item.cases as string) : 0;
     const price = parseFloat(item.pricePerKg) || 0;
     const kgPerCarton = parsePackingKg(item.packing);
 
-    let cases = item.cases ? parseInt(item.cases as string) : 0;
+    let cases = inputCases;
     let adjustedKilos = inputKilos;
 
-    // If we have packing info and kilos, calculate cases and adjust kilos
-    if (kgPerCarton && inputKilos > 0) {
-      // Calculate cases (round up to ensure we have enough)
-      cases = Math.ceil(inputKilos / kgPerCarton);
-      // Adjust kilos to match whole cartons
-      adjustedKilos = cases * kgPerCarton;
+    if (kgPerCarton) {
+      if (inputKilos > 0) {
+        // Kilos given → calculate cases and adjust kilos to whole cartons
+        cases = Math.ceil(inputKilos / kgPerCarton);
+        adjustedKilos = cases * kgPerCarton;
+      } else if (inputCases > 0) {
+        // Cases given but no kilos → calculate kilos from cases
+        cases = inputCases;
+        adjustedKilos = inputCases * kgPerCarton;
+      }
     }
 
     // Calculate total (rounded to 2 decimal places)
@@ -488,7 +493,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setLineItems(updated);
   };
 
-  // Recalculate all line items (used after parsing)
+  // Recalculate all line items (used after parsing) — handles both kilos→cases and cases→kilos
   const recalculateAllLineItems = (items: any[]) => {
     return items.map(item => {
       const calculated = calculateLineItem(item);
@@ -496,7 +501,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       return {
         ...item,
         cases: calculated.cases,
-        kilos: kgPerCarton ? calculated.adjustedKilos : item.kilos,
+        kilos: kgPerCarton ? calculated.adjustedKilos : (item.kilos || calculated.adjustedKilos),
         total: calculated.total
       };
     });
