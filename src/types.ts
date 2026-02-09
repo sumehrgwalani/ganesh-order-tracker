@@ -158,8 +158,10 @@ export interface TeamMember {
   user_id: string;
   organization_id: string;
   role: string;            // 'owner' | 'head' | 'member'
-  department_id: string | null;
-  department?: Department;
+  department_id: string | null;       // legacy single dept
+  department?: Department;            // legacy
+  department_ids: string[];           // multi-department support
+  departments: Department[];          // multi-department support
   created_at: string;
   email?: string;          // from auth.users
 }

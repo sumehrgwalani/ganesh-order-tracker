@@ -28,27 +28,57 @@ export function useTeam(orgId: string | null) {
         .order('name')
 
       if (deptError) throw deptError
-      setDepartments(deptData || [])
+      const depts = deptData || []
+      setDepartments(depts)
 
-      // Fetch members with their department info
+      // Fetch members
       const { data: memberData, error: memberError } = await supabase
         .from('organization_members')
-        .select('*, departments(*)')
+        .select('*')
         .eq('organization_id', orgId)
         .order('created_at')
 
       if (memberError) throw memberError
 
-      const enrichedMembers: TeamMember[] = (memberData || []).map((m: any) => ({
-        id: m.id,
-        user_id: m.user_id,
-        organization_id: m.organization_id,
-        role: m.role || 'member',
-        department_id: m.department_id,
-        department: m.departments || undefined,
-        created_at: m.created_at,
-        email: m.email || undefined,
-      }))
+      // Fetch all member-department associations
+      const memberIds = (memberData || []).map((m: any) => m.id)
+      let mdRows: any[] = []
+      if (memberIds.length > 0) {
+        const { data: mdData, error: mdError } = await supabase
+          .from('member_departments')
+          .select('member_id, department_id')
+          .in('member_id', memberIds)
+
+        if (mdError) throw mdError
+        mdRows = mdData || []
+      }
+
+      // Build a lookup: member_id -> department_id[]
+      const memberDeptMap: Record<string, string[]> = {}
+      for (const row of mdRows) {
+        if (!memberDeptMap[row.member_id]) memberDeptMap[row.member_id] = []
+        memberDeptMap[row.member_id].push(row.department_id)
+      }
+
+      // Build a department lookup by id
+      const deptById: Record<string, Department> = {}
+      for (const d of depts) deptById[d.id] = d
+
+      const enrichedMembers: TeamMember[] = (memberData || []).map((m: any) => {
+        const deptIds = memberDeptMap[m.id] || []
+        return {
+          id: m.id,
+          user_id: m.user_id,
+          organization_id: m.organization_id,
+          role: m.role || 'member',
+          department_id: m.department_id,
+          department: m.department_id ? deptById[m.department_id] : undefined,
+          department_ids: deptIds,
+          departments: deptIds.map(did => deptById[did]).filter(Boolean),
+          created_at: m.created_at,
+          email: m.email || undefined,
+        }
+      })
       setMembers(enrichedMembers)
 
       // Fetch pending invitations
@@ -127,6 +157,45 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
+  // Add a member to a department (multi-dept)
+  const addMemberToDept = async (memberId: string, departmentId: string) => {
+    const { error } = await supabase
+      .from('member_departments')
+      .insert({ member_id: memberId, department_id: departmentId })
+
+    if (!error) {
+      await fetchTeam()
+    }
+    return { error }
+  }
+
+  // Remove a member from a department (multi-dept)
+  const removeMemberFromDept = async (memberId: string, departmentId: string) => {
+    const { error } = await supabase
+      .from('member_departments')
+      .delete()
+      .eq('member_id', memberId)
+      .eq('department_id', departmentId)
+
+    if (!error) {
+      await fetchTeam()
+    }
+    return { error }
+  }
+
+  // Toggle a department for a member
+  const toggleMemberDept = async (memberId: string, departmentId: string) => {
+    const member = members.find(m => m.id === memberId)
+    if (!member) return { error: 'Member not found' }
+
+    if (member.department_ids.includes(departmentId)) {
+      return removeMemberFromDept(memberId, departmentId)
+    } else {
+      return addMemberToDept(memberId, departmentId)
+    }
+  }
+
+  // Legacy: move to single dept (kept for backward compat)
   const updateMemberDepartment = async (memberId: string, departmentId: string | null) => {
     const { error } = await supabase
       .from('organization_members')
@@ -163,6 +232,9 @@ export function useTeam(orgId: string | null) {
     cancelInvitation,
     updateMemberRole,
     updateMemberDepartment,
+    addMemberToDept,
+    removeMemberFromDept,
+    toggleMemberDept,
     removeMember,
     refetch: fetchTeam,
   }
