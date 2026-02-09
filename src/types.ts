@@ -179,3 +179,43 @@ export interface Invitation {
   created_at: string;
   expires_at: string;
 }
+
+// ===== Settings Types =====
+
+export interface OrganizationSettings {
+  id: string;
+  organization_id: string;
+  logo_url: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  phone: string | null;
+  gst_number: string | null;
+  tax_id: string | null;
+  default_currency: string;
+  weight_unit: string;
+  date_format: string;
+  email_provider: 'smtp' | 'sendgrid' | 'resend' | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_username: string | null;
+  smtp_password: string | null;
+  smtp_from_email: string | null;
+  smtp_use_tls: boolean;
+  api_key: string | null;
+  notify_new_order: boolean;
+  notify_order_updated: boolean;
+  notify_stage_changed: boolean;
+  notify_new_inquiry: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserPreferences {
+  display_name: string | null;
+  phone: string | null;
+  notify_new_order: boolean | null;
+  notify_order_updated: boolean | null;
+  notify_stage_changed: boolean | null;
+  notify_new_inquiry: boolean | null;
+}

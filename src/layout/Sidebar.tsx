@@ -42,7 +42,7 @@ function Sidebar({ onSettingsClick }: SidebarProps) {
         <button className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative">
           <Icon name="Bell" size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
-        <button onClick={onSettingsClick} className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl"><Icon name="Settings" size={20} /></button>
+        <button onClick={onSettingsClick} className={`p-3 rounded-xl transition-all ${location.pathname === '/settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}><Icon name="Settings" size={20} /></button>
       </div>
     </div>
   );

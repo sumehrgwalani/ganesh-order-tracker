@@ -13,6 +13,7 @@ import MailboxPage from './pages/MailboxPage';
 import ProductsPage from './pages/ProductsPage';
 import OrderDetailPage from './pages/OrderDetailPage';
 import TeamPage from './pages/TeamPage';
+import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import { useAuth } from './hooks/useAuth';
 import { useContacts } from './hooks/useContacts';
@@ -128,7 +129,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar onSettingsClick={() => {}} />
+      <Sidebar onSettingsClick={() => navigate('/settings')} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header searchTerm={searchTerm} setSearchTerm={setSearchTerm} lastSync={lastSync} isSyncing={isSyncing} onSyncClick={handleSync} userEmail={user?.email} onSignOut={signOut} />
         <main className="flex-1 overflow-auto p-6">
@@ -193,6 +194,7 @@ function App() {
             } />
             <Route path="/products" element={<ProductsPage orders={orders} />} />
             <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
+            <Route path="/settings" element={<SettingsPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} signOut={signOut} />} />
             {/* Redirect any unknown routes to dashboard */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
