@@ -174,6 +174,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
+  const bulkDateRef = useRef<HTMLInputElement>(null);
 
   // Initialize/sync bulk shipment dates when bulk mode, count, or base delivery date changes
   useEffect(() => {
@@ -185,6 +186,26 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       });
     }
   }, [bulkCreate, bulkCount, poData.deliveryDate]);
+
+  // Native event listener for bulk date input (Chrome's date picker doesn't always trigger React onChange)
+  useEffect(() => {
+    const el = bulkDateRef.current;
+    if (!el) return;
+    const handler = () => {
+      const val = el.value;
+      setBulkDates(prev => {
+        const copy = [...prev];
+        copy[bulkPreviewIndex] = val;
+        return copy;
+      });
+    };
+    el.addEventListener('change', handler);
+    el.addEventListener('input', handler);
+    return () => {
+      el.removeEventListener('change', handler);
+      el.removeEventListener('input', handler);
+    };
+  }, [bulkPreviewIndex, bulkCreate]);
 
   // Click outside to close dropdowns
   useEffect(() => {
@@ -1012,6 +1033,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <span className="text-sm font-medium text-gray-700">Shipment Date</span>
                 </div>
                 <input
+                  ref={bulkDateRef}
                   type="date"
                   value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
                   onChange={(e) => {
