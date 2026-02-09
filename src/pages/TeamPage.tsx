@@ -18,6 +18,7 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState('');
   const [inviteError, setInviteError] = useState('');
+  const [movingMemberId, setMovingMemberId] = useState<string | null>(null);
 
   const isOwner = userRole === 'owner';
 
@@ -38,6 +39,11 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
       setTimeout(() => setInviteSuccess(''), 3000);
     }
     setInviteLoading(false);
+  };
+
+  const handleAssign = async (memberId: string, deptId: string) => {
+    await updateMemberDepartment(memberId, deptId);
+    setMovingMemberId(null);
   };
 
   const getMembersForDept = (deptId: string) => members.filter(m => m.department_id === deptId);
@@ -82,6 +88,40 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
     };
     return colors[slug] || 'text-gray-600 bg-gray-100';
   };
+
+  const getDeptPillStyle = (slug: string) => {
+    const styles: Record<string, string> = {
+      'purchase': 'bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200',
+      'sales': 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200',
+      'accounts': 'bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200',
+      'docs-artwork': 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200',
+    };
+    return styles[slug] || 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-200';
+  };
+
+  // Render the department pill buttons for assignment
+  const renderDeptPills = (memberId: string, excludeDeptId?: string) => (
+    <div className="flex flex-wrap gap-1.5">
+      {departments.filter(d => d.id !== excludeDeptId).map(d => (
+        <button
+          key={d.id}
+          onClick={() => handleAssign(memberId, d.id)}
+          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${getDeptPillStyle(d.slug)}`}
+        >
+          <Icon name={getDeptIcon(d.slug)} size={12} />
+          {d.name}
+        </button>
+      ))}
+      {excludeDeptId && (
+        <button
+          onClick={() => setMovingMemberId(null)}
+          className="inline-flex items-center px-2 py-1 rounded-full text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <Icon name="X" size={12} />
+        </button>
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -232,40 +272,48 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
               ) : (
                 <div className="space-y-2">
                   {deptMembers.map(member => (
-                    <div key={member.id} className="flex items-center justify-between bg-white/70 rounded-lg px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
-                          {member.email ? member.email[0].toUpperCase() : 'U'}
+                    <div key={member.id}>
+                      <div className="flex items-center justify-between bg-white/70 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
+                            {member.email ? member.email[0].toUpperCase() : 'U'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{member.email || `User ${member.user_id.slice(0, 8)}`}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{member.email || `User ${member.user_id.slice(0, 8)}`}</p>
+                        <div className="flex items-center gap-2">
+                          {getRoleBadge(member.role)}
+                          {member.role === 'owner' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200">All Depts</span>
+                          )}
+                          {isOwner && (
+                            <button
+                              onClick={() => setMovingMemberId(movingMemberId === member.id ? null : member.id)}
+                              className={`p-1 rounded transition-colors ${movingMemberId === member.id ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'}`}
+                              title="Move to another department"
+                            >
+                              <Icon name="RefreshCw" size={13} />
+                            </button>
+                          )}
+                          {isOwner && member.role !== 'owner' && (
+                            <button
+                              onClick={() => removeMember(member.id)}
+                              className="text-gray-400 hover:text-red-500 transition-colors"
+                              title="Remove member"
+                            >
+                              <Icon name="X" size={14} />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {getRoleBadge(member.role)}
-                        {isOwner && (
-                          <select
-                            className="text-xs border border-gray-300 rounded px-1.5 py-0.5 bg-white"
-                            value={member.department_id || ''}
-                            onChange={(e) => {
-                              if (e.target.value) updateMemberDepartment(member.id, e.target.value);
-                            }}
-                          >
-                            {departments.map(d => (
-                              <option key={d.id} value={d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        )}
-                        {isOwner && member.role !== 'owner' && (
-                          <button
-                            onClick={() => removeMember(member.id)}
-                            className="text-gray-400 hover:text-red-500 transition-colors"
-                            title="Remove member"
-                          >
-                            <Icon name="X" size={14} />
-                          </button>
-                        )}
-                      </div>
+                      {/* Move picker — slides open below the member row */}
+                      {movingMemberId === member.id && (
+                        <div className="mt-1.5 ml-10 px-3 py-2 bg-white rounded-lg border border-gray-200 shadow-sm">
+                          <p className="text-xs text-gray-500 mb-2">Move to:</p>
+                          {renderDeptPills(member.id, dept.id)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -286,29 +334,26 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
             <Icon name="Users" size={18} />
             Not Assigned to Department
           </h3>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {unassignedMembers.map(member => (
-              <div key={member.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
-                    {member.email ? member.email[0].toUpperCase() : 'U'}
+              <div key={member.id} className="bg-gray-50 rounded-lg px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
+                      {member.email ? member.email[0].toUpperCase() : 'U'}
+                    </div>
+                    <span className="text-sm font-medium text-gray-800">{member.email || `User ${member.user_id.slice(0, 8)}`}</span>
+                    {getRoleBadge(member.role)}
+                    {member.role === 'owner' && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200">All Depts</span>
+                    )}
                   </div>
-                  <span className="text-sm font-medium text-gray-800">{member.email || `User ${member.user_id.slice(0, 8)}`}</span>
-                  {getRoleBadge(member.role)}
                 </div>
                 {isOwner && (
-                  <select
-                    className="text-sm border border-gray-300 rounded px-2 py-1"
-                    defaultValue=""
-                    onChange={(e) => {
-                      if (e.target.value) updateMemberDepartment(member.id, e.target.value);
-                    }}
-                  >
-                    <option value="">Assign to...</option>
-                    {departments.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                  <div className="mt-2.5 ml-11">
+                    <p className="text-xs text-gray-400 mb-1.5">Assign to department:</p>
+                    {renderDeptPills(member.id)}
+                  </div>
                 )}
               </div>
             ))}
