@@ -120,6 +120,28 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     return `GI/PO/${yearPrefix}/${buyerCode}-${seqStr}`;
   };
 
+  // Auto-generate the next lote number (format: xxxx/Year, sequential)
+  const getNextLoteNumber = (): string => {
+    const currentYear = new Date().getFullYear();
+    let maxSeq = 0;
+
+    for (const order of orders) {
+      // Check lote number in order history metadata
+      const meta = order.history?.[0]?.attachments?.[0]?.meta;
+      const lote = meta?.loteNumber || '';
+      if (lote) {
+        const match = lote.match(/^(\d+)\//);
+        if (match) {
+          const seq = parseInt(match[1]);
+          if (seq > maxSeq) maxSeq = seq;
+        }
+      }
+    }
+
+    const nextSeq = (maxSeq + 1).toString().padStart(4, '0');
+    return `${nextSeq}/${currentYear}`;
+  };
+
   const [poData, setPOData] = useState({
     poNumber: getNextPONumber(),
     date: new Date().toISOString().split('T')[0],
@@ -139,7 +161,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     payment: '',
     packing: '',
     deliveryDate: '',
-    loteNumber: '',
+    loteNumber: getNextLoteNumber(),
     shippingMarks: '',
     buyerBank: '',
     notes: '',
@@ -823,6 +845,15 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         currentPONumber = incrementPONumber(currentPONumber);
       }
 
+      // Increment lote number for each bulk PO
+      let currentLoteNumber = poData.loteNumber || '';
+      if (currentLoteNumber && i > 0) {
+        const loteMatch = currentLoteNumber.match(/^(\d+)(\/\d{4})$/);
+        if (loteMatch) {
+          currentLoteNumber = (parseInt(loteMatch[1]) + i).toString().padStart(loteMatch[1].length, '0') + loteMatch[2];
+        }
+      }
+
       const filename = `${currentPONumber.replace(/\//g, '_')}.pdf`;
       const pdfUrl = supabase.storage.from('po-documents').getPublicUrl(filename).data.publicUrl;
 
@@ -867,7 +898,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 overseasCommissionCompany: poData.overseasCommissionCompany || '',
                 payment: poData.payment || '',
                 shippingMarks: poData.shippingMarks || '',
-                loteNumber: poData.loteNumber || '',
+                loteNumber: currentLoteNumber || '',
                 date: poData.date,
                 product: poData.product || '',
                 totalCases: totalCases,
