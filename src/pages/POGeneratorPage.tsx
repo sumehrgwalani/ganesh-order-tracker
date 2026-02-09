@@ -1005,34 +1005,22 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   Next <Icon name="ChevronRight" size={16} />
                 </button>
               </div>
-              {/* Bottom row: Shipment Date picker */}
+              {/* Shipment Date for this PO */}
               <div className="bg-white rounded-lg border border-blue-200 px-4 py-2.5 flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-2">
                   <Icon name="Calendar" size={16} className="text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">Shipment Date for PO {bulkPreviewIndex + 1}:</span>
+                  <span className="text-sm font-medium text-gray-700">Shipment Date</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="date"
-                    value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
-                    onChange={(e) => {
-                      const newDates = [...bulkDates];
-                      newDates[bulkPreviewIndex] = e.target.value;
-                      setBulkDates(newDates);
-                    }}
-                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                  <button
-                    onClick={() => {
-                      const dateToApply = bulkDates[bulkPreviewIndex] || poData.deliveryDate || '';
-                      setBulkDates(Array.from({ length: bulkCount }, () => dateToApply));
-                    }}
-                    className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium whitespace-nowrap rounded-lg border border-blue-200 transition-colors"
-                    title="Set this shipment date for all POs"
-                  >
-                    Apply to all POs
-                  </button>
-                </div>
+                <input
+                  type="date"
+                  value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
+                  onChange={(e) => {
+                    const newDates = [...bulkDates];
+                    newDates[bulkPreviewIndex] = e.target.value;
+                    setBulkDates(newDates);
+                  }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
               </div>
               {/* Submit for Sign-off button inside navigation bar */}
               {!showSignOff && status === 'draft' && (
