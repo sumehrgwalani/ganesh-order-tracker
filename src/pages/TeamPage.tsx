@@ -10,7 +10,7 @@ interface TeamPageProps {
 }
 
 export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPageProps) {
-  const { departments, members, invitations, loading, inviteMember, cancelInvitation, toggleMemberDept, updateMemberRole, removeMember } = useTeam(orgId);
+  const { departments, members, invitations, initialLoad, inviteMember, cancelInvitation, toggleMemberDept, updateMemberRole, removeMember } = useTeam(orgId);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteDept, setInviteDept] = useState('');
@@ -102,7 +102,7 @@ export default function TeamPage({ orgId, userRole, currentUserEmail }: TeamPage
     </div>
   );
 
-  if (loading) {
+  if (initialLoad) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>

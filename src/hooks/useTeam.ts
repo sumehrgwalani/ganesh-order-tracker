@@ -7,18 +7,20 @@ export function useTeam(orgId: string | null) {
   const [members, setMembers] = useState<TeamMember[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchTeam = useCallback(async () => {
+  const fetchTeam = useCallback(async (silent = false) => {
     if (!orgId) {
       setDepartments([])
       setMembers([])
       setInvitations([])
       setLoading(false)
+      setInitialLoad(false)
       return
     }
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
 
       // Fetch departments
       const { data: deptData, error: deptError } = await supabase
@@ -101,6 +103,7 @@ export function useTeam(orgId: string | null) {
       setError(err.message)
     } finally {
       setLoading(false)
+      setInitialLoad(false)
     }
   }, [orgId])
 
@@ -157,33 +160,57 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
-  // Add a member to a department (multi-dept)
+  // Optimistically update local member state for dept changes
+  const updateMemberDeptLocally = useCallback((memberId: string, departmentId: string, action: 'add' | 'remove') => {
+    setMembers(prev => prev.map(m => {
+      if (m.id !== memberId) return m
+      const deptById: Record<string, Department> = {}
+      for (const d of departments) deptById[d.id] = d
+      let newDeptIds: string[]
+      if (action === 'add') {
+        newDeptIds = m.department_ids.includes(departmentId) ? m.department_ids : [...m.department_ids, departmentId]
+      } else {
+        newDeptIds = m.department_ids.filter(did => did !== departmentId)
+      }
+      return {
+        ...m,
+        department_ids: newDeptIds,
+        departments: newDeptIds.map(did => deptById[did]).filter(Boolean),
+      }
+    }))
+  }, [departments])
+
+  // Add a member to a department (multi-dept) — optimistic
   const addMemberToDept = async (memberId: string, departmentId: string) => {
+    updateMemberDeptLocally(memberId, departmentId, 'add')
     const { error } = await supabase
       .from('member_departments')
       .insert({ member_id: memberId, department_id: departmentId })
 
-    if (!error) {
-      await fetchTeam()
+    if (error) {
+      // Revert on failure
+      updateMemberDeptLocally(memberId, departmentId, 'remove')
     }
     return { error }
   }
 
-  // Remove a member from a department (multi-dept)
+  // Remove a member from a department (multi-dept) — optimistic
   const removeMemberFromDept = async (memberId: string, departmentId: string) => {
+    updateMemberDeptLocally(memberId, departmentId, 'remove')
     const { error } = await supabase
       .from('member_departments')
       .delete()
       .eq('member_id', memberId)
       .eq('department_id', departmentId)
 
-    if (!error) {
-      await fetchTeam()
+    if (error) {
+      // Revert on failure
+      updateMemberDeptLocally(memberId, departmentId, 'add')
     }
     return { error }
   }
 
-  // Toggle a department for a member
+  // Toggle a department for a member — optimistic
   const toggleMemberDept = async (memberId: string, departmentId: string) => {
     const member = members.find(m => m.id === memberId)
     if (!member) return { error: 'Member not found' }
@@ -227,6 +254,7 @@ export function useTeam(orgId: string | null) {
     members,
     invitations,
     loading,
+    initialLoad,
     error,
     inviteMember,
     cancelInvitation,
