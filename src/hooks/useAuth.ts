@@ -68,7 +68,7 @@ export function useAuth() {
 
         if (invitation) {
           // Accept the invitation — join the inviting org
-          const { error: memberError } = await supabase
+          const { data: newMember, error: memberError } = await supabase
             .from('organization_members')
             .insert({
               organization_id: invitation.organization_id,
@@ -77,8 +77,17 @@ export function useAuth() {
               department_id: invitation.department_id,
               email: userEmail,
             })
+            .select('id')
+            .single()
 
-          if (!memberError) {
+          if (!memberError && newMember) {
+            // Also add to member_departments if a department was assigned
+            if (invitation.department_id) {
+              await supabase
+                .from('member_departments')
+                .insert({ member_id: newMember.id, department_id: invitation.department_id })
+            }
+
             // Mark invitation as accepted
             await supabase
               .from('invitations')
