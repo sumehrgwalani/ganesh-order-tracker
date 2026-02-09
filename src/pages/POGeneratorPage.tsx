@@ -166,6 +166,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [bulkCreate, setBulkCreate] = useState(false);
   const [bulkCount, setBulkCount] = useState(2);
   const [bulkPreviewIndex, setBulkPreviewIndex] = useState(0);
+  const [bulkDates, setBulkDates] = useState<string[]>([]);
   const [signatureData, setSignatureData] = useState<string>('');
   const [isDrawing, setIsDrawing] = useState(false);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -173,6 +174,17 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Initialize/sync bulk shipment dates when bulk mode, count, or base delivery date changes
+  useEffect(() => {
+    if (bulkCreate && bulkCount > 0) {
+      setBulkDates(prev => {
+        const baseDate = poData.deliveryDate || '';
+        const newDates = Array.from({ length: bulkCount }, (_, i) => prev[i] || baseDate);
+        return newDates;
+      });
+    }
+  }, [bulkCreate, bulkCount, poData.deliveryDate]);
 
   // Click outside to close dropdowns
   useEffect(() => {
@@ -755,6 +767,11 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     ? getCurrentBulkPONumber(bulkPreviewIndex)
     : poData.poNumber;
 
+  // Get the delivery date for the currently previewed bulk PO (or the shared date if not bulk)
+  const currentPreviewDeliveryDate = bulkCreate && bulkDates.length > bulkPreviewIndex
+    ? bulkDates[bulkPreviewIndex]
+    : poData.deliveryDate;
+
   // Send PO to supplier (supports bulk creation)
   const sendPO = async () => {
     // Step 1: Capture PDF blob from the live preview BEFORE any state changes
@@ -823,7 +840,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 buyerBank: poData.buyerBank || '',
                 destination: poData.destination || '',
                 deliveryTerms: poData.deliveryTerms || '',
-                deliveryDate: poData.deliveryDate || '',
+                deliveryDate: (bulkCreate && bulkDates[i]) ? bulkDates[i] : (poData.deliveryDate || ''),
                 commission: poData.commission || '',
                 overseasCommission: poData.overseasCommission || '',
                 overseasCommissionCompany: poData.overseasCommissionCompany || '',
@@ -978,6 +995,29 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <span className="block text-xs text-gray-500 mt-0.5 font-mono">
                     {currentPreviewPONumber}
                   </span>
+                  <div className="flex items-center gap-2 mt-1.5 justify-center">
+                    <Icon name="Calendar" size={14} className="text-blue-500" />
+                    <input
+                      type="date"
+                      value={bulkDates[bulkPreviewIndex] || poData.deliveryDate || ''}
+                      onChange={(e) => {
+                        const newDates = [...bulkDates];
+                        newDates[bulkPreviewIndex] = e.target.value;
+                        setBulkDates(newDates);
+                      }}
+                      className="px-2 py-0.5 border border-blue-300 rounded text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <button
+                      onClick={() => {
+                        const dateToApply = bulkDates[bulkPreviewIndex] || poData.deliveryDate || '';
+                        setBulkDates(Array.from({ length: bulkCount }, () => dateToApply));
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap underline"
+                      title="Set this shipment date for all POs"
+                    >
+                      Apply to all
+                    </button>
+                  </div>
                 </div>
                 <button
                   onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
@@ -1131,7 +1171,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*We need a quality control of photos before loading</p>
               <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*Different colors Tapes for different products & Lots.</p>
               {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
-              {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
+              {(currentPreviewDeliveryDate || poData.deliveryDate) && <p><span className="font-medium">Shipment Date:</span> {formatDate(currentPreviewDeliveryDate || poData.deliveryDate)}</p>}
               <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
               {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
               {poData.payment && <p><span className="font-medium">Payment:</span> {poData.payment}</p>}
@@ -1313,7 +1353,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">{i + 1}</span>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-gray-800 truncate">NEW PO {poNum}</p>
-                                <p className="text-xs text-gray-500 truncate">To: {sendTo || poData.supplierEmail || 'supplier@company.com'}</p>
+                                <p className="text-xs text-gray-500 truncate">To: {sendTo || poData.supplierEmail || 'supplier@company.com'}{bulkDates[i] ? ` | Ship: ${formatDate(bulkDates[i])}` : ''}</p>
                               </div>
                               <button
                                 onClick={() => setBulkPreviewIndex(i)}
