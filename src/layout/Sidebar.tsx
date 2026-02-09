@@ -19,6 +19,7 @@ function Sidebar({ onSettingsClick }: SidebarProps) {
     { icon: 'Mail', label: 'Inquiries', path: '/inquiries' },
     { icon: 'Package', label: 'Products', path: '/products' },
     { icon: 'Users', label: 'Contacts', path: '/contacts' },
+    { icon: 'Building', label: 'Team', path: '/team' },
   ];
 
   return (

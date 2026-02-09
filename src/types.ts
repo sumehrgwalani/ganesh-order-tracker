@@ -141,3 +141,39 @@ export interface POFormData {
   specialInstructions: string;
   lineItems: LineItem[];
 }
+
+// ===== Team & Organization Types =====
+
+export interface Department {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface TeamMember {
+  id: string;              // organization_members.id
+  user_id: string;
+  organization_id: string;
+  role: string;            // 'owner' | 'head' | 'member'
+  department_id: string | null;
+  department?: Department;
+  created_at: string;
+  email?: string;          // from auth.users
+}
+
+export interface Invitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  department_id: string | null;
+  department?: Department;
+  role: string;
+  invited_by: string | null;
+  token: string;
+  status: 'pending' | 'accepted' | 'expired' | 'cancelled';
+  created_at: string;
+  expires_at: string;
+}

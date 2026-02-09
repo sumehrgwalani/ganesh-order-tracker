@@ -12,6 +12,7 @@ import ContactsPage from './pages/ContactsPage';
 import MailboxPage from './pages/MailboxPage';
 import ProductsPage from './pages/ProductsPage';
 import OrderDetailPage from './pages/OrderDetailPage';
+import TeamPage from './pages/TeamPage';
 import LoginPage from './pages/LoginPage';
 import { useAuth } from './hooks/useAuth';
 import { useContacts } from './hooks/useContacts';
@@ -20,7 +21,7 @@ import { useProducts } from './hooks/useProducts';
 import { useToast } from './components/Toast';
 
 function App() {
-  const { session, user, loading: authLoading, orgId, signOut } = useAuth();
+  const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
   const { showToast } = useToast();
@@ -191,6 +192,7 @@ function App() {
               />
             } />
             <Route path="/products" element={<ProductsPage orders={orders} />} />
+            <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
             {/* Redirect any unknown routes to dashboard */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
