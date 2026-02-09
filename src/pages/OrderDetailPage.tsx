@@ -326,12 +326,12 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
     const productDesc = productDescParts.join(', ') || order.product;
 
     // Table header columns — compact for single-page fit
-    const thStyle = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left;font-size:10px;white-space:nowrap;';
-    const thStyleWrap = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left;font-size:10px;';
-    const thStyleR = 'border:1px solid #d1d5db;padding:3px 5px;text-align:right;font-size:10px;white-space:nowrap;';
-    const tdStyle = 'border:1px solid #d1d5db;padding:2px 5px;font-size:10px;white-space:nowrap;';
-    const tdStyleWrap = 'border:1px solid #d1d5db;padding:2px 5px;font-size:10px;';
-    const tdStyleR = 'border:1px solid #d1d5db;padding:2px 5px;font-size:10px;text-align:right;white-space:nowrap;';
+    const thStyle = 'border:1px solid #d1d5db;padding:4px 6px;text-align:left;font-size:10px;white-space:nowrap;background:#f3f4f6;';
+    const thStyleWrap = 'border:1px solid #d1d5db;padding:4px 6px;text-align:left;font-size:10px;background:#f3f4f6;';
+    const thStyleR = 'border:1px solid #d1d5db;padding:4px 6px;text-align:right;font-size:10px;white-space:nowrap;background:#f3f4f6;';
+    const tdStyle = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;white-space:nowrap;';
+    const tdStyleWrap = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;';
+    const tdStyleR = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;text-align:right;white-space:nowrap;';
 
     const headerCells = [
       `<th style="${thStyle}">Product</th>`,
@@ -359,8 +359,8 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
         hasPacking ? `<td style="${tdStyle}">${item.packing || '-'}</td>` : '',
         hasCases ? `<td style="${tdStyleR}">${item.cases || '-'}</td>` : '',
         `<td style="${tdStyleR}">${item.kilos || '-'}</td>`,
-        `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${item.pricePerKg}` : '-'}</td>`,
-        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${item.total}` : '-'}</td>`,
+        `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>`,
+        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
       ].filter(Boolean).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
@@ -370,7 +370,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
       ${hasCases ? `<td style="${tdStyleR}">${metaTotalCases}</td>` : ''}
       <td style="${tdStyleR}">${metaTotalKilos}</td>
       <td style="${tdStyleR}"></td>
-      <td style="${tdStyleR}">U.S. $${grandTotal}</td>
+      <td style="${tdStyleR}">U.S. $${Number(grandTotal).toFixed(2)}</td>
     </tr>`;
 
     // Try to load signature from localStorage
@@ -420,7 +420,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
 
         <!-- Terms -->
         <div style="line-height:1.35;margin-bottom:8px;">
-          <p style="margin:0;"><strong>Total Value:</strong> U.S. $${grandTotal}</p>
+          <p style="margin:0;"><strong>Total Value:</strong> U.S. $${Number(grandTotal).toFixed(2)}</p>
           <p style="font-size:9px;color:#6b7280;margin:1px 0 1px 14px;">*We need a quality control of photos before loading</p>
           <p style="font-size:9px;color:#6b7280;margin:0 0 2px 14px;">*Different colors Tapes for different products &amp; Lots.</p>
           ${deliveryTerms || destination ? `<p style="margin:0;"><strong>Delivery Terms:</strong> ${deliveryTerms} ${destination}</p>` : ''}
