@@ -668,6 +668,21 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       }
     }
 
+    // Auto-fill lote number: find highest lote for this buyer in current year, then increment
+    const currentYear = new Date().getFullYear();
+    let maxLote = 0;
+    orders.forEach(o => {
+      if (o.company?.toLowerCase() === buyerCompany.toLowerCase()) {
+        const lote = o.metadata?.loteNumber || '';
+        const match = lote.match(/^(\d+)\/(\d{4})$/);
+        if (match && parseInt(match[2]) === currentYear) {
+          const num = parseInt(match[1]);
+          if (num > maxLote) maxLote = num;
+        }
+      }
+    });
+    const nextLote = String(maxLote + 1).padStart(4, '0') + '/' + currentYear;
+
     setPOData({
       ...poData,
       buyer: buyerCompany,
@@ -677,6 +692,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       destination: autoDestination || poData.destination,
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',
+      loteNumber: nextLote,
     });
 
     // Auto-fill brand from buyer's default_brand setting (highest priority)
