@@ -89,6 +89,15 @@ function MailboxPage({ orgId }: Props) {
     }
   }, [gmailConnected]);
 
+  // Auto-sync every 10 minutes
+  useEffect(() => {
+    if (!gmailConnected || !orgId) return;
+    const interval = setInterval(() => {
+      if (!syncing) handleSync();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [gmailConnected, orgId, syncing]);
+
   const handleSync = async () => {
     if (!orgId || syncing) return;
     setSyncing(true);

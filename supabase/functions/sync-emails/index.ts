@@ -299,7 +299,7 @@ Return a JSON array with one object per email:
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
+          model: 'claude-opus-4-5-20251101',
           max_tokens: 4000,
           messages: [{ role: 'user', content: aiPrompt }],
         }),
