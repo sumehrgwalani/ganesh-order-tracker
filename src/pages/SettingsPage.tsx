@@ -643,21 +643,65 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
         {/* Email Integration Tab */}
         {activeTab === 'email' && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-            {!isOwner && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-3">
-                <Icon name="AlertCircle" size={16} className="text-yellow-600 flex-shrink-0" />
-                <p className="text-sm text-yellow-800">Only the organization owner can configure email settings.</p>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Gmail</h3>
+            <p className="text-sm text-gray-500 mb-6">Connect your Gmail to sync emails and send POs directly from the app.</p>
+
+            {userGmailConnected ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <Icon name="Mail" size={24} className="text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-800 text-base">Gmail Connected</p>
+                      <p className="text-sm text-green-600">{userGmailEmail}</p>
+                      {userGmailLastSync && (
+                        <p className="text-xs text-green-500 mt-1">Last synced: {new Date(userGmailLastSync).toLocaleString()}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleUserDisconnectGmail}
+                    disabled={gmailDisconnecting}
+                    className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Icon name="Mail" size={32} className="text-blue-500" />
+                </div>
+                <p className="text-gray-600 mb-5">Link your Gmail account to start syncing emails and sending POs.</p>
+                <button
+                  onClick={orgSettings?.gmail_client_id ? handleUserConnectGmail : handleConnectGmail}
+                  disabled={gmailConnecting || (!orgSettings?.gmail_client_id && !gmailClientId.trim())}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium text-base shadow-sm"
+                >
+                  <Icon name="Mail" size={20} />
+                  {gmailConnecting ? 'Connecting...' : 'Connect Gmail'}
+                </button>
+                {!orgSettings?.gmail_client_id && (
+                  <p className="text-xs text-amber-600 mt-3">Google Client ID not configured yet. Contact your admin or set it up below.</p>
+                )}
               </div>
             )}
 
+            {/* Admin: Client ID setup - only show if not configured or owner wants to change */}
             {isOwner && (
-              <>
-                {/* Gmail Integration Section - Admin Setup */}
-                <div className="mb-8">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Gmail Setup</h3>
-                  <p className="text-sm text-gray-500 mb-4">Configure the Google OAuth Client ID. This is a one-time setup for your organization.</p>
-
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <details className={orgSettings?.gmail_client_id ? '' : 'open'}>
+                  <summary className="text-sm text-gray-500 cursor-pointer hover:text-gray-700 select-none">
+                    {orgSettings?.gmail_client_id ? (
+                      <span className="flex items-center gap-1 inline"><Icon name="CheckCircle" size={14} className="text-green-500 inline" /> Google Client ID configured — click to change</span>
+                    ) : (
+                      <span>Set up Google Client ID (one-time setup)</span>
+                    )}
+                  </summary>
+                  <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Google OAuth Client ID</label>
                       <input
@@ -672,166 +716,22 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                     <button
                       onClick={async () => {
                         if (!gmailClientId.trim()) {
-                          showStatus('error', 'Please enter your Google Client ID first');
+                          showStatus('error', 'Please enter your Google Client ID');
                           return;
                         }
                         await updateOrgSettings({ gmail_client_id: gmailClientId });
                         showStatus('success', 'Google Client ID saved');
                       }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
                     >
                       Save Client ID
                     </button>
-                    {orgSettings?.gmail_client_id && (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <Icon name="CheckCircle" size={14} /> Client ID configured
-                      </p>
-                    )}
                   </div>
-                </div>
-
-                <div className="border-t border-gray-200 pt-6 mb-6" />
-              </>
-            )}
-
-            {/* Gmail Integration Section - User Connection (visible to all) */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Your Gmail Connection</h3>
-              <p className="text-sm text-gray-500 mb-4">Connect your personal Gmail account to sync and track emails.</p>
-
-              {userGmailConnected ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                        <Icon name="Mail" size={20} className="text-green-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-green-800">Connected</p>
-                        <p className="text-sm text-green-600">{userGmailEmail}</p>
-                        {userGmailLastSync && (
-                          <p className="text-xs text-green-500 mt-0.5">Last synced: {new Date(userGmailLastSync).toLocaleString()}</p>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleUserDisconnectGmail}
-                      disabled={gmailDisconnecting}
-                      className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
-                    >
-                      {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  {!orgSettings?.gmail_client_id ? (
-                    <div className="text-sm text-gray-600 mb-3">
-                      <p>Your organization admin needs to configure the Google Client ID first. Ask them to complete the setup in the "Gmail Setup" section above.</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-3">Click the button below to connect your Gmail account.</p>
-                    </div>
-                  )}
-                  <button
-                    onClick={handleUserConnectGmail}
-                    disabled={gmailConnecting || !orgSettings?.gmail_client_id}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
-                  >
-                    <Icon name="Mail" size={16} />
-                    {gmailConnecting ? 'Connecting...' : 'Link Gmail'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {isOwner && (
-              <>
-              <div className="border-t border-gray-200 pt-6 mb-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <p className="text-sm text-blue-800">Email credentials are stored securely. The test email feature will be available soon.</p>
-                </div>
+                </details>
               </div>
-
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Outbound Email Provider</h3>
-                <div className="space-y-3 mb-6">
-                  {[
-                    { value: 'none', label: 'None' },
-                    { value: 'smtp', label: 'SMTP' },
-                    { value: 'sendgrid', label: 'SendGrid' },
-                    { value: 'resend', label: 'Resend' },
-                  ].map(option => (
-                    <label key={option.value} className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="provider"
-                        value={option.value}
-                        checked={emailFormData.provider === option.value}
-                        onChange={(e) => setEmailFormData({ ...emailFormData, provider: e.target.value })}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm font-medium text-gray-700">{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-
-                {emailFormData.provider === 'smtp' && (
-                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
-                      <input type="text" value={emailFormData.smtpHost} onChange={(e) => setEmailFormData({ ...emailFormData, smtpHost: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-                      <input type="number" value={emailFormData.smtpPort} onChange={(e) => setEmailFormData({ ...emailFormData, smtpPort: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                      <input type="text" value={emailFormData.smtpUsername} onChange={(e) => setEmailFormData({ ...emailFormData, smtpUsername: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                      <input type="password" value={emailFormData.smtpPassword} onChange={(e) => setEmailFormData({ ...emailFormData, smtpPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
-                      <input type="email" value={emailFormData.smtpFromEmail} onChange={(e) => setEmailFormData({ ...emailFormData, smtpFromEmail: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={emailFormData.smtpUseTls}
-                        onChange={(e) => setEmailFormData({ ...emailFormData, smtpUseTls: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Use TLS</span>
-                    </label>
-                  </div>
-                )}
-
-                {emailFormData.provider === 'sendgrid' && (
-                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SendGrid API Key</label>
-                      <input type="password" value={emailFormData.sendgridKey} onChange={(e) => setEmailFormData({ ...emailFormData, sendgridKey: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                  </div>
-                )}
-
-                {emailFormData.provider === 'resend' && (
-                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Resend API Key</label>
-                      <input type="password" value={emailFormData.resendKey} onChange={(e) => setEmailFormData({ ...emailFormData, resendKey: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                  </div>
-                )}
-
-                <button onClick={handleSaveEmailSettings} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Email Settings</button>
-                {saveStatus && <p className={`text-sm flex items-center gap-1 mt-3 ${saveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}><Icon name={saveStatus.type === 'success' ? 'CheckCircle' : 'AlertCircle'} size={14} /> {saveStatus.message}</p>}
-              </>
             )}
+
+            {saveStatus && <p className={`text-sm flex items-center gap-1 mt-4 ${saveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}><Icon name={saveStatus.type === 'success' ? 'CheckCircle' : 'AlertCircle'} size={14} /> {saveStatus.message}</p>}
           </div>
         )}
 
