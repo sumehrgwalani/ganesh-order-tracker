@@ -154,12 +154,16 @@ serve(async (req) => {
     }
 
     // 6) Refresh the access token
+    const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+    if (!clientSecret) throw new Error('client_secret is missing')
+
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         refresh_token: member.gmail_refresh_token,
         client_id: settings.gmail_client_id,
+        client_secret: clientSecret,
         grant_type: 'refresh_token',
       }),
     })
