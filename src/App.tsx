@@ -67,7 +67,12 @@ function App() {
           body: { code, client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri, organization_id: orgId, user_id: authUser.id },
         });
 
-        if (error) throw error;
+        if (error) {
+          // Extract actual error message from Edge Function response
+          let msg = error.message;
+          try { const body = await (error as any).context?.json(); if (body?.error) msg = body.error; } catch {}
+          throw new Error(msg);
+        }
         if (data?.error) throw new Error(data.error);
 
         result = { success: true, email: data.email };

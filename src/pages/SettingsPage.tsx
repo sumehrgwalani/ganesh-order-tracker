@@ -265,15 +265,17 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const handleConnectGmail = async () => {
-    await updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
+  const handleConnectGmail = () => {
+    // Save client ID in background (don't await - that blocks the popup)
+    updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
     setGmailConnecting(true);
 
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
+    // Open immediately on click so browser doesn't block the popup
+    window.open(authUrl, 'gmail-auth', 'width=500,height=600,popup=yes');
   };
 
   const handleUserDisconnectGmail = async () => {
