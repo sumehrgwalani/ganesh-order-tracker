@@ -24,7 +24,7 @@ import { useToast } from './components/Toast';
 
 function App() {
   const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
-  const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
+  const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, updateContactsByCompany, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
   const { showToast } = useToast();
   const { inquiries: productInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
@@ -247,6 +247,7 @@ function App() {
                 dbContacts={dbContacts}
                 onAddContact={addContact}
                 onUpdateContact={updateContact}
+                onUpdateContactsByCompany={updateContactsByCompany}
                 onDeleteContact={deleteContact}
                 onBulkImport={bulkUpsertContacts}
                 onBulkDelete={bulkDeleteContacts}

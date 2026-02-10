@@ -195,12 +195,39 @@ export function useContacts(orgId: string | null) {
     }
   }
 
+  const updateContactsByCompany = async (company: string, updates: Partial<Contact>) => {
+    if (!orgId) return
+    try {
+      const { error: updateError } = await supabase
+        .from('contacts')
+        .update(updates)
+        .eq('organization_id', orgId)
+        .eq('company', company)
+
+      if (updateError) throw updateError
+      // Update local state for all contacts in this company
+      setContacts(prev => {
+        const updated = { ...prev }
+        for (const email in updated) {
+          if (updated[email].company === company) {
+            updated[email] = { ...updated[email], ...updates }
+          }
+        }
+        return updated
+      })
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    }
+  }
+
   return {
     contacts,
     loading,
     error,
     addContact,
     updateContact,
+    updateContactsByCompany,
     deleteContact,
     bulkDeleteContacts,
     bulkUpsertContacts,

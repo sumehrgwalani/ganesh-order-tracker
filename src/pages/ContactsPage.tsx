@@ -4,6 +4,7 @@ import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
 import ContactImportModal from '../components/ContactImportModal';
+import CompanySettingsModal from '../components/CompanySettingsModal';
 import PhoneIcon from '../components/PhoneIcon';
 import type { ContactFormData, ContactsMap } from '../types';
 
@@ -30,6 +31,7 @@ interface Props {
   onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; address?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
   onBulkDelete?: (emails: string[]) => Promise<void>;
   onRefresh?: () => Promise<void>;
+  onUpdateContactsByCompany?: (company: string, updates: Partial<Contact>) => Promise<void>;
 }
 
 // Helper to convert ContactsMap to Contact[] — defined outside component for stability
@@ -52,7 +54,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
-function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
+function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh, onUpdateContactsByCompany }: Props) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -62,6 +64,8 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
+  // Company settings modal state
+  const [companySettingsFor, setCompanySettingsFor] = useState<string | null>(null);
   // Batch delete state
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -271,6 +275,23 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
     };
   };
 
+  const handleSaveCompanyBrand = async (brand: string) => {
+    if (!companySettingsFor) return;
+    // Optimistic local update
+    setContacts(prev =>
+      prev.map(c => c.company === companySettingsFor ? { ...c, default_brand: brand } : c)
+    );
+    // Persist to DB
+    if (onUpdateContactsByCompany) {
+      try {
+        await onUpdateContactsByCompany(companySettingsFor, { default_brand: brand });
+      } catch (err) {
+        console.error('Failed to save company brand:', err);
+      }
+    }
+    setCompanySettingsFor(null);
+  };
+
   return (
     <div>
       <PageHeader
@@ -446,10 +467,22 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800">{company}</h3>
-                      <p className="text-sm text-gray-500">{companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}</p>
+                      <p className="text-sm text-gray-500">
+                        {companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}
+                        {companyContacts[0]?.default_brand && <span className="ml-2 text-blue-500">· {companyContacts[0].default_brand}</span>}
+                      </p>
                     </div>
                   </div>
-                  <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setCompanySettingsFor(company); }}
+                      className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600"
+                      title="Company settings"
+                    >
+                      <Icon name="Settings" size={16} />
+                    </button>
+                    <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
 
                 {isExpanded && (
@@ -588,6 +621,16 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
           companies={companies}
           onSave={handleSaveContact}
           onClose={() => { setShowModal(false); setEditingContact(null); }}
+        />
+      )}
+
+      {/* Company Settings Modal */}
+      {companySettingsFor && (
+        <CompanySettingsModal
+          company={companySettingsFor}
+          defaultBrand={contacts.find(c => c.company === companySettingsFor)?.default_brand || ''}
+          onSave={handleSaveCompanyBrand}
+          onClose={() => setCompanySettingsFor(null)}
         />
       )}
 
