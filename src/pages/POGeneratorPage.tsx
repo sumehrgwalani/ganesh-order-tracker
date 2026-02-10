@@ -161,6 +161,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [sendTo, setSendTo] = useState('');
   const [ccEmails, setCcEmails] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [buyerSearch, setBuyerSearch] = useState('');
@@ -919,7 +920,13 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       ));
     }
     setSendTo(poData.supplierEmail || '');
-    setEmailSubject(`NEW PO ${poData.poNumber}`);
+    setEmailSubject(isAmendment ? `AMENDED PO ${poData.poNumber}` : `NEW PO ${poData.poNumber}`);
+    const productDesc = poData.product || lineItems.map(li => li.product).filter(Boolean).join(', ') || 'Frozen Seafood';
+    if (isAmendment) {
+      setEmailBody(`Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`);
+    } else {
+      setEmailBody(`Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${productDesc}.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`);
+    }
     setStatus('pending_approval');
     setShowPreview(true);
     setShowSignOff(true);
@@ -1037,7 +1044,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
             to: sendTo || poData.supplierEmail,
             subject: `AMENDED PO ${poData.poNumber}`,
-            body: `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
+            body: emailBody || `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
             hasAttachment: true,
             attachments: [{
               name: `${poData.poNumber.replace(/\//g, '_')}.pdf`,
@@ -1131,7 +1138,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
             to: sendTo || poData.supplierEmail,
             subject: `NEW PO ${currentPONumber}`,
-            body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+            body: emailBody || `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
             hasAttachment: true,
             attachments: [{
               name: `${currentPONumber.replace(/\//g, '_')}.pdf`,
@@ -1661,6 +1668,19 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       />
                     </div>
                   )}
+
+                  {/* Email Body */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Content</label>
+                    <textarea
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      rows={10}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono leading-relaxed resize-y"
+                      placeholder="Email body that will be sent with the PO..."
+                    />
+                    <p className="text-xs text-gray-400 mt-1">The PO PDF will be attached automatically.</p>
+                  </div>
 
                   {/* Send To */}
                   <div>
