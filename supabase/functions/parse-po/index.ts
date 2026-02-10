@@ -4,8 +4,10 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io';
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -135,6 +137,15 @@ serve(async (req) => {
   }
 
   try {
+    // Verify the caller is authenticated via JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Missing or invalid authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
       return new Response(
@@ -148,6 +159,14 @@ serve(async (req) => {
     if (!rawText || !rawText.trim()) {
       return new Response(
         JSON.stringify({ error: 'No text provided to parse.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Input length validation — reject excessively large inputs
+    if (rawText.length > 50000) {
+      return new Response(
+        JSON.stringify({ error: 'Input text too large. Please limit to 50,000 characters.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

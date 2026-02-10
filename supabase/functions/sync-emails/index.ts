@@ -1,12 +1,19 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io'
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
+
+// Validate UUID format
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
 
 // Stage definitions for AI prompt
 const STAGE_TRIGGERS = `
@@ -85,14 +92,41 @@ serve(async (req) => {
   }
 
   try {
-    const { organization_id, user_id } = await req.json()
-    if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
+    // 1) Verify the caller is authenticated via JWT
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new Error('Missing or invalid authorization header')
+    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseAnon = Deno.env.get('SUPABASE_ANON_KEY') || supabaseKey
+
+    // Create a client with the user's JWT to verify their identity
+    const userClient = createClient(supabaseUrl, supabaseAnon, {
+      global: { headers: { Authorization: authHeader } }
+    })
+    const { data: { user }, error: authError } = await userClient.auth.getUser()
+    if (authError || !user) {
+      throw new Error('Authentication failed. Please log in again.')
+    }
+
+    const { organization_id, user_id } = await req.json()
+    if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
+
+    // 2) Validate input formats
+    if (!isValidUUID(organization_id) || !isValidUUID(user_id)) {
+      throw new Error('Invalid organization or user ID format')
+    }
+
+    // 3) Verify the authenticated user matches the claimed user_id
+    if (user.id !== user_id) {
+      throw new Error('You can only sync emails for your own account')
+    }
+
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // 1) Get user's Gmail tokens from organization_members
+    // 4) Verify the user is a member of this organization AND get their Gmail tokens
     const { data: member, error: memberError } = await supabase
       .from('organization_members')
       .select('gmail_refresh_token, gmail_email, gmail_last_sync')
@@ -100,11 +134,15 @@ serve(async (req) => {
       .eq('organization_id', organization_id)
       .single()
 
-    if (memberError || !member?.gmail_refresh_token) {
+    if (memberError || !member) {
+      throw new Error('You are not a member of this organization')
+    }
+
+    if (!member.gmail_refresh_token) {
       throw new Error('Gmail not connected. Please connect Gmail in Settings first.')
     }
 
-    // 2) Get org settings to retrieve client_id
+    // 5) Get org settings to retrieve client_id
     const { data: settings, error: settingsError } = await supabase
       .from('organization_settings')
       .select('gmail_client_id')
@@ -115,7 +153,7 @@ serve(async (req) => {
       throw new Error('Google Client ID not configured. Please ask the admin to set it up.')
     }
 
-    // 3) Refresh the access token
+    // 6) Refresh the access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -129,7 +167,7 @@ serve(async (req) => {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
-    // 4) Build Gmail search query
+    // 7) Build Gmail search query
     // On first sync (no last_sync), use 3-month lookback
     // On subsequent syncs, use time since last sync
     const lastSync = member.gmail_last_sync
@@ -138,7 +176,7 @@ serve(async (req) => {
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 
-    // 5) Fetch message list from Gmail
+    // 8) Fetch message list from Gmail
     const listRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -152,7 +190,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 6) Check which emails we already have
+    // 9) Check which emails we already have
     const { data: existingEmails } = await supabase
       .from('synced_emails')
       .select('gmail_id')
@@ -168,7 +206,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 7) Fetch full content of new messages (limit to 20 per sync)
+    // 10) Fetch full content of new messages (limit to 20 per sync)
     const toFetch = newMessageIds.slice(0, 20)
     const emails: any[] = []
 
@@ -194,7 +232,7 @@ serve(async (req) => {
       })
     }
 
-    // 8) Get active orders for AI matching
+    // 11) Get active orders for AI matching
     const { data: orders } = await supabase
       .from('orders')
       .select('order_id, company, supplier, product, current_stage')
@@ -208,7 +246,7 @@ serve(async (req) => {
       currentStage: o.current_stage,
     }))
 
-    // 9) AI Analysis — send emails + orders to Claude for matching
+    // 12) AI Analysis — send emails + orders to Claude for matching
     const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
 
 ACTIVE ORDERS:
@@ -279,7 +317,7 @@ Return a JSON array with one object per email:
     // Build lookup from gmail_id to AI result
     const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
 
-    // 10) Store emails and process auto-advances
+    // 13) Store emails and process auto-advances
     const storedEmails: any[] = []
     let advancedCount = 0
 
@@ -364,7 +402,7 @@ Return a JSON array with one object per email:
       }
     }
 
-    // 11) Update last sync time in organization_members (per-user)
+    // 14) Update last sync time in organization_members (per-user)
     await supabase
       .from('organization_members')
       .update({ gmail_last_sync: new Date().toISOString() })

@@ -16,6 +16,12 @@ interface Props {
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
+// Sanitize strings for safe HTML insertion (prevents XSS)
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
@@ -312,20 +318,21 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
     const hasPacking = items.some((i: any) => i.packing);
     const hasCases = items.some((i: any) => i.cases);
 
-    const supplierName = meta?.supplier || order.supplier;
-    const supplierAddress = meta?.supplierAddress || '';
-    const supplierCountry = (meta?.supplierCountry || order.from || 'India').toUpperCase();
-    const buyerName = meta?.buyer || order.company;
-    const buyerBank = meta?.buyerBank || '';
-    const destination = meta?.destination || order.to || '';
-    const deliveryTerms = meta?.deliveryTerms || '';
-    const deliveryDate = meta?.deliveryDate || '';
-    const commission = meta?.commission || '';
-    const overseasCommission = meta?.overseasCommission || '';
-    const overseasCommissionCompany = meta?.overseasCommissionCompany || '';
-    const payment = meta?.payment || '';
-    const shippingMarks = meta?.shippingMarks || '';
-    const loteNumber = meta?.loteNumber || '';
+    // Sanitize all user-controlled values to prevent XSS
+    const supplierName = escapeHtml(meta?.supplier || order.supplier);
+    const supplierAddress = escapeHtml(meta?.supplierAddress || '');
+    const supplierCountry = escapeHtml((meta?.supplierCountry || order.from || 'India').toUpperCase());
+    const buyerName = escapeHtml(meta?.buyer || order.company);
+    const buyerBank = escapeHtml(meta?.buyerBank || '');
+    const destination = escapeHtml(meta?.destination || order.to || '');
+    const deliveryTerms = escapeHtml(meta?.deliveryTerms || '');
+    const deliveryDate = escapeHtml(meta?.deliveryDate || '');
+    const commission = escapeHtml(meta?.commission || '');
+    const overseasCommission = escapeHtml(meta?.overseasCommission || '');
+    const overseasCommissionCompany = escapeHtml(meta?.overseasCommissionCompany || '');
+    const payment = escapeHtml(meta?.payment || '');
+    const shippingMarks = escapeHtml(meta?.shippingMarks || '');
+    const loteNumber = escapeHtml(meta?.loteNumber || '');
     const poDate = meta?.date || order.date;
     const grandTotal = meta?.grandTotal || order.totalValue || '';
     const metaTotalKilos = meta?.totalKilos || order.totalKilos || 0;
