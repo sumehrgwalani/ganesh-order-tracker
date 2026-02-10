@@ -60,8 +60,9 @@ function App() {
       let result: any;
       try {
         const redirectUri = window.location.origin + window.location.pathname;
-        const { data: { session: authSession } } = await supabase.auth.getSession();
-        if (!authSession) throw new Error('Not authenticated');
+        // Use refreshSession to get a fresh access token (getSession may return expired token in popup)
+        const { data: { session: authSession }, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !authSession) throw new Error('Not authenticated. Please log in and try again.');
 
         // Use fetch directly (not supabase SDK) for better error messages
         const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-auth`, {
