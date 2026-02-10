@@ -10,6 +10,7 @@ export interface Contact {
   address: string;
   notes: string;
   country: string;
+  default_brand: string;
 }
 
 export interface ContactFormData {
@@ -23,6 +24,7 @@ export interface ContactFormData {
   color: string;
   country?: string;
   initials?: string;
+  default_brand?: string;
 }
 
 export type ContactsMap = Record<string, Contact>;

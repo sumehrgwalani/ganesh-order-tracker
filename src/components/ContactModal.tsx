@@ -19,7 +19,8 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
     role: '',
     category: 'other',
     country: '',
-    color: 'bg-blue-500'
+    color: 'bg-blue-500',
+    default_brand: '',
   });
 
   const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-red-500', 'bg-teal-500', 'bg-pink-500', 'bg-indigo-500'];
@@ -167,6 +168,19 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
                 <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
               ))}
             </select>
+          </div>
+
+          {/* Default Brand */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Default Brand</label>
+            <input
+              type="text"
+              value={formData.default_brand || ''}
+              onChange={(e) => setFormData({...formData, default_brand: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. Buyer's brand, Plain Carton"
+            />
+            <p className="text-xs text-gray-400 mt-1">Auto-fills brand on new POs for this contact</p>
           </div>
 
           {/* Color */}

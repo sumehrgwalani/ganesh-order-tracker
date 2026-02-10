@@ -564,7 +564,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
   // Add line item
   const addLineItem = () => {
-    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
+    // Inherit brand from buyer's default if set
+    const currentBuyer = buyers.find(b => b.company === poData.buyer);
+    const defaultBrand = currentBuyer?.default_brand || '';
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: defaultBrand, freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
   };
 
   // Remove line item
@@ -676,17 +679,24 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       commission: poData.commission || 'USD 0.05 per Kg',
     });
 
-    // Auto-fill packing/brand on existing line items from last order
+    // Auto-fill brand from buyer's default_brand setting (highest priority)
+    const buyerDefaultBrand = buyer?.default_brand || '';
+
+    // Auto-fill packing/brand on existing line items from last order or buyer default
     if (poData.supplier && buyerCompany) {
       const defaults = getLastOrderDefaults(poData.supplier, buyerCompany);
-      if (defaults) {
-        setLineItems(prev => prev.map(item => ({
-          ...item,
-          packing: item.packing || defaults.packing || '',
-          brand: item.brand || defaults.brand || '',
-          freezing: item.freezing || defaults.freezing || '',
-        })));
-      }
+      setLineItems(prev => prev.map(item => ({
+        ...item,
+        packing: item.packing || defaults?.packing || '',
+        brand: buyerDefaultBrand || item.brand || defaults?.brand || '',
+        freezing: item.freezing || defaults?.freezing || '',
+      })));
+    } else if (buyerDefaultBrand) {
+      // No supplier yet, but buyer has a default brand — apply it
+      setLineItems(prev => prev.map(item => ({
+        ...item,
+        brand: item.brand || buyerDefaultBrand,
+      })));
     }
   };
 
@@ -732,6 +742,12 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const submitForApproval = () => {
     if (!poData.supplier || !poData.buyer || lineItems.every(item => !item.product)) {
       setNotification({ type: 'error', message: 'Please fill in required fields: Supplier, Buyer, and at least one product line.' });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+    const missingBrand = lineItems.filter(item => item.product && !item.brand);
+    if (missingBrand.length > 0) {
+      setNotification({ type: 'error', message: `Brand is required for all products. ${missingBrand.length} item(s) missing brand.` });
       setTimeout(() => setNotification(null), 4000);
       return;
     }
@@ -1757,8 +1773,8 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
                           <input type="text" value={item.product} onChange={(e) => updateLineItem(idx, 'product', e.target.value)} placeholder="Product name" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
-                          <input type="text" value={item.brand || ''} onChange={(e) => updateLineItem(idx, 'brand', e.target.value)} placeholder="Brand name" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Brand *</label>
+                          <input type="text" value={item.brand || ''} onChange={(e) => updateLineItem(idx, 'brand', e.target.value)} placeholder="Brand name (required)" className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${item.product && !item.brand ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Freezing</label>

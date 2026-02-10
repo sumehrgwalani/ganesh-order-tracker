@@ -36,6 +36,7 @@ export function useContacts(orgId: string | null) {
           address: row.address || '',
           notes: row.notes || '',
           country: row.country || '',
+          default_brand: row.default_brand || '',
         }
       }
       setContacts(map)
@@ -71,6 +72,7 @@ export function useContacts(orgId: string | null) {
           initials,
           color: formData.color || 'bg-gray-500',
           notes: '',
+          default_brand: formData.default_brand || '',
         })
         .select()
         .single()
