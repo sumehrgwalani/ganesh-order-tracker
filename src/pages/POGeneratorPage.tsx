@@ -396,12 +396,65 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         return;
       }
 
+      // --- Post-processing fixes ---
+
+      // 1) Resolve buyer abbreviation (e.g. "EG" → "Pescados E Guillem")
+      let resolvedBuyer = detectedBuyer || '';
+      if (resolvedBuyer) {
+        const reverseCodes: Record<string, string> = {};
+        for (const [company, code] of Object.entries(BUYER_CODES)) {
+          reverseCodes[code.toLowerCase()] = company;
+        }
+        const buyerLower = resolvedBuyer.toLowerCase().trim();
+        if (reverseCodes[buyerLower]) {
+          resolvedBuyer = reverseCodes[buyerLower];
+        } else {
+          // Try matching as a substring or partial match against buyer list
+          const partialMatch = buyersList.find(b => b.company.toLowerCase().includes(buyerLower));
+          if (partialMatch) resolvedBuyer = partialMatch.company;
+        }
+      }
+
+      // 2) Get buyer's default brand for filling in items without explicit brand
+      const matchedBuyerContact = resolvedBuyer
+        ? buyersList.find(b => b.company.toLowerCase() === resolvedBuyer.toLowerCase())
+        : null;
+      const buyerDefaultBrand = matchedBuyerContact
+        ? (contacts[matchedBuyerContact.email]?.default_brand || '')
+        : '';
+
+      // 3) Fix each line item: default size, handle "plain carton" brand, apply default brand
+      const fixedItems = parsedItems.map((item: any) => {
+        // Default size to "Assorted" when not specified
+        if (!item.size || item.size.trim() === '') {
+          item.size = 'Assorted';
+        }
+
+        // Detect "plain carton" in brand or packing and set as brand
+        const brandLower = (item.brand || '').toLowerCase();
+        const packingLower = (item.packing || '').toLowerCase();
+        if (brandLower.includes('plain carton') || packingLower.includes('plain carton')) {
+          item.brand = 'Plain Carton';
+          // Clean "plain carton" out of packing if it was there
+          if (packingLower.includes('plain carton')) {
+            item.packing = item.packing.replace(/plain\s*carton/i, '').replace(/,\s*$/, '').trim();
+          }
+        }
+
+        // If no brand specified, use buyer's default brand
+        if (!item.brand || item.brand.trim() === '') {
+          item.brand = buyerDefaultBrand;
+        }
+
+        return item;
+      });
+
       // Post-process: recalculate cases and totals
-      const processedItems = recalculateAllLineItems(parsedItems);
+      const processedItems = recalculateAllLineItems(fixedItems);
       setLineItems(processedItems);
 
       // Update PO data with detected supplier/buyer
-      if (detectedSupplier || detectedBuyer) {
+      if (detectedSupplier || resolvedBuyer) {
         const matchedSupplier = detectedSupplier
           ? suppliersList.find(s => s.company.toLowerCase() === detectedSupplier.toLowerCase())
           : null;
@@ -412,11 +465,51 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           supplierEmail: detectedSupplierEmail || prev.supplierEmail,
           supplierAddress: matchedSupplier?.address || prev.supplierAddress,
           supplierCountry: matchedSupplier?.country || prev.supplierCountry,
-          buyer: detectedBuyer || prev.buyer,
+          buyer: resolvedBuyer || prev.buyer,
         }));
 
         if (detectedSupplier) setSupplierSearch(detectedSupplier);
-        if (detectedBuyer) setBuyerSearch(detectedBuyer);
+        if (resolvedBuyer) setBuyerSearch(resolvedBuyer);
+
+        // Trigger buyer auto-fill (PO number, destination, lote, etc.)
+        if (resolvedBuyer && matchedBuyerContact) {
+          const buyerCode = BUYER_CODES[resolvedBuyer] || resolvedBuyer.substring(0, 2).toUpperCase();
+          const newPONumber = getNextPONumber(resolvedBuyer);
+          const buyerDestinations: Record<string, string> = {
+            'PESCADOS E.GUILLEM': 'Valencia, Spain', 'Pescados E Guillem': 'Valencia, Spain',
+            'Seapeix': 'Barcelona, Spain', 'Noriberica': 'Portugal',
+            'Ruggiero Seafood': 'Italy', 'Fiorital': 'Italy', 'Ferrittica': 'Italy',
+            'Compesca': 'Spain', 'Soguima': 'Spain', 'Mariberica': 'Spain',
+          };
+          const autoDestination = Object.entries(buyerDestinations).find(
+            ([key]) => resolvedBuyer.toLowerCase().includes(key.toLowerCase())
+          )?.[1] || '';
+          const shipmentDate = new Date();
+          shipmentDate.setDate(shipmentDate.getDate() + 25);
+          const currentYear = new Date().getFullYear();
+          let maxLote = 0;
+          orders.forEach(o => {
+            if (o.company?.toLowerCase() === resolvedBuyer.toLowerCase()) {
+              const lote = o.metadata?.loteNumber || '';
+              const match = lote.match(/^(\d+)\/(\d{4})$/);
+              if (match && parseInt(match[2]) === currentYear) {
+                const num = parseInt(match[1]);
+                if (num > maxLote) maxLote = num;
+              }
+            }
+          });
+          const nextLote = String(maxLote + 1).padStart(4, '0') + '/' + currentYear;
+
+          setPOData(prev => ({
+            ...prev,
+            buyerCode: buyerCode,
+            poNumber: newPONumber,
+            destination: autoDestination || prev.destination,
+            deliveryDate: shipmentDate.toISOString().split('T')[0],
+            loteNumber: nextLote,
+            buyerBank: contacts[matchedBuyerContact.email]?.country || prev.buyerBank,
+          }));
+        }
       }
 
       // Build product description from unique products (case-insensitive dedup, include freezing + glaze)
@@ -761,11 +854,14 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       setTimeout(() => setNotification(null), 4000);
       return;
     }
+    // Auto-fill missing brands from buyer's default brand before submitting
+    const currentBuyer = buyers.find(b => b.company === poData.buyer);
+    const defaultBrand = currentBuyer?.default_brand || '';
     const missingBrand = lineItems.filter(item => item.product && !item.brand);
-    if (missingBrand.length > 0) {
-      setNotification({ type: 'error', message: `Brand is required for all products. ${missingBrand.length} item(s) missing brand.` });
-      setTimeout(() => setNotification(null), 4000);
-      return;
+    if (missingBrand.length > 0 && defaultBrand) {
+      setLineItems(prev => prev.map(item =>
+        item.product && !item.brand ? { ...item, brand: defaultBrand } : item
+      ));
     }
     setSendTo(poData.supplierEmail || '');
     setEmailSubject(`NEW PO ${poData.poNumber}`);
