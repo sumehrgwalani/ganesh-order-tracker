@@ -270,12 +270,21 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
     setGmailConnecting(true);
 
+    // Open a blank popup FIRST (must be synchronous from click to avoid browser blocking)
+    const popup = window.open('about:blank', 'gmail-auth', 'width=500,height=600,left=200,top=100');
+
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    // Open immediately on click so browser doesn't block the popup
-    window.open(authUrl, 'gmail-auth', 'width=500,height=600,popup=yes');
+    if (popup) {
+      // Redirect the already-opened popup to Google's auth page
+      popup.location.href = authUrl;
+    } else {
+      // Popup was blocked — fall back to same-window redirect
+      setGmailConnecting(false);
+      window.location.href = authUrl;
+    }
   };
 
   const handleUserDisconnectGmail = async () => {
