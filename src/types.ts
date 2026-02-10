@@ -184,6 +184,26 @@ export interface Invitation {
   expires_at: string;
 }
 
+// ===== Synced Email Types =====
+
+export interface SyncedEmail {
+  id: string;
+  organization_id: string;
+  gmail_id: string;
+  from_email: string | null;
+  from_name: string | null;
+  to_email: string | null;
+  subject: string | null;
+  body_text: string | null;
+  date: string | null;
+  has_attachment: boolean;
+  matched_order_id: string | null;
+  detected_stage: number | null;
+  ai_summary: string | null;
+  auto_advanced: boolean;
+  created_at: string;
+}
+
 // ===== Settings Types =====
 
 export interface OrganizationSettings {
@@ -207,6 +227,10 @@ export interface OrganizationSettings {
   smtp_from_email: string | null;
   smtp_use_tls: boolean;
   api_key: string | null;
+  gmail_refresh_token: string | null;
+  gmail_email: string | null;
+  gmail_last_sync: string | null;
+  gmail_client_id: string | null;
   notify_new_order: boolean;
   notify_order_updated: boolean;
   notify_stage_changed: boolean;
