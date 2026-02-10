@@ -60,20 +60,24 @@ function App() {
       let result: any;
       try {
         const redirectUri = window.location.origin + window.location.pathname;
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) throw new Error('Not authenticated');
+        const { data: { session: authSession } } = await supabase.auth.getSession();
+        if (!authSession) throw new Error('Not authenticated');
 
-        const { data, error } = await supabase.functions.invoke('gmail-auth', {
-          body: { code, client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri, organization_id: orgId, user_id: authUser.id },
+        // Use fetch directly (not supabase SDK) for better error messages
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-auth`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ code, client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri, organization_id: orgId, user_id: authSession.user.id }),
         });
+        const data = await resp.json();
 
-        if (error) {
-          // Extract actual error message from Edge Function response
-          let msg = error.message;
-          try { const body = await (error as any).context?.json(); if (body?.error) msg = body.error; } catch {}
-          throw new Error(msg);
+        if (!resp.ok || data.error) {
+          throw new Error(data.error || `Server error ${resp.status}`);
         }
-        if (data?.error) throw new Error(data.error);
 
         result = { success: true, email: data.email };
       } catch (err: any) {
