@@ -1091,13 +1091,13 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
                           <td className="px-2 py-2" style={{ minWidth: 80 }}>
                             <input type="number" value={item.kilos} onChange={e => updateItem(idx, 'kilos', e.target.value)} className={`${inputClass} text-right`} />
                           </td>
-                          <td className="px-2 py-2" style={{ minWidth: 80 }}>
+                          <td className="px-2 py-2" style={{ minWidth: 100 }}>
                             <div className="flex items-center gap-1">
-                              <span className="text-gray-400 text-xs">{item.currency === 'USD' ? '$' : item.currency}</span>
-                              <input type="number" step="0.01" value={item.pricePerKg} onChange={e => updateItem(idx, 'pricePerKg', e.target.value)} className={`${inputClass} text-right`} />
+                              <span className="text-gray-400 text-sm">{item.currency === 'USD' ? '$' : item.currency}</span>
+                              <input type="text" inputMode="decimal" value={Number(item.pricePerKg).toFixed(2)} onChange={e => updateItem(idx, 'pricePerKg', e.target.value)} className={`${inputClass} text-right`} />
                             </div>
                           </td>
-                          <td className="px-2 py-2 text-right font-medium text-gray-800" style={{ minWidth: 90 }}>
+                          <td className="px-2 py-2 text-right font-medium text-gray-800 whitespace-nowrap" style={{ minWidth: 100 }}>
                             ${Number(item.total).toFixed(2)}
                           </td>
                           <td className="px-2 py-2 text-center">
