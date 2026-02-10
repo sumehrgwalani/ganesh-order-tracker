@@ -242,13 +242,145 @@ serve(async (req) => {
       .select('order_id, company, supplier, product, current_stage')
       .eq('organization_id', organization_id)
 
-    const ordersList = (orders || []).map((o: any) => ({
+    let ordersList = (orders || []).map((o: any) => ({
       id: o.order_id,
       company: o.company,
       supplier: o.supplier,
       product: o.product,
       currentStage: o.current_stage,
     }))
+
+    // 11b) ONBOARDING MODE — if no orders exist, discover them from emails
+    let createdOrderCount = 0
+    if (ordersList.length === 0) {
+      console.log('Onboarding mode: no orders found, running discovery...')
+
+      const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
+Analyze these emails from the last few months and identify all distinct purchase orders you can find.
+
+EMAILS:
+${emails.map((e, i) => `
+--- Email ${i + 1} ---
+From: ${e.from_name} <${e.from_email}>
+To: ${e.to_email}
+Subject: ${e.subject}
+Date: ${e.date}
+Has Attachment: ${e.has_attachment}
+Body (first 2000 chars): ${e.body_text.substring(0, 2000)}
+`).join('\n')}
+
+For each distinct purchase order you can identify, extract:
+- po_number: The PO/reference number (look for patterns like "GI/PO/...", "PO-...", or any order reference number)
+- company: The buyer company name (the customer buying the goods)
+- supplier: The supplier/seller company name (the one producing/shipping the goods)
+- product: Main product being traded (e.g. "Frozen Shrimp PDTO", "Frozen Squid Rings")
+- from_location: Where the goods ship FROM (usually India, Vietnam, China, etc.)
+- current_stage: What stage this order has reached (1-8) based on the email evidence
+- stage_reasoning: Brief explanation of why you chose that stage
+
+STAGE DEFINITIONS:
+${STAGE_TRIGGERS}
+
+Stage 1 = Order Confirmed (PO exists/was sent)
+Stage 8 = DHL Shipped (DHL tracking number shared)
+
+RULES:
+- Only include orders where you found a clear PO number or order reference in the emails
+- If you can't determine the stage, default to 1
+- Each order should appear only once (deduplicate by PO number)
+- Ganesh International is usually the buyer/trading company — the supplier is the factory or producer
+- Return VALID JSON only, no markdown wrapping
+
+Return a JSON array:
+[{ "po_number": "...", "company": "...", "supplier": "...", "product": "...", "from_location": "...", "current_stage": 1, "stage_reasoning": "..." }]
+
+If no purchase orders can be identified, return an empty array: []`
+
+      try {
+        const discoveryRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-opus-4-5-20251101',
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: discoveryPrompt }],
+          }),
+        })
+        const discoveryData = await discoveryRes.json()
+        const discoveryText = discoveryData.content?.[0]?.text || '[]'
+        const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
+        const discoveredOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+
+        console.log(`Discovery found ${discoveredOrders.length} orders`)
+
+        // Create each discovered order in the database
+        for (const disc of discoveredOrders) {
+          if (!disc.po_number) continue
+
+          const { data: newOrder, error: createErr } = await supabase
+            .from('orders')
+            .insert({
+              organization_id,
+              order_id: disc.po_number,
+              po_number: disc.po_number,
+              company: disc.company || 'Unknown',
+              supplier: disc.supplier || 'Unknown',
+              product: disc.product || 'Unknown',
+              from_location: disc.from_location || 'India',
+              current_stage: disc.current_stage || 1,
+              order_date: new Date().toISOString().split('T')[0],
+              status: 'sent',
+              specs: '',
+              metadata: { created_by: 'onboarding_sync', stage_reasoning: disc.stage_reasoning || '' },
+            })
+            .select('id')
+            .single()
+
+          if (createErr) {
+            console.error(`Failed to create order ${disc.po_number}:`, createErr.message)
+            continue
+          }
+
+          createdOrderCount++
+
+          // Add history entry
+          if (newOrder) {
+            await supabase.from('order_history').insert({
+              order_id: newOrder.id,
+              organization_id,
+              stage: disc.current_stage || 1,
+              timestamp: new Date().toISOString(),
+              from_address: 'System (Onboarding Sync)',
+              subject: 'Order discovered from email history',
+              body: disc.stage_reasoning || `Order ${disc.po_number} discovered during onboarding sync`,
+            })
+          }
+        }
+
+        // Re-fetch orders so the matching prompt below has them
+        if (createdOrderCount > 0) {
+          const { data: freshOrders } = await supabase
+            .from('orders')
+            .select('order_id, company, supplier, product, current_stage')
+            .eq('organization_id', organization_id)
+
+          ordersList = (freshOrders || []).map((o: any) => ({
+            id: o.order_id,
+            company: o.company,
+            supplier: o.supplier,
+            product: o.product,
+            currentStage: o.current_stage,
+          }))
+        }
+      } catch (discErr: any) {
+        console.error('Onboarding discovery failed:', discErr.message)
+        // Continue with normal flow — emails still get stored even if discovery fails
+      }
+    }
 
     // 12) AI Analysis — send emails + orders to Claude for matching
     const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
@@ -417,6 +549,7 @@ Return a JSON array with one object per email:
       JSON.stringify({
         synced: storedEmails.length,
         advanced: advancedCount,
+        created: createdOrderCount,
         emails: storedEmails,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
