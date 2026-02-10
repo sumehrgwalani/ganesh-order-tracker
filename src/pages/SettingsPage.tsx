@@ -3,6 +3,8 @@ import Icon from '../components/Icon';
 import { useSettings } from '../hooks/useSettings';
 import { supabase } from '../lib/supabase';
 
+const GOOGLE_CLIENT_ID = '926394608211-jm7i99au8f6g3jkoobgusgnco312fcfl.apps.googleusercontent.com';
+
 interface SettingsPageProps {
   orgId: string | null;
   userRole: string;
@@ -238,7 +240,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
     setGmailConnecting(true);
     try {
-      const clientId = orgSettings?.gmail_client_id || gmailClientId;
+      const clientId = GOOGLE_CLIENT_ID;
       const redirectUri = window.location.origin + window.location.pathname;
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -267,34 +269,21 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   }, [handleGmailCallback]);
 
   const handleConnectGmail = async () => {
-    if (!gmailClientId.trim()) {
-      showStatus('error', 'Please enter your Google Client ID first');
-      return;
-    }
-
-    // Save client ID first
-    await updateOrgSettings({ gmail_client_id: gmailClientId });
+    // Save client ID to org settings
+    await updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
 
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(gmailClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    // Open in popup instead of redirecting
     window.open(authUrl, 'gmail-auth', 'width=500,height=600');
   };
 
   const handleUserConnectGmail = async () => {
-    const clientId = orgSettings?.gmail_client_id;
-    if (!clientId) {
-      showStatus('error', 'Admin has not configured Google Client ID yet');
-      return;
-    }
-
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    // Open in popup
     window.open(authUrl, 'gmail-auth', 'width=500,height=600');
   };
 
@@ -677,59 +666,16 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                 </div>
                 <p className="text-gray-600 mb-5">Link your Gmail account to start syncing emails and sending POs.</p>
                 <button
-                  onClick={orgSettings?.gmail_client_id ? handleUserConnectGmail : handleConnectGmail}
-                  disabled={gmailConnecting || (!orgSettings?.gmail_client_id && !gmailClientId.trim())}
+                  onClick={handleConnectGmail}
+                  disabled={gmailConnecting}
                   className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium text-base shadow-sm"
                 >
                   <Icon name="Mail" size={20} />
                   {gmailConnecting ? 'Connecting...' : 'Connect Gmail'}
                 </button>
-                {!orgSettings?.gmail_client_id && (
-                  <p className="text-xs text-amber-600 mt-3">Google Client ID not configured yet. Contact your admin or set it up below.</p>
-                )}
               </div>
             )}
 
-            {/* Admin: Client ID setup - only show if not configured or owner wants to change */}
-            {isOwner && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <details className={orgSettings?.gmail_client_id ? '' : 'open'}>
-                  <summary className="text-sm text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-                    {orgSettings?.gmail_client_id ? (
-                      <span className="flex items-center gap-1 inline"><Icon name="CheckCircle" size={14} className="text-green-500 inline" /> Google Client ID configured — click to change</span>
-                    ) : (
-                      <span>Set up Google Client ID (one-time setup)</span>
-                    )}
-                  </summary>
-                  <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Google OAuth Client ID</label>
-                      <input
-                        type="text"
-                        value={gmailClientId}
-                        onChange={(e) => setGmailClientId(e.target.value)}
-                        placeholder="xxxx.apps.googleusercontent.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">From Google Cloud Console → APIs & Services → Credentials</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        if (!gmailClientId.trim()) {
-                          showStatus('error', 'Please enter your Google Client ID');
-                          return;
-                        }
-                        await updateOrgSettings({ gmail_client_id: gmailClientId });
-                        showStatus('success', 'Google Client ID saved');
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                    >
-                      Save Client ID
-                    </button>
-                  </div>
-                </details>
-              </div>
-            )}
 
             {saveStatus && <p className={`text-sm flex items-center gap-1 mt-4 ${saveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}><Icon name={saveStatus.type === 'success' ? 'CheckCircle' : 'AlertCircle'} size={14} /> {saveStatus.message}</p>}
           </div>
