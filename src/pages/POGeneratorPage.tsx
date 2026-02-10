@@ -398,20 +398,32 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
       // --- Post-processing fixes ---
 
+      // Build reverse lookup: code → company name
+      const reverseCodes: Record<string, string> = {};
+      for (const [company, code] of Object.entries(BUYER_CODES)) {
+        reverseCodes[code.toLowerCase()] = company;
+      }
+
       // 1) Resolve buyer abbreviation (e.g. "EG" → "Pescados E Guillem")
       let resolvedBuyer = detectedBuyer || '';
       if (resolvedBuyer) {
-        const reverseCodes: Record<string, string> = {};
-        for (const [company, code] of Object.entries(BUYER_CODES)) {
-          reverseCodes[code.toLowerCase()] = company;
-        }
         const buyerLower = resolvedBuyer.toLowerCase().trim();
         if (reverseCodes[buyerLower]) {
           resolvedBuyer = reverseCodes[buyerLower];
         } else {
-          // Try matching as a substring or partial match against buyer list
           const partialMatch = buyersList.find(b => b.company.toLowerCase().includes(buyerLower));
           if (partialMatch) resolvedBuyer = partialMatch.company;
+        }
+      }
+
+      // Fallback: if AI didn't detect a buyer, scan raw text for known buyer codes
+      if (!resolvedBuyer) {
+        const words = text.split(/[\s,;]+/).map(w => w.trim().toLowerCase()).filter(Boolean);
+        for (const word of words) {
+          if (reverseCodes[word]) {
+            resolvedBuyer = reverseCodes[word];
+            break;
+          }
         }
       }
 
@@ -424,20 +436,48 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         : '';
 
       // 3) Fix each line item: default size, handle "plain carton" brand, apply default brand
-      const fixedItems = parsedItems.map((item: any) => {
+
+      // First: figure out which product index "plain carton" belongs to by scanning raw text
+      let plainCartonProductIndex = -1;
+      const textLower = text.toLowerCase();
+      if (textLower.includes('plain carton')) {
+        const plainPos = textLower.indexOf('plain carton');
+        // Find which parsed product name appears closest before "plain carton" in the raw text
+        let bestIdx = 0;
+        let bestPos = -1;
+        parsedItems.forEach((item: any, idx: number) => {
+          const prodName = (item.product || '').toLowerCase();
+          if (prodName) {
+            // Find the last occurrence of this product name before "plain carton"
+            const pos = textLower.lastIndexOf(prodName.substring(0, Math.min(prodName.length, 12)), plainPos);
+            if (pos !== -1 && pos < plainPos && pos > bestPos) {
+              bestPos = pos;
+              bestIdx = idx;
+            }
+          }
+        });
+        if (bestPos !== -1) plainCartonProductIndex = bestIdx;
+      }
+
+      const fixedItems = parsedItems.map((item: any, idx: number) => {
         // Default size to "Assorted" when not specified
         if (!item.size || item.size.trim() === '') {
           item.size = 'Assorted';
         }
 
-        // Detect "plain carton" in brand or packing and set as brand
-        const brandLower = (item.brand || '').toLowerCase();
-        const packingLower = (item.packing || '').toLowerCase();
-        if (brandLower.includes('plain carton') || packingLower.includes('plain carton')) {
+        // Detect "plain carton" in any field of this item
+        const allFields = [item.brand, item.packing, item.product].map(f => (f || '').toLowerCase());
+        const hasPlainCarton = allFields.some(f => f.includes('plain carton'));
+
+        // Also check if raw text analysis assigned "plain carton" to this product index
+        if (hasPlainCarton || idx === plainCartonProductIndex) {
           item.brand = 'Plain Carton';
-          // Clean "plain carton" out of packing if it was there
-          if (packingLower.includes('plain carton')) {
+          // Clean "plain carton" out of packing and product if it leaked there
+          if ((item.packing || '').toLowerCase().includes('plain carton')) {
             item.packing = item.packing.replace(/plain\s*carton/i, '').replace(/,\s*$/, '').trim();
+          }
+          if ((item.product || '').toLowerCase().includes('plain carton')) {
+            item.product = item.product.replace(/plain\s*carton/i, '').replace(/,\s*$/, '').trim();
           }
         }
 
