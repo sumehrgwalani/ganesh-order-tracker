@@ -28,17 +28,21 @@ function MailboxPage({ orgId }: Props) {
     if (!orgId) return;
     setLoading(true);
     try {
-      // Check Gmail connection
-      const { data: settings } = await supabase
-        .from('organization_settings')
+      // Check current user's Gmail connection
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data: member } = await supabase
+        .from('organization_members')
         .select('gmail_email, gmail_refresh_token, gmail_last_sync')
+        .eq('user_id', user.id)
         .eq('organization_id', orgId)
         .single();
 
-      if (settings?.gmail_email && settings?.gmail_refresh_token) {
+      if (member?.gmail_email && member?.gmail_refresh_token) {
         setGmailConnected(true);
-        setGmailEmail(settings.gmail_email);
-        setLastSync(settings.gmail_last_sync);
+        setGmailEmail(member.gmail_email);
+        setLastSync(member.gmail_last_sync);
       }
 
       // Fetch synced emails
@@ -73,8 +77,11 @@ function MailboxPage({ orgId }: Props) {
     setSyncing(true);
     setSyncResult(null);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase.functions.invoke('sync-emails', {
-        body: { organization_id: orgId },
+        body: { organization_id: orgId, user_id: user.id },
       });
 
       if (error) throw error;

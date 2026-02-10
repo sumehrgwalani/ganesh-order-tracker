@@ -12,10 +12,10 @@ serve(async (req) => {
   }
 
   try {
-    const { code, client_id, redirect_uri, organization_id } = await req.json()
+    const { code, client_id, redirect_uri, organization_id, user_id } = await req.json()
 
-    if (!code || !client_id || !redirect_uri || !organization_id) {
-      throw new Error('Missing required fields: code, client_id, redirect_uri, organization_id')
+    if (!code || !client_id || !redirect_uri || !organization_id || !user_id) {
+      throw new Error('Missing required fields: code, client_id, redirect_uri, organization_id, user_id')
     }
 
     // Exchange authorization code for tokens
@@ -49,18 +49,18 @@ serve(async (req) => {
     const profileData = await profileResponse.json()
     const gmailEmail = profileData.emailAddress
 
-    // Store refresh token and email in organization_settings
+    // Store refresh token and email in organization_members (per-user)
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     const { error: updateError } = await supabase
-      .from('organization_settings')
+      .from('organization_members')
       .update({
         gmail_refresh_token: refresh_token,
         gmail_email: gmailEmail,
-        gmail_client_id: client_id,
       })
+      .eq('user_id', user_id)
       .eq('organization_id', organization_id)
 
     if (updateError) {

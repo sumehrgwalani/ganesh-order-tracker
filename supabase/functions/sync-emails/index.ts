@@ -85,30 +85,42 @@ serve(async (req) => {
   }
 
   try {
-    const { organization_id } = await req.json()
-    if (!organization_id) throw new Error('Missing organization_id')
+    const { organization_id, user_id } = await req.json()
+    if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // 1) Get org settings (Gmail tokens)
-    const { data: settings, error: settingsError } = await supabase
-      .from('organization_settings')
-      .select('gmail_refresh_token, gmail_email, gmail_last_sync, gmail_client_id')
+    // 1) Get user's Gmail tokens from organization_members
+    const { data: member, error: memberError } = await supabase
+      .from('organization_members')
+      .select('gmail_refresh_token, gmail_email, gmail_last_sync')
+      .eq('user_id', user_id)
       .eq('organization_id', organization_id)
       .single()
 
-    if (settingsError || !settings?.gmail_refresh_token) {
+    if (memberError || !member?.gmail_refresh_token) {
       throw new Error('Gmail not connected. Please connect Gmail in Settings first.')
     }
 
-    // 2) Refresh the access token
+    // 2) Get org settings to retrieve client_id
+    const { data: settings, error: settingsError } = await supabase
+      .from('organization_settings')
+      .select('gmail_client_id')
+      .eq('organization_id', organization_id)
+      .single()
+
+    if (settingsError || !settings?.gmail_client_id) {
+      throw new Error('Google Client ID not configured. Please ask the admin to set it up.')
+    }
+
+    // 3) Refresh the access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        refresh_token: settings.gmail_refresh_token,
+        refresh_token: member.gmail_refresh_token,
         client_id: settings.gmail_client_id,
         grant_type: 'refresh_token',
       }),
@@ -117,14 +129,16 @@ serve(async (req) => {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
-    // 3) Build Gmail search query (emails since last sync, max 7 days back)
-    const lastSync = settings.gmail_last_sync
-      ? new Date(settings.gmail_last_sync)
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    // 4) Build Gmail search query
+    // On first sync (no last_sync), use 3-month lookback
+    // On subsequent syncs, use time since last sync
+    const lastSync = member.gmail_last_sync
+      ? new Date(member.gmail_last_sync)
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 
-    // 4) Fetch message list from Gmail
+    // 5) Fetch message list from Gmail
     const listRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -134,26 +148,27 @@ serve(async (req) => {
 
     if (messageIds.length === 0) {
       // Update last sync time even if no new emails
-      await supabase.from('organization_settings').update({ gmail_last_sync: new Date().toISOString() }).eq('organization_id', organization_id)
+      await supabase.from('organization_members').update({ gmail_last_sync: new Date().toISOString() }).eq('user_id', user_id).eq('organization_id', organization_id)
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 5) Check which emails we already have
+    // 6) Check which emails we already have
     const { data: existingEmails } = await supabase
       .from('synced_emails')
       .select('gmail_id')
       .eq('organization_id', organization_id)
+      .eq('connected_user_id', user_id)
       .in('gmail_id', messageIds)
 
     const existingIds = new Set((existingEmails || []).map((e: any) => e.gmail_id))
     const newMessageIds = messageIds.filter((id: string) => !existingIds.has(id))
 
     if (newMessageIds.length === 0) {
-      await supabase.from('organization_settings').update({ gmail_last_sync: new Date().toISOString() }).eq('organization_id', organization_id)
+      await supabase.from('organization_members').update({ gmail_last_sync: new Date().toISOString() }).eq('user_id', user_id).eq('organization_id', organization_id)
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 6) Fetch full content of new messages (limit to 20 per sync)
+    // 7) Fetch full content of new messages (limit to 20 per sync)
     const toFetch = newMessageIds.slice(0, 20)
     const emails: any[] = []
 
@@ -179,7 +194,7 @@ serve(async (req) => {
       })
     }
 
-    // 7) Get active orders for AI matching
+    // 8) Get active orders for AI matching
     const { data: orders } = await supabase
       .from('orders')
       .select('order_id, company, supplier, product, current_stage')
@@ -193,7 +208,7 @@ serve(async (req) => {
       currentStage: o.current_stage,
     }))
 
-    // 8) AI Analysis — send emails + orders to Claude for matching
+    // 9) AI Analysis — send emails + orders to Claude for matching
     const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
 
 ACTIVE ORDERS:
@@ -264,7 +279,7 @@ Return a JSON array with one object per email:
     // Build lookup from gmail_id to AI result
     const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
 
-    // 9) Store emails and process auto-advances
+    // 10) Store emails and process auto-advances
     const storedEmails: any[] = []
     let advancedCount = 0
 
@@ -322,7 +337,7 @@ Return a JSON array with one object per email:
         }
       }
 
-      // Store email in synced_emails
+      // Store email in synced_emails with connected_user_id
       const { data: inserted, error: insertError } = await supabase
         .from('synced_emails')
         .upsert({
@@ -339,6 +354,7 @@ Return a JSON array with one object per email:
           detected_stage: detectedStage,
           ai_summary: summary,
           auto_advanced: autoAdvanced,
+          connected_user_id: user_id,
         }, { onConflict: 'organization_id,gmail_id' })
         .select()
         .single()
@@ -348,10 +364,11 @@ Return a JSON array with one object per email:
       }
     }
 
-    // 10) Update last sync time
+    // 11) Update last sync time in organization_members (per-user)
     await supabase
-      .from('organization_settings')
+      .from('organization_members')
       .update({ gmail_last_sync: new Date().toISOString() })
+      .eq('user_id', user_id)
       .eq('organization_id', organization_id)
 
     return new Response(

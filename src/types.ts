@@ -168,6 +168,9 @@ export interface TeamMember {
   departments: Department[];          // multi-department support
   created_at: string;
   email?: string;          // from auth.users
+  gmail_refresh_token?: string | null;
+  gmail_email?: string | null;
+  gmail_last_sync?: string | null;
 }
 
 export interface Invitation {
@@ -202,6 +205,7 @@ export interface SyncedEmail {
   ai_summary: string | null;
   auto_advanced: boolean;
   created_at: string;
+  connected_user_id: string | null;
 }
 
 // ===== Settings Types =====

@@ -46,10 +46,13 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   // Email tab
   const [emailFormData, setEmailFormData] = useState({ provider: 'none', smtpHost: '', smtpPort: '', smtpUsername: '', smtpPassword: '', smtpFromEmail: '', smtpUseTls: false, sendgridKey: '', resendKey: '' });
 
-  // Gmail integration
+  // Gmail integration (admin: client ID setup, user: personal connection)
   const [gmailClientId, setGmailClientId] = useState('');
   const [gmailConnecting, setGmailConnecting] = useState(false);
   const [gmailDisconnecting, setGmailDisconnecting] = useState(false);
+  const [userGmailConnected, setUserGmailConnected] = useState(false);
+  const [userGmailEmail, setUserGmailEmail] = useState('');
+  const [userGmailLastSync, setUserGmailLastSync] = useState<string | null>(null);
 
   // Initialize form data when settings load
   useEffect(() => {
@@ -195,7 +198,35 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     }
   };
 
-  // Gmail OAuth: Listen for redirect callback
+  // Fetch current user's Gmail connection status
+  useEffect(() => {
+    const fetchUserGmailStatus = async () => {
+      if (!orgId) return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: member } = await supabase
+          .from('organization_members')
+          .select('gmail_email, gmail_last_sync')
+          .eq('user_id', user.id)
+          .eq('organization_id', orgId)
+          .single();
+
+        if (member) {
+          setUserGmailConnected(!!member.gmail_email);
+          setUserGmailEmail(member.gmail_email || '');
+          setUserGmailLastSync(member.gmail_last_sync);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user Gmail status:', err);
+      }
+    };
+
+    fetchUserGmailStatus();
+  }, [orgId]);
+
+  // Gmail OAuth: Listen for popup callback
   const handleGmailCallback = useCallback(async () => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
@@ -210,16 +241,20 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       const clientId = orgSettings?.gmail_client_id || gmailClientId;
       const redirectUri = window.location.origin + window.location.pathname;
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase.functions.invoke('gmail-auth', {
-        body: { code, client_id: clientId, redirect_uri: redirectUri, organization_id: orgId },
+        body: { code, client_id: clientId, redirect_uri: redirectUri, organization_id: orgId, user_id: user.id },
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
       showStatus('success', `Gmail connected: ${data.email}`);
-      // Refresh settings to show connected state
-      window.location.reload();
+      // Update user Gmail status
+      setUserGmailConnected(true);
+      setUserGmailEmail(data.email);
     } catch (err: any) {
       showStatus('error', `Gmail connection failed: ${err.message}`);
     } finally {
@@ -244,21 +279,49 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const scope = 'https://www.googleapis.com/auth/gmail.readonly';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(gmailClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    window.location.href = authUrl;
+    // Open in popup instead of redirecting
+    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
   };
 
-  const handleDisconnectGmail = async () => {
+  const handleUserConnectGmail = async () => {
+    const clientId = orgSettings?.gmail_client_id;
+    if (!clientId) {
+      showStatus('error', 'Admin has not configured Google Client ID yet');
+      return;
+    }
+
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scope = 'https://www.googleapis.com/auth/gmail.readonly';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
+
+    // Open in popup
+    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
+  };
+
+  const handleUserDisconnectGmail = async () => {
     if (!window.confirm('Disconnect Gmail? Email sync will stop working.')) return;
     setGmailDisconnecting(true);
     try {
-      await updateOrgSettings({
-        gmail_refresh_token: null,
-        gmail_email: null,
-        gmail_last_sync: null,
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('organization_members')
+        .update({
+          gmail_refresh_token: null,
+          gmail_email: null,
+          gmail_last_sync: null,
+        })
+        .eq('user_id', user.id)
+        .eq('organization_id', orgId);
+
+      if (error) throw error;
+
       showStatus('success', 'Gmail disconnected');
-      window.location.reload();
-    } catch {
+      setUserGmailConnected(false);
+      setUserGmailEmail('');
+      setUserGmailLastSync(null);
+    } catch (err: any) {
       showStatus('error', 'Failed to disconnect Gmail');
     } finally {
       setGmailDisconnecting(false);
@@ -589,65 +652,107 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
             {isOwner && (
               <>
-                {/* Gmail Integration Section */}
+                {/* Gmail Integration Section - Admin Setup */}
                 <div className="mb-8">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Gmail Inbox Integration</h3>
-                  <p className="text-sm text-gray-500 mb-4">Connect your Gmail to automatically sync emails and advance order stages.</p>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Gmail Setup</h3>
+                  <p className="text-sm text-gray-500 mb-4">Configure the Google OAuth Client ID. This is a one-time setup for your organization.</p>
 
-                  {orgSettings?.gmail_email ? (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                            <Icon name="Mail" size={20} className="text-green-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-green-800">Connected</p>
-                            <p className="text-sm text-green-600">{orgSettings.gmail_email}</p>
-                            {orgSettings.gmail_last_sync && (
-                              <p className="text-xs text-green-500 mt-0.5">Last synced: {new Date(orgSettings.gmail_last_sync).toLocaleString()}</p>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={handleDisconnectGmail}
-                          disabled={gmailDisconnecting}
-                          className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
-                        >
-                          {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                        </button>
-                      </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Google OAuth Client ID</label>
+                      <input
+                        type="text"
+                        value={gmailClientId}
+                        onChange={(e) => setGmailClientId(e.target.value)}
+                        placeholder="xxxx.apps.googleusercontent.com"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">From Google Cloud Console → APIs & Services → Credentials</p>
                     </div>
-                  ) : (
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Google OAuth Client ID</label>
-                        <input
-                          type="text"
-                          value={gmailClientId}
-                          onChange={(e) => setGmailClientId(e.target.value)}
-                          placeholder="xxxx.apps.googleusercontent.com"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">From Google Cloud Console → APIs & Services → Credentials</p>
-                      </div>
-                      <button
-                        onClick={handleConnectGmail}
-                        disabled={gmailConnecting || !gmailClientId.trim()}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
-                      >
-                        <Icon name="Mail" size={16} />
-                        {gmailConnecting ? 'Connecting...' : 'Connect Gmail'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-gray-200 pt-6 mb-6">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm text-blue-800">Email credentials are stored securely. The test email feature will be available soon.</p>
+                    <button
+                      onClick={async () => {
+                        if (!gmailClientId.trim()) {
+                          showStatus('error', 'Please enter your Google Client ID first');
+                          return;
+                        }
+                        await updateOrgSettings({ gmail_client_id: gmailClientId });
+                        showStatus('success', 'Google Client ID saved');
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                    >
+                      Save Client ID
+                    </button>
+                    {orgSettings?.gmail_client_id && (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        <Icon name="CheckCircle" size={14} /> Client ID configured
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                <div className="border-t border-gray-200 pt-6 mb-6" />
+              </>
+            )}
+
+            {/* Gmail Integration Section - User Connection (visible to all) */}
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Your Gmail Connection</h3>
+              <p className="text-sm text-gray-500 mb-4">Connect your personal Gmail account to sync and track emails.</p>
+
+              {userGmailConnected ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <Icon name="Mail" size={20} className="text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-green-800">Connected</p>
+                        <p className="text-sm text-green-600">{userGmailEmail}</p>
+                        {userGmailLastSync && (
+                          <p className="text-xs text-green-500 mt-0.5">Last synced: {new Date(userGmailLastSync).toLocaleString()}</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleUserDisconnectGmail}
+                      disabled={gmailDisconnecting}
+                      className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  {!orgSettings?.gmail_client_id ? (
+                    <div className="text-sm text-gray-600 mb-3">
+                      <p>Your organization admin needs to configure the Google Client ID first. Ask them to complete the setup in the "Gmail Setup" section above.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-3">Click the button below to connect your Gmail account.</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleUserConnectGmail}
+                    disabled={gmailConnecting || !orgSettings?.gmail_client_id}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+                  >
+                    <Icon name="Mail" size={16} />
+                    {gmailConnecting ? 'Connecting...' : 'Link Gmail'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isOwner && (
+              <>
+              <div className="border-t border-gray-200 pt-6 mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-blue-800">Email credentials are stored securely. The test email feature will be available soon.</p>
+                </div>
+              </div>
 
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Outbound Email Provider</h3>
                 <div className="space-y-3 mb-6">
