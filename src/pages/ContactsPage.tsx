@@ -267,6 +267,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
       country: contact.country || '',
       color: contact.color || 'bg-blue-500',
       initials: contact.initials,
+      default_brand: contact.default_brand || '',
     };
   };
 

@@ -96,7 +96,14 @@ export function useContacts(orgId: string | null) {
         .eq('email', email)
 
       if (updateError) throw updateError
-      // No refetch — ContactsPage handles optimistic UI update
+      // Also update local state so other pages (e.g. POGenerator) see the change
+      setContacts(prev => {
+        const existing = prev[email]
+        if (existing) {
+          return { ...prev, [email]: { ...existing, ...updates } }
+        }
+        return prev
+      })
     } catch (err: any) {
       setError(err.message)
       throw err
