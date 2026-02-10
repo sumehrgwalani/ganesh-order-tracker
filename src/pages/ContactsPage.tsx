@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
 import ContactImportModal from '../components/ContactImportModal';
 import CompanySettingsModal from '../components/CompanySettingsModal';
+import ComposeEmailModal from '../components/ComposeEmailModal';
 import PhoneIcon from '../components/PhoneIcon';
 import type { ContactFormData, ContactsMap } from '../types';
 
@@ -25,6 +26,7 @@ interface Contact {
 
 interface Props {
   dbContacts?: ContactsMap;
+  orgId?: string | null;
   onAddContact?: (formData: ContactFormData) => Promise<any>;
   onUpdateContact?: (email: string, updates: Partial<Contact>) => Promise<void>;
   onDeleteContact?: (email: string) => Promise<void>;
@@ -54,7 +56,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
-function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh, onUpdateContactsByCompany }: Props) {
+function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh, onUpdateContactsByCompany }: Props) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -63,6 +65,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
   const [showModal, setShowModal] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [emailTo, setEmailTo] = useState<string | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
   // Company settings modal state
   const [companySettingsFor, setCompanySettingsFor] = useState<string | null>(null);
@@ -521,6 +524,11 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                         </div>
                         {/* Col 3: Action buttons */}
                         <div className="flex gap-1 flex-shrink-0">
+                          {!isPlaceholderEmail(contact.email) && (
+                            <button onClick={() => setEmailTo(contact.email)} className="p-2 hover:bg-blue-50 rounded-lg" title="Send Email">
+                              <Icon name="Send" size={16} className="text-blue-400" />
+                            </button>
+                          )}
                           <button onClick={() => handleEditContact(contact)} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit">
                             <Icon name="Settings" size={16} className="text-gray-400" />
                           </button>
@@ -674,6 +682,15 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
           onClose={() => setShowImportModal(false)}
         />
       )}
+
+      {/* Compose Email Modal */}
+      <ComposeEmailModal
+        isOpen={!!emailTo}
+        onClose={() => setEmailTo(null)}
+        orgId={orgId || null}
+        contacts={dbContacts}
+        prefillTo={emailTo ? [emailTo] : undefined}
+      />
     </div>
   );
 }

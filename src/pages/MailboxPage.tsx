@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
+import ComposeEmailModal from '../components/ComposeEmailModal';
 import { getContactInfo } from '../utils/helpers';
 import { supabase } from '../lib/supabase';
 import { ORDER_STAGES } from '../data/constants';
-import type { SyncedEmail } from '../types';
+import type { SyncedEmail, ContactsMap } from '../types';
 
 interface Props {
   orgId: string | null;
@@ -22,6 +23,22 @@ function MailboxPage({ orgId }: Props) {
   const [gmailEmail, setGmailEmail] = useState<string>('');
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<{ synced: number; advanced: number } | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState<SyncedEmail | null>(null);
+  const [contacts, setContacts] = useState<ContactsMap>({});
+
+  // Fetch contacts for auto-complete
+  useEffect(() => {
+    if (!orgId) return;
+    supabase.from('contacts').select('*').eq('organization_id', orgId)
+      .then(({ data }) => {
+        const map: ContactsMap = {};
+        for (const c of (data || [])) {
+          map[c.email] = { name: c.name, company: c.company, role: c.role, initials: c.initials || '', color: c.color || 'bg-blue-500', phone: c.phone || '', address: c.address || '', notes: c.notes || '', country: c.country || '', default_brand: c.default_brand || '', default_packing: c.default_packing || '' };
+        }
+        setContacts(map);
+      });
+  }, [orgId]);
 
   // Fetch Gmail connection status + emails
   const fetchEmails = useCallback(async () => {
@@ -245,6 +262,13 @@ function MailboxPage({ orgId }: Props) {
               <h3 className="font-semibold text-gray-800">{folders.find(f => f.id === selectedFolder)?.name || 'All Mail'}</h3>
               <p className="text-xs text-gray-500">{filteredEmails.length} emails</p>
             </div>
+            <button
+              onClick={() => { setReplyTo(null); setComposeOpen(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              <Icon name="Edit" size={14} />
+              Compose
+            </button>
           </div>
           <div className="relative">
             <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
@@ -331,6 +355,13 @@ function MailboxPage({ orgId }: Props) {
                         )}
 
                         <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setReplyTo(email); setComposeOpen(true); }}
+                            className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700 flex items-center gap-1"
+                          >
+                            <Icon name="CornerUpLeft" size={12} />
+                            Reply
+                          </button>
                           {email.matched_order_id && (
                             <button
                               onClick={(e) => { e.stopPropagation(); navigate(`/orders/${email.matched_order_id}`); }}
@@ -361,6 +392,19 @@ function MailboxPage({ orgId }: Props) {
           )}
         </div>
       </div>
+
+      {/* Compose Email Modal */}
+      <ComposeEmailModal
+        isOpen={composeOpen}
+        onClose={() => { setComposeOpen(false); setReplyTo(null); }}
+        orgId={orgId}
+        contacts={contacts}
+        prefillTo={replyTo?.from_email ? [replyTo.from_email] : undefined}
+        prefillSubject={replyTo ? 'Re: ' + (replyTo.subject || '') : undefined}
+        prefillBody={replyTo ? '\n\n--- Original Message ---\nFrom: ' + (replyTo.from_name || replyTo.from_email) + '\nDate: ' + (replyTo.date ? new Date(replyTo.date).toLocaleString() : '') + '\n\n' + (replyTo.body_text || '').substring(0, 2000) : undefined}
+        inReplyToMessageId={replyTo?.gmail_id}
+        onSent={fetchEmails}
+      />
     </div>
   );
 }

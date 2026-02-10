@@ -2,15 +2,18 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
+import ComposeEmailModal from '../components/ComposeEmailModal';
 import { ORDER_STAGES, GI_LOGO_URL } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
-import type { Order, AttachmentEntry } from '../types';
+import type { Order, AttachmentEntry, ContactsMap } from '../types';
 import { getAttachmentName, getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface Props {
   orders: Order[];
+  orgId?: string | null;
+  contacts?: ContactsMap;
   onUpdateStage?: (orderId: string, newStage: number, oldStage?: number) => Promise<void>;
   onUpdateOrder?: (orderId: string, updates: Partial<Order>) => Promise<void>;
   onDeleteOrder?: (orderId: string) => Promise<void>;
@@ -22,7 +25,7 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
+function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
@@ -36,6 +39,8 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
   const [amendModal, setAmendModal] = useState(false);
   const [amendItems, setAmendItems] = useState<any[]>([]);
   const [amendSaving, setAmendSaving] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [poBlob, setPoBlob] = useState<Blob | null>(null);
 
   const order = orders.find(o => o.id === orderId);
 
@@ -110,6 +115,32 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
             >
               <Icon name="Edit" size={16} />
               Amend PO
+            </button>
+            <button
+              onClick={async () => {
+                // Generate PO blob if not already available
+                if (!poBlob) {
+                  try {
+                    const html = buildPOHtml();
+                    const blob = await (html2pdf() as any).set({
+                      margin: [4, 5, 4, 5],
+                      image: { type: 'jpeg', quality: 0.98 },
+                      html2canvas: { scale: 2, useCORS: true },
+                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+                    }).from(html, 'string').output('blob');
+                    const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                    setPoBlob(pdfBlob);
+                    setComposeOpen(true);
+                  } catch { setComposeOpen(true); }
+                } else {
+                  setComposeOpen(true);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm"
+            >
+              <Icon name="Send" size={16} />
+              Email PO
             </button>
           </div>
         );
@@ -531,7 +562,9 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
-      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      setPoBlob(pdfBlob);
+      const url = URL.createObjectURL(pdfBlob);
       setPdfModal(prev => ({ ...prev, url, loading: false }));
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
@@ -550,7 +583,9 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
-      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      setPoBlob(pdfBlob);
+      const url = URL.createObjectURL(pdfBlob);
       setPdfModal(prev => ({ ...prev, url, loading: false }));
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
@@ -1234,6 +1269,24 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
           </div>
         </div>
       )}
+
+      {/* Email PO Compose Modal */}
+      <ComposeEmailModal
+        isOpen={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        orgId={orgId || null}
+        contacts={contacts}
+        prefillTo={(() => {
+          if (!contacts || !order) return undefined;
+          // Find supplier email from contacts by company name
+          const supplierEmail = Object.entries(contacts).find(([_, c]) =>
+            c.company.toLowerCase() === order.supplier.toLowerCase() && c.role.toLowerCase().includes('supplier')
+          );
+          return supplierEmail ? [supplierEmail[0]] : undefined;
+        })()}
+        prefillSubject={'Purchase Order ' + (order?.id || '')}
+        attachmentBlobs={poBlob ? [{ filename: 'PO_' + (order?.id || '').replace(/\//g, '-') + '.pdf', blob: poBlob, mimeType: 'application/pdf' }] : undefined}
+      />
     </div>
   );
 }

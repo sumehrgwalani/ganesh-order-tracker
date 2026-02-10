@@ -276,7 +276,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     await updateOrgSettings({ gmail_client_id: gmailClientId });
 
     const redirectUri = window.location.origin + window.location.pathname;
-    const scope = 'https://www.googleapis.com/auth/gmail.readonly';
+    const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(gmailClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
     // Open in popup instead of redirecting
@@ -291,7 +291,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     }
 
     const redirectUri = window.location.origin + window.location.pathname;
-    const scope = 'https://www.googleapis.com/auth/gmail.readonly';
+    const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
     // Open in popup

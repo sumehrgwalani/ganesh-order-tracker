@@ -211,6 +211,8 @@ function App() {
             <Route path="/orders/:orderId" element={
               <OrderDetailPage
                 orders={orders}
+                orgId={orgId}
+                contacts={dbContacts}
                 onUpdateStage={handleUpdateStage}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}
@@ -245,6 +247,7 @@ function App() {
             <Route path="/contacts" element={
               <ContactsPage
                 dbContacts={dbContacts}
+                orgId={orgId}
                 onAddContact={addContact}
                 onUpdateContact={updateContact}
                 onUpdateContactsByCompany={updateContactsByCompany}

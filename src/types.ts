@@ -252,6 +252,22 @@ export interface UserPreferences {
   notify_new_inquiry: boolean | null;
 }
 
+// ===== Email Sending Types =====
+
+export interface EmailAttachment {
+  filename: string;
+  data: string;       // base64 encoded
+  mimeType: string;
+}
+
+export interface EmailDraft {
+  recipients: string[];
+  subject: string;
+  body: string;
+  attachments: EmailAttachment[];
+  inReplyToMessageId?: string;
+}
+
 // ===== Notification Types =====
 
 export interface AppNotification {
