@@ -88,7 +88,8 @@ function App() {
       // If opened as popup, send result to parent window and close
       if (window.opener) {
         window.opener.postMessage({ type: 'gmail-oauth-result', ...result }, window.location.origin);
-        window.close();
+        // Small delay so postMessage is received before popup closes
+        setTimeout(() => window.close(), 300);
       } else {
         // Fallback: store in sessionStorage and navigate
         sessionStorage.setItem('gmail-oauth-result', JSON.stringify(result));

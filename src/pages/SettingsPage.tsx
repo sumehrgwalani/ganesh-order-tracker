@@ -201,31 +201,41 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   };
 
   // Fetch current user's Gmail connection status
-  useEffect(() => {
-    const fetchUserGmailStatus = async () => {
-      if (!orgId) return;
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+  const fetchUserGmailStatus = async () => {
+    if (!orgId) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-        const { data: member } = await supabase
-          .from('organization_members')
-          .select('gmail_email, gmail_last_sync')
-          .eq('user_id', user.id)
-          .eq('organization_id', orgId)
-          .single();
+      const { data: member, error: memberError } = await supabase
+        .from('organization_members')
+        .select('gmail_email, gmail_last_sync')
+        .eq('user_id', user.id)
+        .eq('organization_id', orgId)
+        .maybeSingle();
 
-        if (member) {
-          setUserGmailConnected(!!member.gmail_email);
-          setUserGmailEmail(member.gmail_email || '');
-          setUserGmailLastSync(member.gmail_last_sync);
-        }
-      } catch (err) {
-        console.error('Failed to fetch user Gmail status:', err);
+      if (memberError) {
+        console.error('Gmail status query error:', memberError);
+        return;
       }
-    };
 
+      if (member) {
+        setUserGmailConnected(!!member.gmail_email);
+        setUserGmailEmail(member.gmail_email || '');
+        setUserGmailLastSync(member.gmail_last_sync);
+      }
+    } catch (err) {
+      console.error('Failed to fetch user Gmail status:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchUserGmailStatus();
+
+    // Re-fetch when window regains focus (catches popup completion)
+    const handleFocus = () => fetchUserGmailStatus();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [orgId]);
 
   // Listen for Gmail OAuth result from popup window
@@ -280,6 +290,12 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     if (popup) {
       // Redirect the already-opened popup to Google's auth page
       popup.location.href = authUrl;
+      // Safety timeout: if popup communication fails, reset after 2 min
+      // and re-check Gmail status from the database
+      setTimeout(() => {
+        setGmailConnecting(false);
+        fetchUserGmailStatus();
+      }, 120000);
     } else {
       // Popup was blocked — fall back to same-window redirect
       setGmailConnecting(false);
