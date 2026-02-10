@@ -228,8 +228,9 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     fetchUserGmailStatus();
   }, [orgId]);
 
-  // Check if we just came back from a successful Gmail OAuth
+  // Listen for Gmail OAuth result from popup window
   useEffect(() => {
+    // Check sessionStorage first (fallback for non-popup flow)
     const gmailResult = sessionStorage.getItem('gmail-oauth-result');
     if (gmailResult) {
       sessionStorage.removeItem('gmail-oauth-result');
@@ -244,18 +245,35 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
         }
       } catch {}
     }
+
+    // Listen for postMessage from popup
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'gmail-oauth-result') return;
+
+      setGmailConnecting(false);
+      if (event.data.success) {
+        showStatus('success', `Gmail connected: ${event.data.email}`);
+        setUserGmailConnected(true);
+        setUserGmailEmail(event.data.email);
+      } else {
+        showStatus('error', `Gmail connection failed: ${event.data.error}`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   const handleConnectGmail = async () => {
-    // Save client ID to org settings
     await updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
+    setGmailConnecting(true);
 
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    // Redirect to Google (not popup) so the callback works reliably
-    window.location.href = authUrl;
+    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
   };
 
   const handleUserDisconnectGmail = async () => {

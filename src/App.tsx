@@ -46,6 +46,7 @@ function App() {
   const headerBellRef = useRef<(() => void) | null>(null);
 
   // Handle Gmail OAuth callback (when Google redirects back with ?code=xxx&state=gmail-oauth)
+  // This runs in the popup window after Google redirects back
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
@@ -56,6 +57,7 @@ function App() {
     window.history.replaceState({}, '', window.location.pathname + '#/settings');
 
     const handleOAuthCallback = async () => {
+      let result: any;
       try {
         const redirectUri = window.location.origin + window.location.pathname;
         const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -68,13 +70,20 @@ function App() {
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
 
-        // Store result for SettingsPage to pick up
-        sessionStorage.setItem('gmail-oauth-result', JSON.stringify({ success: true, email: data.email }));
+        result = { success: true, email: data.email };
       } catch (err: any) {
-        sessionStorage.setItem('gmail-oauth-result', JSON.stringify({ success: false, error: err.message }));
+        result = { success: false, error: err.message };
       }
-      // Navigate to settings page
-      navigate('/settings');
+
+      // If opened as popup, send result to parent window and close
+      if (window.opener) {
+        window.opener.postMessage({ type: 'gmail-oauth-result', ...result }, window.location.origin);
+        window.close();
+      } else {
+        // Fallback: store in sessionStorage and navigate
+        sessionStorage.setItem('gmail-oauth-result', JSON.stringify(result));
+        navigate('/settings');
+      }
     };
 
     handleOAuthCallback();
