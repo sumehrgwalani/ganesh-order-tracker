@@ -442,21 +442,22 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       const textLower = text.toLowerCase();
       if (textLower.includes('plain carton')) {
         const plainPos = textLower.indexOf('plain carton');
-        // Find which parsed product name appears closest before "plain carton" in the raw text
+        // Extract keywords from each product name (words 4+ chars, skip "frozen")
         let bestIdx = 0;
         let bestPos = -1;
         parsedItems.forEach((item: any, idx: number) => {
           const prodName = (item.product || '').toLowerCase();
-          if (prodName) {
-            // Find the last occurrence of this product name before "plain carton"
-            const pos = textLower.lastIndexOf(prodName.substring(0, Math.min(prodName.length, 12)), plainPos);
+          const keywords = prodName.split(/\s+/).filter((w: string) => w.length >= 4 && w !== 'frozen');
+          for (const kw of keywords) {
+            const pos = textLower.lastIndexOf(kw, plainPos);
             if (pos !== -1 && pos < plainPos && pos > bestPos) {
               bestPos = pos;
               bestIdx = idx;
             }
           }
         });
-        if (bestPos !== -1) plainCartonProductIndex = bestIdx;
+        // Fallback: if no keyword match, assign to first product (plain carton usually near top)
+        plainCartonProductIndex = bestPos !== -1 ? bestIdx : 0;
       }
 
       const fixedItems = parsedItems.map((item: any, idx: number) => {
