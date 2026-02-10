@@ -434,6 +434,9 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       const buyerDefaultBrand = matchedBuyerContact
         ? (contacts[matchedBuyerContact.email]?.default_brand || '')
         : '';
+      const buyerDefaultPacking = matchedBuyerContact
+        ? (contacts[matchedBuyerContact.email]?.default_packing || '')
+        : '';
 
       // 3) Fix each line item: default size, handle "plain carton" brand, apply default brand
 
@@ -485,6 +488,17 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         // If no brand specified, use buyer's default brand
         if (!item.brand || item.brand.trim() === '') {
           item.brand = buyerDefaultBrand;
+        }
+
+        // Apply buyer's packing preference for 1kg bag items
+        if (buyerDefaultPacking && item.packing) {
+          const packingStr = item.packing as string;
+          // Match patterns like "6x1 KG", "6 X 1 KG", "10x1kg" etc.
+          const bagMatch = packingStr.match(/^(\d+\s*[xX]\s*1\s*[kK][gG])\s*(.*)/);
+          if (bagMatch) {
+            // Replace bag type with buyer's preference: e.g. "6 X 1 KG Bag" → "6 X 1 KG Printed Bag"
+            item.packing = bagMatch[1] + ' ' + buyerDefaultPacking;
+          }
         }
 
         return item;

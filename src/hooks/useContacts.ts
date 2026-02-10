@@ -37,6 +37,7 @@ export function useContacts(orgId: string | null) {
           notes: row.notes || '',
           country: row.country || '',
           default_brand: row.default_brand || '',
+          default_packing: row.default_packing || '',
         }
       }
       setContacts(map)
@@ -73,6 +74,7 @@ export function useContacts(orgId: string | null) {
           color: formData.color || 'bg-gray-500',
           notes: '',
           default_brand: formData.default_brand || '',
+          default_packing: formData.default_packing || '',
         })
         .select()
         .single()

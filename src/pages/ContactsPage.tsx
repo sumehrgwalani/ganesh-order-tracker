@@ -275,18 +275,18 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
     };
   };
 
-  const handleSaveCompanyBrand = async (brand: string) => {
+  const handleSaveCompanySettings = async (brand: string, packing: string) => {
     if (!companySettingsFor) return;
     // Optimistic local update
     setContacts(prev =>
-      prev.map(c => c.company === companySettingsFor ? { ...c, default_brand: brand } : c)
+      prev.map(c => c.company === companySettingsFor ? { ...c, default_brand: brand, default_packing: packing } : c)
     );
     // Persist to DB
     if (onUpdateContactsByCompany) {
       try {
-        await onUpdateContactsByCompany(companySettingsFor, { default_brand: brand });
+        await onUpdateContactsByCompany(companySettingsFor, { default_brand: brand, default_packing: packing });
       } catch (err) {
-        console.error('Failed to save company brand:', err);
+        console.error('Failed to save company settings:', err);
       }
     }
     setCompanySettingsFor(null);
@@ -470,6 +470,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                       <p className="text-sm text-gray-500">
                         {companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}
                         {companyContacts[0]?.default_brand && <span className="ml-2 text-blue-500">· {companyContacts[0].default_brand}</span>}
+                        {companyContacts[0]?.default_packing && <span className="ml-2 text-green-500">· {companyContacts[0].default_packing}</span>}
                       </p>
                     </div>
                   </div>
@@ -629,7 +630,8 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
         <CompanySettingsModal
           company={companySettingsFor}
           defaultBrand={contacts.find(c => c.company === companySettingsFor)?.default_brand || ''}
-          onSave={handleSaveCompanyBrand}
+          defaultPacking={contacts.find(c => c.company === companySettingsFor)?.default_packing || ''}
+          onSave={handleSaveCompanySettings}
           onClose={() => setCompanySettingsFor(null)}
         />
       )}

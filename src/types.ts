@@ -11,6 +11,7 @@ export interface Contact {
   notes: string;
   country: string;
   default_brand: string;
+  default_packing: string;
 }
 
 export interface ContactFormData {
@@ -25,6 +26,7 @@ export interface ContactFormData {
   country?: string;
   initials?: string;
   default_brand?: string;
+  default_packing?: string;
 }
 
 export type ContactsMap = Record<string, Contact>;
