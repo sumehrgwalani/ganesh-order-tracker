@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
@@ -80,6 +80,9 @@ interface Notification {
 
 function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
+  const isAmendment = !!amendmentOrder;
 
   // Get next PO number for a specific buyer
   const getNextPONumber = (buyerName = '') => {
@@ -193,6 +196,63 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     const saved = localStorage.getItem('gi_signature');
     if (saved) setSignatureData(saved);
   }, []);
+
+  // Pre-fill form when amending an existing PO
+  useEffect(() => {
+    if (!amendmentOrder) return;
+    // Extract metadata from the PO attachment
+    const stage1 = amendmentOrder.history?.find((h: any) => h.stage === 1 && h.attachments?.length);
+    const meta = stage1?.attachments?.[0]?.meta || (typeof stage1?.attachments?.[0] === 'object' ? stage1.attachments[0] : null);
+    const m = (meta && typeof meta === 'object' && 'supplier' in meta) ? meta as Record<string, any> : null;
+
+    setPOData({
+      poNumber: amendmentOrder.id || '',
+      date: m?.date || amendmentOrder.date || new Date().toISOString().split('T')[0],
+      supplier: m?.supplier || amendmentOrder.supplier || '',
+      supplierEmail: m?.supplierEmail || '',
+      supplierAddress: m?.supplierAddress || '',
+      supplierCountry: m?.supplierCountry || 'India',
+      product: m?.product || amendmentOrder.product || '',
+      brand: amendmentOrder.brand || '',
+      buyer: m?.buyer || amendmentOrder.company || '',
+      buyerCode: '',
+      destination: m?.destination || amendmentOrder.to || '',
+      deliveryTerms: m?.deliveryTerms || 'CFR',
+      commission: m?.commission || 'USD 0.05 per Kg',
+      overseasCommission: m?.overseasCommission || '',
+      overseasCommissionCompany: m?.overseasCommissionCompany || '',
+      payment: m?.payment || '',
+      packing: '',
+      deliveryDate: m?.deliveryDate || '',
+      loteNumber: m?.loteNumber || '',
+      shippingMarks: m?.shippingMarks || '',
+      buyerBank: m?.buyerBank || '',
+      notes: '',
+    });
+
+    // Pre-fill line items
+    const existingItems = amendmentOrder.lineItems || m?.lineItems || [];
+    if (existingItems.length > 0) {
+      setLineItems(existingItems.map((li: any) => ({
+        product: li.product || '',
+        size: li.size || '',
+        glaze: li.glaze || '',
+        glazeMarked: li.glazeMarked || '',
+        packing: li.packing || '',
+        brand: li.brand || '',
+        freezing: li.freezing || '',
+        cases: li.cases || '',
+        kilos: li.kilos || '',
+        pricePerKg: li.pricePerKg || '',
+        currency: li.currency || 'USD',
+        total: li.total || 0,
+      })));
+    }
+
+    // Disable bulk mode and parser for amendments
+    setBulkCreate(false);
+    setShowParser(false);
+  }, []); // Run once on mount
 
   // Signature drawing helpers
   const initCanvas = () => {
@@ -751,7 +811,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     ? getCurrentBulkPONumber(bulkPreviewIndex)
     : poData.poNumber;
 
-  // Send PO to supplier (supports bulk creation)
+  // Send PO to supplier (supports bulk creation and amendments)
   const sendPO = async () => {
     // Step 1: Capture PDF blob from the live preview BEFORE any state changes
     let pdfBlob: Blob | null = null;
@@ -771,6 +831,88 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       }
     }
 
+    // ── Amendment flow ──────────────────────────────────────────────
+    if (isAmendment && amendmentOrder) {
+      const pdfUrl = primaryPdfUrl;
+      const updatedOrder: Order = {
+        ...amendmentOrder,
+        company: poData.buyer,
+        product: poData.product || lineItems.map(li => li.product).filter(p => p).join(', '),
+        specs: lineItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(s => s).join(', '),
+        to: poData.destination || poData.buyerBank || amendmentOrder.to,
+        supplier: poData.supplier.split(' - ')[0] || poData.supplier,
+        brand: poData.brand || amendmentOrder.brand,
+        totalValue: grandTotal,
+        totalKilos: totalKilos,
+        lineItems: lineItems,
+        metadata: { pdfUrl },
+        history: [
+          ...(amendmentOrder.history || []),
+          {
+            stage: 1,
+            timestamp: new Date().toISOString(),
+            from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+            to: sendTo || poData.supplierEmail,
+            subject: `AMENDED PO ${poData.poNumber}`,
+            body: `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
+            hasAttachment: true,
+            attachments: [{
+              name: `${poData.poNumber.replace(/\//g, '_')}.pdf`,
+              meta: {
+                pdfUrl,
+                supplier: poData.supplier,
+                supplierAddress: poData.supplierAddress || '',
+                supplierCountry: poData.supplierCountry || 'India',
+                buyer: poData.buyer,
+                buyerBank: poData.buyerBank || '',
+                destination: poData.destination || '',
+                deliveryTerms: poData.deliveryTerms || '',
+                deliveryDate: poData.deliveryDate || '',
+                commission: poData.commission || '',
+                overseasCommission: poData.overseasCommission || '',
+                overseasCommissionCompany: poData.overseasCommissionCompany || '',
+                payment: poData.payment || '',
+                shippingMarks: poData.shippingMarks || '',
+                loteNumber: poData.loteNumber || '',
+                date: poData.date,
+                product: poData.product || '',
+                totalCases: totalCases,
+                totalKilos: totalKilos,
+                grandTotal: grandTotal,
+                lineItems: lineItems.map(li => ({
+                  product: li.product, brand: li.brand || '', freezing: li.freezing || '',
+                  size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
+                  packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
+                  pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
+                })),
+              }
+            }]
+          }
+        ]
+      };
+
+      setStatus('sent');
+      setNotification({ type: 'success', message: `Purchase Order ${poData.poNumber} amended successfully!` });
+
+      if (onOrderCreated) {
+        onOrderCreated(updatedOrder);
+      }
+
+      // Upload updated PDF
+      if (pdfBlob) {
+        try {
+          await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, {
+            contentType: 'application/pdf',
+            upsert: true,
+          });
+        } catch {
+          // PDF storage upload failed silently
+        }
+      }
+      return;
+    }
+
+    // ── New PO flow (original) ──────────────────────────────────────
     // Step 2: Build order objects
     const count = bulkCreate ? bulkCount : 1;
     const newOrders: Order[] = [];
@@ -923,10 +1065,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-800">
-              {showPreview ? 'Review Purchase Order' : 'Create Purchase Order'}
+              {showPreview ? 'Review Purchase Order' : isAmendment ? 'Amend Purchase Order' : 'Create Purchase Order'}
             </h1>
             <p className="text-gray-500">
-              {showPreview ? 'Review and approve before sending' : 'Generate and send PO to supplier'}
+              {showPreview ? 'Review and approve before sending' : isAmendment ? `Editing ${amendmentOrder?.id} — changes will update the existing order` : 'Generate and send PO to supplier'}
             </p>
           </div>
         </div>
@@ -1463,7 +1605,7 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
-                  <input type="text" value={poData.poNumber} onChange={(e) => setPOData({...poData, poNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  <input type="text" value={poData.poNumber} onChange={(e) => setPOData({...poData, poNumber: e.target.value})} readOnly={isAmendment} className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isAmendment ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>

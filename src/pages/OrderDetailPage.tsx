@@ -75,13 +75,20 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
     switch (sectionId) {
       case 'purchaseOrder':
         return (
-          <div>
+          <div className="flex items-center gap-3">
             <button
               onClick={previewPOasPDF}
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
             >
               <Icon name="FileText" size={16} />
               View Purchase Order as PDF
+            </button>
+            <button
+              onClick={() => navigate('/create-po', { state: { amendmentOrder: order } })}
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
+            >
+              <Icon name="Edit" size={16} />
+              Amend PO
             </button>
           </div>
         );

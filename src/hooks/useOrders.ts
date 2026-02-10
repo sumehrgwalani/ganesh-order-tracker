@@ -230,7 +230,7 @@ export function useOrders(orgId: string | null) {
     }
   }
 
-  // ── Update Order Details (full edit) ──────────────────────────────────
+  // ── Update Order Details (full edit, supports amendment with line items) ──
   const updateOrder = async (orderId: string, updates: Partial<Order>) => {
     if (!orgId) return
     try {
@@ -248,14 +248,77 @@ export function useOrders(orgId: string | null) {
       if (updates.totalValue !== undefined) dbUpdates.total_value = updates.totalValue || null
       if (updates.totalKilos !== undefined) dbUpdates.total_kilos = updates.totalKilos || null
       if (updates.artworkStatus !== undefined) dbUpdates.artwork_status = updates.artworkStatus || null
+      if (updates.metadata !== undefined) dbUpdates.metadata = updates.metadata || {}
+
+      // Look up the DB UUID for this order
+      const { data: orderRow, error: lookupError } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('organization_id', orgId)
+        .eq('order_id', orderId)
+        .single()
+
+      if (lookupError) throw lookupError
 
       const { error: updateError } = await supabase
         .from('orders')
         .update(dbUpdates)
-        .eq('organization_id', orgId)
-        .eq('order_id', orderId)
+        .eq('id', orderRow.id)
 
       if (updateError) throw updateError
+
+      // Replace line items if provided (amendment flow)
+      if (updates.lineItems && updates.lineItems.length > 0) {
+        // Delete existing line items
+        await supabase
+          .from('order_line_items')
+          .delete()
+          .eq('order_id', orderRow.id)
+
+        // Insert new line items
+        const lineItemRows = updates.lineItems.map((item: any, idx: number) => ({
+          order_id: orderRow.id,
+          product: String(item.product || ''),
+          brand: String(item.brand || ''),
+          freezing: String(item.freezing || ''),
+          size: String(item.size || ''),
+          glaze: String(item.glaze || ''),
+          glaze_marked: String(item.glazeMarked || ''),
+          packing: String(item.packing || ''),
+          cases: parseInt(String(item.cases)) || 0,
+          kilos: parseFloat(String(item.kilos)) || 0,
+          price_per_kg: parseFloat(String(item.pricePerKg)) || 0,
+          currency: String(item.currency || 'USD'),
+          total: parseFloat(String(item.total)) || 0,
+          sort_order: idx,
+        }))
+        await supabase.from('order_line_items').insert(lineItemRows)
+      }
+
+      // Insert new history entries if provided (amendment audit trail)
+      if (updates.history && updates.history.length > 0) {
+        // Only insert entries that don't already exist (new amendment entries)
+        // We identify new entries by checking for "AMENDED" in subject
+        const newEntries = updates.history.filter((h: any) =>
+          h.subject?.includes('AMENDED') &&
+          h.timestamp && new Date(h.timestamp).getTime() > Date.now() - 60000
+        )
+        if (newEntries.length > 0) {
+          const historyRows = newEntries.map((h: any) => ({
+            order_id: orderRow.id,
+            stage: h.stage,
+            timestamp: h.timestamp,
+            from_address: h.from || 'System',
+            to_address: h.to || null,
+            subject: h.subject,
+            body: h.body || '',
+            has_attachment: h.hasAttachment || false,
+            attachments: h.attachments || null,
+          }))
+          await supabase.from('order_history').insert(historyRows)
+        }
+      }
+
       await fetchOrders()
     } catch (err: any) {
       setError(err.message)

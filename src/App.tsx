@@ -230,7 +230,11 @@ function App() {
                 orders={orders}
                 setOrders={setOrders}
                 onOrderCreated={(newOrder) => {
-                  if (orgId && createOrder) {
+                  const isExisting = orders.some(o => o.id === newOrder.id);
+                  if (isExisting && orgId && updateOrder) {
+                    // Amendment: update existing order
+                    updateOrder(newOrder.id, newOrder).catch(() => showToast('Failed to update order', 'error'));
+                  } else if (orgId && createOrder) {
                     createOrder(newOrder).catch(() => showToast('Failed to save order', 'error'));
                   }
                   navigate('/orders/' + encodeURIComponent(newOrder.id));
