@@ -153,6 +153,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
         color: contactData.color || editingContact.color,
         initials,
         category,
+        default_brand: contactData.default_brand || '',
       };
       setContacts(prev => prev.map(c => c.id === editingContact.id ? updated : c));
 
@@ -170,6 +171,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
           country: contactData.country || '',
           color: contactData.color,
           initials,
+          default_brand: contactData.default_brand || '',
         }).catch(err => console.error('Failed to save contact:', err));
       }
     } else {
@@ -186,6 +188,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
         category,
         color: contactData.color || 'bg-blue-500',
         initials,
+        default_brand: contactData.default_brand || '',
       };
       setContacts(prev => [...prev, newContact]);
 
