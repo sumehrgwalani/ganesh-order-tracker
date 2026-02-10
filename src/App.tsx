@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Order, Stats, AppNotification } from './types';
 import Sidebar from './layout/Sidebar';
@@ -21,6 +21,9 @@ import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
 import { useNotifications } from './hooks/useNotifications';
 import { useToast } from './components/Toast';
+import { supabase } from './lib/supabase';
+
+const GOOGLE_CLIENT_ID = '926394608211-jm7i99au8f6g3jkoobgusgnco312fcfl.apps.googleusercontent.com';
 
 function App() {
   const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
@@ -41,6 +44,41 @@ function App() {
 
   // Ref to programmatically scroll to top / trigger header bell
   const headerBellRef = useRef<(() => void) | null>(null);
+
+  // Handle Gmail OAuth callback (when Google redirects back with ?code=xxx&state=gmail-oauth)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    if (!code || state !== 'gmail-oauth' || !orgId) return;
+
+    // Clean the URL immediately
+    window.history.replaceState({}, '', window.location.pathname + '#/settings');
+
+    const handleOAuthCallback = async () => {
+      try {
+        const redirectUri = window.location.origin + window.location.pathname;
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) throw new Error('Not authenticated');
+
+        const { data, error } = await supabase.functions.invoke('gmail-auth', {
+          body: { code, client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri, organization_id: orgId, user_id: authUser.id },
+        });
+
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+
+        // Store result for SettingsPage to pick up
+        sessionStorage.setItem('gmail-oauth-result', JSON.stringify({ success: true, email: data.email }));
+      } catch (err: any) {
+        sessionStorage.setItem('gmail-oauth-result', JSON.stringify({ success: false, error: err.message }));
+      }
+      // Navigate to settings page
+      navigate('/settings');
+    };
+
+    handleOAuthCallback();
+  }, [orgId]);
 
   const contacts = dbContacts;
   const orders = dbOrders;

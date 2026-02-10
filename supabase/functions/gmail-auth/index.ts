@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io'
+const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -79,6 +80,7 @@ serve(async (req) => {
       body: new URLSearchParams({
         code,
         client_id,
+        client_secret: GOOGLE_CLIENT_SECRET,
         redirect_uri,
         grant_type: 'authorization_code',
       }),

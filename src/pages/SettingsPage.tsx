@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 import { useSettings } from '../hooks/useSettings';
 import { supabase } from '../lib/supabase';
@@ -228,45 +228,23 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     fetchUserGmailStatus();
   }, [orgId]);
 
-  // Gmail OAuth: Listen for popup callback
-  const handleGmailCallback = useCallback(async () => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (!code || state !== 'gmail-oauth') return;
-
-    // Clean URL
-    window.history.replaceState({}, '', window.location.pathname + window.location.hash);
-
-    setGmailConnecting(true);
-    try {
-      const clientId = GOOGLE_CLIENT_ID;
-      const redirectUri = window.location.origin + window.location.pathname;
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { data, error } = await supabase.functions.invoke('gmail-auth', {
-        body: { code, client_id: clientId, redirect_uri: redirectUri, organization_id: orgId, user_id: user.id },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      showStatus('success', `Gmail connected: ${data.email}`);
-      // Update user Gmail status
-      setUserGmailConnected(true);
-      setUserGmailEmail(data.email);
-    } catch (err: any) {
-      showStatus('error', `Gmail connection failed: ${err.message}`);
-    } finally {
-      setGmailConnecting(false);
-    }
-  }, [orgSettings, gmailClientId, orgId]);
-
+  // Check if we just came back from a successful Gmail OAuth
   useEffect(() => {
-    handleGmailCallback();
-  }, [handleGmailCallback]);
+    const gmailResult = sessionStorage.getItem('gmail-oauth-result');
+    if (gmailResult) {
+      sessionStorage.removeItem('gmail-oauth-result');
+      try {
+        const result = JSON.parse(gmailResult);
+        if (result.success) {
+          showStatus('success', `Gmail connected: ${result.email}`);
+          setUserGmailConnected(true);
+          setUserGmailEmail(result.email);
+        } else {
+          showStatus('error', `Gmail connection failed: ${result.error}`);
+        }
+      } catch {}
+    }
+  }, []);
 
   const handleConnectGmail = async () => {
     // Save client ID to org settings
@@ -276,15 +254,8 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
 
-    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
-  };
-
-  const handleUserConnectGmail = async () => {
-    const redirectUri = window.location.origin + window.location.pathname;
-    const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
-
-    window.open(authUrl, 'gmail-auth', 'width=500,height=600');
+    // Redirect to Google (not popup) so the callback works reliably
+    window.location.href = authUrl;
   };
 
   const handleUserDisconnectGmail = async () => {
