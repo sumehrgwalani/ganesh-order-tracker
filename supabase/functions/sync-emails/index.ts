@@ -172,11 +172,11 @@ serve(async (req) => {
     const accessToken = tokenData.access_token
 
     // 7) Build Gmail search query
-    // On first sync (no last_sync), use 3-month lookback
+    // On first sync (no last_sync), use 2-month lookback
     // On subsequent syncs, use time since last sync
     const lastSync = member.gmail_last_sync
       ? new Date(member.gmail_last_sync)
-      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 
