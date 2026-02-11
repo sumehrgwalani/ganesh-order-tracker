@@ -171,7 +171,17 @@ serve(async (req) => {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
-    // 7) Build Gmail search query
+    // 7) Check if this is an onboarding sync (no orders yet) to set email limits
+    const { count: orderCount } = await supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', organization_id)
+    const isOnboarding = (orderCount || 0) === 0
+    const gmailMaxResults = isOnboarding ? 500 : 50
+    const emailProcessLimit = isOnboarding ? 500 : 20
+    console.log(`Sync mode: ${isOnboarding ? 'ONBOARDING (limit 500)' : 'DAILY (limit 20)'}`)
+
+    // 8) Build Gmail search query
     // On first sync (no last_sync), use 2-month lookback
     // On subsequent syncs, use time since last sync
     const lastSync = member.gmail_last_sync
@@ -180,13 +190,20 @@ serve(async (req) => {
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 
-    // 8) Fetch message list from Gmail
-    const listRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    const listData = await listRes.json()
-    const messageIds = (listData.messages || []).map((m: any) => m.id)
+    // 9) Fetch message list from Gmail (paginate for onboarding to get up to 500)
+    let messageIds: string[] = []
+    let pageToken: string | undefined = undefined
+    do {
+      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${gmailMaxResults}` + (pageToken ? `&pageToken=${pageToken}` : '')
+      const listRes = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+      const listData = await listRes.json()
+      const ids = (listData.messages || []).map((m: any) => m.id)
+      messageIds = messageIds.concat(ids)
+      pageToken = listData.nextPageToken
+      // Stop if we've reached our limit or no more pages
+    } while (pageToken && messageIds.length < emailProcessLimit)
+    // Cap at the limit
+    messageIds = messageIds.slice(0, emailProcessLimit)
 
     if (messageIds.length === 0) {
       // Update last sync time even if no new emails
@@ -194,7 +211,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 9) Check which emails we already have
+    // 10) Check which emails we already have
     const { data: existingEmails } = await supabase
       .from('synced_emails')
       .select('gmail_id')
@@ -210,8 +227,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 10) Fetch full content of new messages (limit to 20 per sync)
-    const toFetch = newMessageIds.slice(0, 20)
+    // 11) Fetch full content of new messages
+    const toFetch = newMessageIds.slice(0, emailProcessLimit)
     const emails: any[] = []
 
     for (const msgId of toFetch) {
