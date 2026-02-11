@@ -280,11 +280,19 @@ serve(async (req) => {
     if (ordersList.length === 0) {
       console.log('Onboarding mode: no orders found, running discovery...')
 
-      const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
-Analyze these emails from the last few months and identify all distinct purchase orders you can find.
+      // Process emails in batches of 50 so Claude can handle them
+      const DISCOVERY_BATCH = 50
+      const allDiscovered: any[] = []
+
+      for (let b = 0; b < emails.length; b += DISCOVERY_BATCH) {
+        const emailBatch = emails.slice(b, b + DISCOVERY_BATCH)
+        console.log(`Discovery batch ${Math.floor(b / DISCOVERY_BATCH) + 1}: emails ${b + 1}-${b + emailBatch.length}`)
+
+        const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
+Analyze these emails and identify all distinct purchase orders you can find.
 
 EMAILS:
-${emails.map((e, i) => `
+${emailBatch.map((e: any, i: number) => `
 --- Email ${i + 1} ---
 From: ${e.from_name} <${e.from_email}>
 To: ${e.to_email}
@@ -321,94 +329,113 @@ Return a JSON array:
 
 If no purchase orders can be identified, return an empty array: []`
 
-      try {
-        const discoveryRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-4-5-20251101',
-            max_tokens: 4000,
-            messages: [{ role: 'user', content: discoveryPrompt }],
-          }),
-        })
-        const discoveryData = await discoveryRes.json()
-        const discoveryText = discoveryData.content?.[0]?.text || '[]'
-        const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
-        const discoveredOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+        try {
+          const discoveryRes = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-opus-4-5-20251101',
+              max_tokens: 4000,
+              messages: [{ role: 'user', content: discoveryPrompt }],
+            }),
+          })
+          const discoveryData = await discoveryRes.json()
+          const discoveryText = discoveryData.content?.[0]?.text || '[]'
+          const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
+          const batchOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+          console.log(`  Batch found ${batchOrders.length} orders`)
+          allDiscovered.push(...batchOrders)
+        } catch (batchErr: any) {
+          console.error(`  Discovery batch error:`, batchErr.message)
+        }
+      }
 
-        console.log(`Discovery found ${discoveredOrders.length} orders`)
+      // Deduplicate by PO number — keep the one with the highest stage
+      const poMap = new Map<string, any>()
+      for (const order of allDiscovered) {
+        if (!order.po_number) continue
+        const existing = poMap.get(order.po_number)
+        if (!existing || (order.current_stage || 1) > (existing.current_stage || 1)) {
+          poMap.set(order.po_number, order)
+        }
+      }
+      const discoveredOrders = Array.from(poMap.values())
+      console.log(`Discovery found ${discoveredOrders.length} unique orders from ${allDiscovered.length} total`)
 
-        // Create each discovered order in the database
-        for (const disc of discoveredOrders) {
-          if (!disc.po_number) continue
+      // Create each discovered order in the database
+      for (const disc of discoveredOrders) {
+        if (!disc.po_number) continue
 
-          const { data: newOrder, error: createErr } = await supabase
-            .from('orders')
-            .insert({
-              organization_id,
-              order_id: disc.po_number,
-              po_number: disc.po_number,
-              company: disc.company || 'Unknown',
-              supplier: disc.supplier || 'Unknown',
-              product: disc.product || 'Unknown',
-              from_location: disc.from_location || 'India',
-              current_stage: disc.current_stage || 1,
-              order_date: new Date().toISOString().split('T')[0],
-              status: 'sent',
-              specs: '',
-              metadata: { created_by: 'onboarding_sync', stage_reasoning: disc.stage_reasoning || '' },
-            })
-            .select('id')
-            .single()
+        const { data: newOrder, error: createErr } = await supabase
+          .from('orders')
+          .insert({
+            organization_id,
+            order_id: disc.po_number,
+            po_number: disc.po_number,
+            company: disc.company || 'Unknown',
+            supplier: disc.supplier || 'Unknown',
+            product: disc.product || 'Unknown',
+            from_location: disc.from_location || 'India',
+            current_stage: disc.current_stage || 1,
+            order_date: new Date().toISOString().split('T')[0],
+            status: 'sent',
+            specs: '',
+            metadata: { created_by: 'onboarding_sync', stage_reasoning: disc.stage_reasoning || '' },
+          })
+          .select('id')
+          .single()
 
-          if (createErr) {
-            console.error(`Failed to create order ${disc.po_number}:`, createErr.message)
-            continue
-          }
-
-          createdOrderCount++
-
-          // Add history entry
-          if (newOrder) {
-            await supabase.from('order_history').insert({
-              order_id: newOrder.id,
-              organization_id,
-              stage: disc.current_stage || 1,
-              timestamp: new Date().toISOString(),
-              from_address: 'System (Onboarding Sync)',
-              subject: 'Order discovered from email history',
-              body: disc.stage_reasoning || `Order ${disc.po_number} discovered during onboarding sync`,
-            })
-          }
+        if (createErr) {
+          console.error(`Failed to create order ${disc.po_number}:`, createErr.message)
+          continue
         }
 
-        // Re-fetch orders so the matching prompt below has them
-        if (createdOrderCount > 0) {
-          const { data: freshOrders } = await supabase
-            .from('orders')
-            .select('order_id, company, supplier, product, current_stage')
-            .eq('organization_id', organization_id)
+        createdOrderCount++
 
-          ordersList = (freshOrders || []).map((o: any) => ({
-            id: o.order_id,
-            company: o.company,
-            supplier: o.supplier,
-            product: o.product,
-            currentStage: o.current_stage,
-          }))
+        // Add history entry
+        if (newOrder) {
+          await supabase.from('order_history').insert({
+            order_id: newOrder.id,
+            organization_id,
+            stage: disc.current_stage || 1,
+            timestamp: new Date().toISOString(),
+            from_address: 'System (Onboarding Sync)',
+            subject: 'Order discovered from email history',
+            body: disc.stage_reasoning || `Order ${disc.po_number} discovered during onboarding sync`,
+          })
         }
-      } catch (discErr: any) {
-        console.error('Onboarding discovery failed:', discErr.message)
-        // Continue with normal flow — emails still get stored even if discovery fails
+      }
+
+      // Re-fetch orders so the matching prompt below has them
+      if (createdOrderCount > 0) {
+        const { data: freshOrders } = await supabase
+          .from('orders')
+          .select('order_id, company, supplier, product, current_stage')
+          .eq('organization_id', organization_id)
+
+        ordersList = (freshOrders || []).map((o: any) => ({
+          id: o.order_id,
+          company: o.company,
+          supplier: o.supplier,
+          product: o.product,
+          currentStage: o.current_stage,
+        }))
       }
     }
 
-    // 12) AI Analysis — send emails + orders to Claude for matching
-    const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
+    // 12) AI Analysis — send emails + orders to Claude for matching (in batches of 50)
+    const MATCH_BATCH = 50
+    let aiResults: any[] = []
+
+    for (let b = 0; b < emails.length; b += MATCH_BATCH) {
+      const emailBatch = emails.slice(b, b + MATCH_BATCH)
+      console.log(`Matching batch ${Math.floor(b / MATCH_BATCH) + 1}: emails ${b + 1}-${b + emailBatch.length}`)
+
+      const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
 
 ACTIVE ORDERS:
 ${JSON.stringify(ordersList, null, 2)}
@@ -417,7 +444,7 @@ STAGE TRIGGER DEFINITIONS:
 ${STAGE_TRIGGERS}
 
 NEW EMAILS TO ANALYZE:
-${emails.map((e, i) => `
+${emailBatch.map((e: any, i: number) => `
 --- Email ${i + 1} ---
 Gmail ID: ${e.gmail_id}
 From: ${e.from_name} <${e.from_email}>
@@ -450,30 +477,30 @@ Return a JSON array with one object per email:
   }
 ]`
 
-    let aiResults: any[] = []
-    try {
-      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-opus-4-5-20251101',
-          max_tokens: 4000,
-          messages: [{ role: 'user', content: aiPrompt }],
-        }),
-      })
-      const aiData = await aiRes.json()
-      const aiText = aiData.content?.[0]?.text || '[]'
-      // Parse JSON from AI response (handle potential markdown wrapping)
-      const jsonMatch = aiText.match(/\[[\s\S]*\]/)
-      aiResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-    } catch (aiErr) {
-      console.error('AI analysis failed:', aiErr)
-      // Continue without AI results — emails still get stored
+      try {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-opus-4-5-20251101',
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: aiPrompt }],
+          }),
+        })
+        const aiData = await aiRes.json()
+        const aiText = aiData.content?.[0]?.text || '[]'
+        const jsonMatch = aiText.match(/\[[\s\S]*\]/)
+        const batchResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+        aiResults.push(...batchResults)
+      } catch (aiErr) {
+        console.error(`Matching batch error:`, aiErr)
+      }
     }
+    console.log(`AI matching complete: ${aiResults.length} results`)
 
     // Build lookup from gmail_id to AI result
     const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
