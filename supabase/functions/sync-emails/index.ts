@@ -227,31 +227,39 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 11) Fetch full content of new messages
+    // 11) Fetch full content of new messages (in parallel batches of 10 for speed)
     const toFetch = newMessageIds.slice(0, emailProcessLimit)
     const emails: any[] = []
+    const BATCH_SIZE = 10
 
-    for (const msgId of toFetch) {
-      const msgRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+    for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+      const batch = toFetch.slice(i, i + BATCH_SIZE)
+      const batchResults = await Promise.all(
+        batch.map(async (msgId: string) => {
+          const msgRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          const msg = await msgRes.json()
+          const headers = msg.payload?.headers || []
+          const body = extractBody(msg.payload)
+          const hasAttachment = (msg.payload?.parts || []).some((p: any) => p.filename && p.filename.length > 0)
+
+          return {
+            gmail_id: msgId,
+            from_email: extractEmail(getHeader(headers, 'From')),
+            from_name: extractName(getHeader(headers, 'From')),
+            to_email: extractEmail(getHeader(headers, 'To')),
+            subject: getHeader(headers, 'Subject'),
+            body_text: body.substring(0, 5000),
+            date: getHeader(headers, 'Date'),
+            has_attachment: hasAttachment,
+          }
+        })
       )
-      const msg = await msgRes.json()
-      const headers = msg.payload?.headers || []
-      const body = extractBody(msg.payload)
-      const hasAttachment = (msg.payload?.parts || []).some((p: any) => p.filename && p.filename.length > 0)
-
-      emails.push({
-        gmail_id: msgId,
-        from_email: extractEmail(getHeader(headers, 'From')),
-        from_name: extractName(getHeader(headers, 'From')),
-        to_email: extractEmail(getHeader(headers, 'To')),
-        subject: getHeader(headers, 'Subject'),
-        body_text: body.substring(0, 5000), // Limit body size
-        date: getHeader(headers, 'Date'),
-        has_attachment: hasAttachment,
-      })
+      emails.push(...batchResults)
     }
+    console.log(`Fetched ${emails.length} emails`)
 
     // 11) Get active orders for AI matching
     const { data: orders } = await supabase
