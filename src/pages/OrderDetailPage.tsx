@@ -596,11 +596,23 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
   const handleAttachmentClick = (name: string, stage: number) => {
     if (name.toLowerCase().endsWith('.pdf') && stage === 1) {
       previewPOasPDF();
-    } else {
-      // For other files — show placeholder modal
-      setPdfModal({ open: true, url: '', title: name, loading: false });
+          return;
     }
-  };
+        // Look for pdfUrl in attachment metadata
+        const stageHistory = order.history.filter(h => h.stage === stage && h.attachments?.length);
+        for (const h of stageHistory) {
+                for (const att of (h.attachments || [])) {
+                          const attName = getAttachmentName(att);
+                          const meta = getAttachmentMeta(att);
+                          if (attName === name && meta?.pdfUrl) {
+                                      setPdfModal({ open: true, url: meta.pdfUrl, title: name, loading: false });
+                                      return;
+                          }
+                }
+        }
+        // Fallback — no URL available
+        setPdfModal({ open: true, url: '', title: name, loading: false });
+  };   
 
   const closePdfModal = () => {
     if (pdfModal.url) URL.revokeObjectURL(pdfModal.url);
