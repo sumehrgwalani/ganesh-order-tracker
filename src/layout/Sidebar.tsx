@@ -26,8 +26,8 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
 
   return (
     <div className="w-16 bg-gray-900 flex flex-col items-center py-4 space-y-2">
-      <div className="mb-4">
-        <WTTLogo size={40} />
+      <div className="mb-4 flex-shrink-0">
+        <WTTLogo size={36} />
       </div>
       <div className="flex-1 flex flex-col items-center space-y-2">
         {menuItems.map((item) => {
