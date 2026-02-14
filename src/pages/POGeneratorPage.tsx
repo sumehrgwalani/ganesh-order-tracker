@@ -12,6 +12,7 @@ interface Props {
   orders?: Order[];
   setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
+  orgId?: string | null;
 }
 
 interface SupplierInfo {
@@ -78,7 +79,7 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated }: Props) {
+function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated, orgId }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
@@ -378,7 +379,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
       // Call Supabase Edge Function
       const { data, error } = await supabase.functions.invoke('parse-po', {
-        body: { rawText: text, suppliers: suppliersList, buyers: buyersList },
+        body: { rawText: text, suppliers: suppliersList, buyers: buyersList, orgId },
       });
 
       if (error) {

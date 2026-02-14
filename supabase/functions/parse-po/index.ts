@@ -3,6 +3,7 @@
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io';
 
@@ -55,7 +56,8 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 
 ### Products
 - Always prefix product names with "Frozen" if not already present
-- Common products: Squid (Tubes, Rings, Cut, Whole, Baby), Cuttlefish (Whole Cleaned, Strips), Octopus, Shrimp, Vannamei, Ribbon Fish
+- If a Product Catalog is provided below, PREFER matching product names from the catalog. Use the exact catalog name format. If the catalog lists default glaze/freeze for a product and the input doesn't specify, use the catalog defaults.
+- Common product types: Squid (Tubes, Rings, Cut, Whole, Baby), Cuttlefish (Whole Cleaned, Strips), Octopus, Shrimp, Vannamei, Ribbon Fish
 - Processing styles go IN the product name, not as a brand: PBO, PND, PD, HLSO, HOSO, PUD, PDTO, CPTO, PTO, EZP, Butterfly
 - "Skin On" / "Skin Off" are product attributes, not brands
 
@@ -154,7 +156,7 @@ serve(async (req) => {
       );
     }
 
-    const { rawText, suppliers, buyers } = await req.json();
+    const { rawText, suppliers, buyers, orgId } = await req.json();
 
     if (!rawText || !rawText.trim()) {
       return new Response(
@@ -171,6 +173,50 @@ serve(async (req) => {
       );
     }
 
+    // Fetch product catalog for better AI accuracy
+    let productCatalogContext = '';
+    if (orgId) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        const { data: products } = await supabase
+          .from('products')
+          .select('name, size, glaze, freeze_type, markets')
+          .eq('organization_id', orgId)
+          .eq('is_active', true);
+
+        if (products && products.length > 0) {
+          // Group by product name to keep it compact
+          const grouped = new Map<string, { sizes: Set<string>, glazes: Set<string>, freezes: Set<string>, markets: Set<string> }>();
+          for (const p of products) {
+            if (!grouped.has(p.name)) {
+              grouped.set(p.name, { sizes: new Set(), glazes: new Set(), freezes: new Set(), markets: new Set() });
+            }
+            const g = grouped.get(p.name)!;
+            if (p.size) g.sizes.add(p.size);
+            if (p.glaze != null) g.glazes.add(Math.round(p.glaze * 100) + '%');
+            if (p.freeze_type) g.freezes.add(p.freeze_type);
+            if (p.markets) p.markets.split(',').forEach((m: string) => g.markets.add(m.trim()));
+          }
+
+          const catalogLines = Array.from(grouped).map(([name, attrs]) => {
+            const parts = [name];
+            if (attrs.sizes.size > 0) parts.push(`Sizes: ${[...attrs.sizes].join(', ')}`);
+            if (attrs.glazes.size > 0) parts.push(`Glaze: ${[...attrs.glazes].join(', ')}`);
+            if (attrs.freezes.size > 0) parts.push(`Freeze: ${[...attrs.freezes].join(', ')}`);
+            return parts.join(' | ');
+          }).join('\n');
+
+          productCatalogContext = `\n\nProduct Catalog (use these exact product names and attributes when matching):\n${catalogLines}`;
+        }
+      } catch (err) {
+        console.error('Could not fetch product catalog:', err);
+        // Continue without catalog — not a blocker
+      }
+    }
+
     // Build context about available suppliers and buyers
     const supplierContext = suppliers && suppliers.length > 0
       ? `\n\nAvailable Suppliers (match abbreviations against these):\n${suppliers.map((s: Supplier) => `- "${s.company}" (email: ${s.email}${s.country ? ', country: ' + s.country : ''})`).join('\n')}`
@@ -180,7 +226,7 @@ serve(async (req) => {
       ? `\n\nAvailable Buyers (match abbreviations against these):\n${buyers.map((b: Buyer) => `- "${b.company}" (email: ${b.email}${b.country ? ', country: ' + b.country : ''})`).join('\n')}`
       : '';
 
-    const userMessage = `Parse this purchase order text into structured data:\n\n${rawText}${supplierContext}${buyerContext}`;
+    const userMessage = `Parse this purchase order text into structured data:\n\n${rawText}${supplierContext}${buyerContext}${productCatalogContext}`;
 
     // Call Claude Haiku API
     const response = await fetch('https://api.anthropic.com/v1/messages', {

@@ -229,6 +229,7 @@ function App() {
                 contacts={contacts}
                 orders={orders}
                 setOrders={setOrders}
+                orgId={orgId}
                 onOrderCreated={(newOrder) => {
                   const isExisting = orders.some(o => o.id === newOrder.id);
                   if (isExisting && orgId && updateOrder) {

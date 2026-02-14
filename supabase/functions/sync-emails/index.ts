@@ -334,6 +334,43 @@ serve(async (req) => {
       currentStage: o.current_stage,
     }))
 
+    // 11a) Fetch product catalog for AI context
+    let productCatalogText = ''
+    try {
+      const { data: products } = await supabase
+        .from('products')
+        .select('name, size, glaze, freeze_type, markets')
+        .eq('organization_id', organization_id)
+        .eq('is_active', true)
+
+      if (products && products.length > 0) {
+        const grouped = new Map<string, { sizes: Set<string>, glazes: Set<string>, freezes: Set<string> }>()
+        for (const p of products) {
+          if (!grouped.has(p.name)) {
+            grouped.set(p.name, { sizes: new Set(), glazes: new Set(), freezes: new Set() })
+          }
+          const g = grouped.get(p.name)!
+          if (p.size) g.sizes.add(p.size)
+          if (p.glaze != null) g.glazes.add(Math.round(p.glaze * 100) + '%')
+          if (p.freeze_type) g.freezes.add(p.freeze_type)
+        }
+
+        productCatalogText = Array.from(grouped).map(([name, attrs]) => {
+          const parts = [name]
+          if (attrs.sizes.size > 0) parts.push(`Sizes: ${[...attrs.sizes].join(', ')}`)
+          if (attrs.glazes.size > 0) parts.push(`Glaze: ${[...attrs.glazes].join(', ')}`)
+          if (attrs.freezes.size > 0) parts.push(`Freeze: ${[...attrs.freezes].join(', ')}`)
+          return parts.join(' | ')
+        }).join('\n')
+      }
+    } catch (err) {
+      console.error('Could not fetch product catalog:', err)
+    }
+
+    const catalogSection = productCatalogText
+      ? `\nPRODUCT CATALOG (use these exact product names when identifying products in emails):\n${productCatalogText}\n`
+      : ''
+
     // 11b) ONBOARDING MODE — if no orders exist, discover them from emails
     let createdOrderCount = 0
     if (ordersList.length === 0) {
@@ -349,7 +386,7 @@ serve(async (req) => {
 
         const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
 Analyze these emails and identify all distinct purchase orders you can find.
-
+${catalogSection}
 EMAILS:
 ${emailBatch.map((e: any, i: number) => `
 --- Email ${i + 1} ---
@@ -506,7 +543,7 @@ If no purchase orders can be identified, return an empty array: []`
       console.log(`Matching batch ${Math.floor(b / MATCH_BATCH) + 1}: emails ${b + 1}-${b + emailBatch.length}`)
 
       const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
-
+${catalogSection}
 ACTIVE ORDERS:
 ${JSON.stringify(ordersList, null, 2)}
 
