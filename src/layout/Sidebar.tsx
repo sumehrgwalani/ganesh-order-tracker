@@ -29,7 +29,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
       <div className="mb-4">
         <WTTLogo size={40} />
       </div>
-      <div className="flex-1 space-y-2">
+      <div className="flex-1 flex flex-col items-center space-y-2">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path || (item.path === '/orders' && location.pathname.startsWith('/orders'));
           return (
@@ -40,7 +40,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
           );
         })}
       </div>
-      <div className="space-y-2 pt-4 border-t border-gray-800">
+      <div className="flex flex-col items-center space-y-2 pt-4 border-t border-gray-800">
         <button
           onClick={onBellClick}
           className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative group"
