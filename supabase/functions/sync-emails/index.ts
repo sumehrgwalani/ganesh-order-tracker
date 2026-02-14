@@ -534,6 +534,46 @@ If no purchase orders can be identified, return an empty array: []`
       }
     }
 
+    // 11.5) Fetch recent user corrections for AI learning
+    let correctionExamples = ''
+    try {
+      const { data: corrections } = await supabase
+        .from('synced_emails')
+        .select('subject, from_email, user_linked_order_id')
+        .eq('organization_id', organization_id)
+        .not('user_linked_at', 'is', null)
+        .order('user_linked_at', { ascending: false })
+        .limit(10)
+
+      if (corrections && corrections.length > 0) {
+        // Look up order details for the linked orders
+        const linkedOrderIds = corrections.map((c: any) => c.user_linked_order_id).filter(Boolean)
+        const { data: linkedOrders } = await supabase
+          .from('orders')
+          .select('id, order_id, company, product')
+          .in('id', linkedOrderIds)
+
+        const orderMap: Record<string, any> = {}
+        for (const o of linkedOrders || []) {
+          orderMap[o.id] = o
+        }
+
+        const examples = corrections.map((c: any) => {
+          const order = orderMap[c.user_linked_order_id]
+          const orderLabel = order ? `${order.order_id} (${order.company} - ${order.product})` : c.user_linked_order_id
+          return `- Email from "${c.from_email}" with subject "${c.subject}" was manually linked to order ${orderLabel}`
+        }).join('\n')
+
+        correctionExamples = `
+RECENT USER CORRECTIONS (learn from these patterns to improve matching):
+${examples}
+Use these examples to better match similar emails from the same senders or about similar topics.
+`
+      }
+    } catch (err) {
+      console.error('Failed to fetch corrections:', err)
+    }
+
     // 12) AI Analysis — send emails + orders to Claude for matching (in batches of 50)
     const MATCH_BATCH = 50
     let aiResults: any[] = []
@@ -549,7 +589,7 @@ ${JSON.stringify(ordersList, null, 2)}
 
 STAGE TRIGGER DEFINITIONS:
 ${STAGE_TRIGGERS}
-
+${correctionExamples}
 NEW EMAILS TO ANALYZE:
 ${emailBatch.map((e: any, i: number) => `
 --- Email ${i + 1} ---
