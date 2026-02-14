@@ -43,3 +43,22 @@ CREATE INDEX IF NOT EXISTS idx_orders_deleted_at ON orders(deleted_at);
 
 -- Create index for soft delete filtering combined with organization_id for common queries
 CREATE INDEX IF NOT EXISTS idx_orders_organization_deleted ON orders(organization_id, deleted_at);
+
+-- Update RLS policies to filter out soft-deleted orders
+-- Drop and recreate SELECT policy to include deleted_at IS NULL filter
+DO $$
+BEGIN
+  -- Try to drop the old policy, then create the updated one
+  DROP POLICY IF EXISTS "Users can view orders in their organization" ON public.orders;
+  CREATE POLICY "Users can view orders in their organization"
+    ON public.orders FOR SELECT
+    USING (
+      deleted_at IS NULL
+      AND organization_id IN (
+        SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+      )
+    );
+EXCEPTION WHEN OTHERS THEN
+  -- Policy may have a different name or already be correct
+  NULL;
+END $$;

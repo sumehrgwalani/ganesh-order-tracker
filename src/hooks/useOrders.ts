@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Order, HistoryEntry } from '../types'
+import { ORDER_STAGES } from '../data/constants'
 
 export function useOrders(orgId: string | null) {
   const [orders, setOrders] = useState<Order[]>([])
@@ -209,11 +210,9 @@ export function useOrders(orgId: string | null) {
       if (updateError) throw updateError
 
       // Log stage change to order_history for audit trail
-      const stageNames: Record<number, string> = {
-        1: 'Order Confirmed', 2: 'Proforma Issued', 3: 'Artwork Approved',
-        4: 'Quality Check', 5: 'Schedule Confirmed', 6: 'Draft Documents',
-        7: 'Final Documents', 8: 'DHL Shipped',
-      }
+      const stageNames: Record<number, string> = Object.fromEntries(
+        ORDER_STAGES.map(s => [s.id, s.name])
+      )
       await supabase.from('order_history').insert({
         order_id: orderRow.id,
         stage: newStage,

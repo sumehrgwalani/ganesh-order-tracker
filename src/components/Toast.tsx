@@ -1,5 +1,3 @@
-'use client';
-
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
 // Types
@@ -244,7 +242,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
 
   const showToast = useCallback(
     (message: string, type: ToastType, duration: number = 4000) => {
-      const id = `toast-${Date.now()}-${Math.random()}`;
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `toast-${Date.now()}-${Math.random()}`;
       const newToast: ToastMessage = { id, message, type, duration };
 
       setToasts((prevToasts) => [...prevToasts, newToast]);

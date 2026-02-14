@@ -9,6 +9,7 @@ export function useAuth() {
   const [orgId, setOrgId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('member')
   const [userDepartment, setUserDepartment] = useState<string | null>(null)
+  const [fetchingOrg, setFetchingOrg] = useState(false)
 
   useEffect(() => {
     // Get initial session
@@ -40,6 +41,8 @@ export function useAuth() {
   }, [])
 
   const fetchOrgId = async (userId: string, userEmail: string) => {
+    if (fetchingOrg) return
+    setFetchingOrg(true)
     try {
       // Check if user already has an org membership
       const { data: membership } = await supabase
@@ -120,6 +123,7 @@ export function useAuth() {
       console.error('Error in fetchOrgId:', err)
     } finally {
       setLoading(false)
+      setFetchingOrg(false)
     }
   }
 

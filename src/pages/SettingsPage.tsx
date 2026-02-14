@@ -35,7 +35,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
   // Profile tab
   const [profileFormData, setProfileFormData] = useState({ displayName: '', phone: '' });
-  const [passwordFormData, setPasswordFormData] = useState({ newPassword: '', confirmPassword: '' });
+  const [passwordFormData, setPasswordFormData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
 
   // Currency tab
   const [currencyFormData, setCurrencyFormData] = useState({ currency: '', weightUnit: '', dateFormat: '' });
@@ -126,6 +126,10 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   };
 
   const handleChangePassword = async () => {
+    if (!passwordFormData.currentPassword) {
+      showStatus('error', 'Please enter your current password');
+      return;
+    }
     if (passwordFormData.newPassword !== passwordFormData.confirmPassword) {
       showStatus('error', 'Passwords do not match');
       return;
@@ -134,12 +138,21 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       showStatus('error', 'Password must be at least 6 characters');
       return;
     }
-    const { error } = await changePassword('', passwordFormData.newPassword);
+    // Verify current password by attempting sign-in
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: currentUserEmail || '',
+      password: passwordFormData.currentPassword,
+    });
+    if (verifyError) {
+      showStatus('error', 'Current password is incorrect');
+      return;
+    }
+    const { error } = await changePassword(passwordFormData.currentPassword, passwordFormData.newPassword);
     if (error) {
       showStatus('error', 'Failed to change password');
     } else {
       showStatus('success', 'Password changed successfully');
-      setPasswordFormData({ newPassword: '', confirmPassword: '' });
+      setPasswordFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     }
   };
 
@@ -337,7 +350,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const updates: any = {
       email_provider: emailFormData.provider,
       smtp_host: emailFormData.provider === 'smtp' ? emailFormData.smtpHost : null,
-      smtp_port: emailFormData.provider === 'smtp' ? parseInt(emailFormData.smtpPort) : null,
+      smtp_port: emailFormData.provider === 'smtp' ? parseInt(emailFormData.smtpPort, 10) : null,
       smtp_username: emailFormData.provider === 'smtp' ? emailFormData.smtpUsername : null,
       smtp_password: emailFormData.provider === 'smtp' ? emailFormData.smtpPassword : null,
       smtp_from_email: emailFormData.provider === 'smtp' ? emailFormData.smtpFromEmail : null,
@@ -465,6 +478,10 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
             <div className="border-t border-gray-200 pt-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Change Password</h3>
               <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                  <input type="password" value={passwordFormData.currentPassword} onChange={(e) => setPasswordFormData({ ...passwordFormData, currentPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
                   <input type="password" value={passwordFormData.newPassword} onChange={(e) => setPasswordFormData({ ...passwordFormData, newPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />

@@ -1,7 +1,7 @@
 -- 009: Notifications table for in-app notifications
 -- Supports invitation accept/decline, order updates, and other notification types
 
-CREATE TABLE IF NOT EXISTS notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
@@ -32,7 +32,17 @@ CREATE POLICY "Users can delete own notifications"
   ON notifications FOR DELETE
   USING (auth.uid() = user_id);
 
--- Allow inserts from authenticated users (for creating notifications for others)
-CREATE POLICY "Authenticated users can create notifications"
-  ON notifications FOR INSERT
-  WITH CHECK (auth.role() = 'authenticated');
+-- Allow inserts only for users in the same organization as the notification target
+CREATE POLICY "Same-org members can create notifications"
+  ON public.notifications FOR INSERT
+  WITH CHECK (
+    auth.role() = 'authenticated'
+    AND (
+      -- Allow creating notifications for yourself
+      auth.uid() = user_id
+      -- Or for users in the same organization
+      OR organization_id IN (
+        SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+      )
+    )
+  );

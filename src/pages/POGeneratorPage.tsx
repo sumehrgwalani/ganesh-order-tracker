@@ -194,8 +194,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
   // Load saved signature from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('gi_signature');
-    if (saved) setSignatureData(saved);
+    try {
+      const saved = localStorage.getItem('gi_signature');
+      if (saved) setSignatureData(saved);
+    } catch { /* private browsing or storage unavailable */ }
   }, []);
 
   // Sync bulkDates array when bulk mode or count changes
@@ -319,7 +321,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     setSignatureData(dataUrl);
-    localStorage.setItem('gi_signature', dataUrl);
+    try { localStorage.setItem('gi_signature', dataUrl); } catch { /* storage unavailable */ }
     setShowSignaturePad(false);
     setNotification({ type: 'success', message: 'Signature saved! It will appear on your POs.' });
     setTimeout(() => setNotification(null), 3000);
@@ -345,7 +347,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       setSignatureData(dataUrl);
-      localStorage.setItem('gi_signature', dataUrl);
+      try { localStorage.setItem('gi_signature', dataUrl); } catch { /* storage unavailable */ }
       setShowSignaturePad(false);
       setNotification({ type: 'success', message: 'Signature uploaded and saved!' });
       setTimeout(() => setNotification(null), 3000);
@@ -355,7 +357,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
   const removeSignature = () => {
     setSignatureData('');
-    localStorage.removeItem('gi_signature');
+    try { localStorage.removeItem('gi_signature'); } catch { /* storage unavailable */ }
     setNotification({ type: 'info', message: 'Signature removed.' });
     setTimeout(() => setNotification(null), 3000);
   };

@@ -156,7 +156,19 @@ serve(async (req) => {
       );
     }
 
-    const { rawText, suppliers, buyers, orgId } = await req.json();
+    let rawText: string, suppliers: any, buyers: any, orgId: string | undefined;
+    try {
+      const body = await req.json();
+      rawText = body.rawText;
+      suppliers = Array.isArray(body.suppliers) ? body.suppliers : [];
+      buyers = Array.isArray(body.buyers) ? body.buyers : [];
+      orgId = typeof body.orgId === 'string' ? body.orgId : undefined;
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid request body. Please send valid JSON.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!rawText || !rawText.trim()) {
       return new Response(
@@ -228,23 +240,40 @@ serve(async (req) => {
 
     const userMessage = `Parse this purchase order text into structured data:\n\n${rawText}${supplierContext}${buyerContext}${productCatalogContext}`;
 
-    // Call Claude Haiku API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [
-          { role: 'user', content: userMessage }
-        ],
-      }),
-    });
+    // Call Claude Haiku API with 30-second timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [
+            { role: 'user', content: userMessage }
+          ],
+        }),
+        signal: controller.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === 'AbortError') {
+        return new Response(
+          JSON.stringify({ error: 'AI request timed out. Please try again.' }),
+          { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -272,11 +301,21 @@ serve(async (req) => {
     const aiResponse = await response.json();
     const content = aiResponse.content?.[0]?.text || '';
 
-    // Parse the JSON response from Claude
+    // Parse the JSON response from Claude - robust extraction
     let parsed;
     try {
-      // Strip any markdown code fences if present
-      const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      // First try direct parse
+      let jsonStr = content.trim();
+      // Strip markdown code fences if present
+      jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      // If still not valid, find the first { to last } as fallback
+      if (!jsonStr.startsWith('{')) {
+        const firstBrace = jsonStr.indexOf('{');
+        const lastBrace = jsonStr.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+        }
+      }
       parsed = JSON.parse(jsonStr);
     } catch (parseErr) {
       console.error('Failed to parse AI response as JSON:', content);

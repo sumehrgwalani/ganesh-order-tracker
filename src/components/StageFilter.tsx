@@ -108,7 +108,9 @@ function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp 
       {selectedStage && (
         <div className="mt-3 pt-3 border-t border-gray-200">
           <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full bg-${ORDER_STAGES[selectedStage-1]?.color || 'blue'}-500`}></span>
+            <span className={`w-3 h-3 rounded-full ${
+              { blue: 'bg-blue-500', indigo: 'bg-indigo-500', purple: 'bg-purple-500', pink: 'bg-pink-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500', amber: 'bg-amber-500', teal: 'bg-teal-500', green: 'bg-green-500' }[ORDER_STAGES[selectedStage-1]?.color || 'blue'] || 'bg-blue-500'
+            }`}></span>
             <span className="text-sm font-medium text-gray-700">
               Showing {stageCounts[selectedStage]} order{stageCounts[selectedStage] !== 1 ? 's' : ''} at stage "{ORDER_STAGES[selectedStage-1]?.name}"
             </span>

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Order, Stats, AppNotification } from './types';
 import Sidebar from './layout/Sidebar';
@@ -21,6 +21,36 @@ import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
 import { useNotifications } from './hooks/useNotifications';
 import { useToast } from './components/Toast';
+
+// Error Boundary to catch React render crashes
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Something went wrong</h2>
+            <p className="text-gray-500 mb-4">An unexpected error occurred. Please refresh the page to try again.</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
@@ -164,6 +194,7 @@ function App() {
   };
 
   return (
+    <ErrorBoundary>
     <div className="flex h-screen bg-gray-50">
       <Sidebar
         onSettingsClick={() => navigate('/settings')}
@@ -263,6 +294,7 @@ function App() {
         </main>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
 

@@ -140,7 +140,7 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
               placeholder="Company Name"
             />
             <datalist id="companies">
-              {companies.map((c, i) => <option key={i} value={c} />)}
+              {companies.map((c) => <option key={c} value={c} />)}
             </datalist>
           </div>
 

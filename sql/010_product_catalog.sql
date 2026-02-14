@@ -21,9 +21,8 @@ DECLARE
 BEGIN
   SELECT id INTO org FROM public.organizations LIMIT 1;
 
-  -- Clear existing placeholder products
-  DELETE FROM public.products WHERE organization_id = org;
-
+  -- Upsert products (safe to re-run without data loss)
+  -- Using ON CONFLICT to update existing products rather than deleting all first
   INSERT INTO public.products (organization_id, name, category, product_type, size, glaze, freeze_type, catching_method, markets, is_active) VALUES
   -- ========================
   -- CUTTLEFISH
@@ -178,6 +177,25 @@ BEGIN
   (org, 'Koothe Filet', 'Fish', 'Fish', '300/500', 0.15, 'IQF', NULL, NULL, true),
   (org, 'Koothe Filet', 'Fish', 'Fish', '500/up', 0.15, 'IQF', NULL, NULL, true),
   (org, 'Koothe Filet', 'Fish', 'Fish', '1000/2000', 0.15, 'IQF', NULL, NULL, true),
-  (org, 'Koothe Filet', 'Fish', 'Fish', '2000/up', 0.15, 'IQF', NULL, NULL, true);
+  (org, 'Koothe Filet', 'Fish', 'Fish', '2000/up', 0.15, 'IQF', NULL, NULL, true)
+  ON CONFLICT (organization_id, name, COALESCE(size, ''), COALESCE(freeze_type, ''))
+  DO UPDATE SET
+    category = EXCLUDED.category,
+    product_type = EXCLUDED.product_type,
+    glaze = EXCLUDED.glaze,
+    catching_method = EXCLUDED.catching_method,
+    markets = EXCLUDED.markets,
+    is_active = EXCLUDED.is_active;
 
+END $$;
+
+-- Add unique constraint to support ON CONFLICT (run once, safe to re-run)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_products_org_name_size_freeze'
+  ) THEN
+    ALTER TABLE public.products ADD CONSTRAINT uq_products_org_name_size_freeze
+      UNIQUE (organization_id, name, size, freeze_type);
+  END IF;
 END $$;
