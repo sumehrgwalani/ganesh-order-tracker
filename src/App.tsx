@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Order, Stats, AppNotification } from './types';
 import Sidebar from './layout/Sidebar';
@@ -21,16 +21,13 @@ import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
 import { useNotifications } from './hooks/useNotifications';
 import { useToast } from './components/Toast';
-import { supabase } from './lib/supabase';
-
-const GOOGLE_CLIENT_ID = '926394608211-jm7i99au8f6g3jkoobgusgnco312fcfl.apps.googleusercontent.com';
 
 function App() {
   const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
-  const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, updateContactsByCompany, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
+  const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
   const { showToast } = useToast();
-  const { inquiries: productInquiries, products: dbProducts, loading: productsLoading } = useProducts(orgId);
+  const { inquiries: productInquiries, products: dbProducts } = useProducts(orgId);
 
   // Notifications
   const {
@@ -44,61 +41,6 @@ function App() {
 
   // Ref to programmatically scroll to top / trigger header bell
   const headerBellRef = useRef<(() => void) | null>(null);
-
-  // Handle Gmail OAuth callback (when Google redirects back with ?code=xxx&state=gmail-oauth)
-  // This runs in the popup window after Google redirects back
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (!code || state !== 'gmail-oauth' || !orgId) return;
-
-    // Clean the URL immediately
-    window.history.replaceState({}, '', window.location.pathname + '#/settings');
-
-    const handleOAuthCallback = async () => {
-      let result: any;
-      try {
-        const redirectUri = window.location.origin + window.location.pathname;
-        // Use refreshSession to get a fresh access token (getSession may return expired token in popup)
-        const { data: { session: authSession }, error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError || !authSession) throw new Error('Not authenticated. Please log in and try again.');
-
-        // Use fetch directly (not supabase SDK) for better error messages
-        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-auth`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authSession.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ code, client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri, organization_id: orgId, user_id: authSession.user.id }),
-        });
-        const data = await resp.json();
-
-        if (!resp.ok || data.error) {
-          throw new Error(data.error || `Server error ${resp.status}`);
-        }
-
-        result = { success: true, email: data.email };
-      } catch (err: any) {
-        result = { success: false, error: err.message };
-      }
-
-      // If opened as popup, send result to parent window and close
-      if (window.opener) {
-        window.opener.postMessage({ type: 'gmail-oauth-result', ...result }, window.location.origin);
-        // Small delay so postMessage is received before popup closes
-        setTimeout(() => window.close(), 300);
-      } else {
-        // Fallback: store in sessionStorage and navigate
-        sessionStorage.setItem('gmail-oauth-result', JSON.stringify(result));
-        navigate('/settings');
-      }
-    };
-
-    handleOAuthCallback();
-  }, [orgId]);
 
   const contacts = dbContacts;
   const orders = dbOrders;
@@ -269,8 +211,6 @@ function App() {
             <Route path="/orders/:orderId" element={
               <OrderDetailPage
                 orders={orders}
-                orgId={orgId}
-                contacts={dbContacts}
                 onUpdateStage={handleUpdateStage}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}
@@ -283,7 +223,7 @@ function App() {
                 setExpandedOrder={setExpandedOrder}
               />
             } />
-            <Route path="/mailbox" element={<MailboxPage orgId={orgId} />} />
+            <Route path="/mailbox" element={<MailboxPage />} />
             <Route path="/create-po" element={
               <POGeneratorPage
                 contacts={contacts}
@@ -305,17 +245,15 @@ function App() {
             <Route path="/contacts" element={
               <ContactsPage
                 dbContacts={dbContacts}
-                orgId={orgId}
                 onAddContact={addContact}
                 onUpdateContact={updateContact}
-                onUpdateContactsByCompany={updateContactsByCompany}
                 onDeleteContact={deleteContact}
                 onBulkImport={bulkUpsertContacts}
                 onBulkDelete={bulkDeleteContacts}
                 onRefresh={refetchContacts}
               />
             } />
-            <Route path="/products" element={<ProductsPage orders={orders} />} />
+            <Route path="/products" element={<ProductsPage orgId={orgId} />} />
             <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
             <Route path="/settings" element={<SettingsPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} signOut={signOut} />} />
             {/* Redirect any unknown routes to dashboard */}
