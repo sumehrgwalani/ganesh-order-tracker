@@ -1,5 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io'
 
@@ -92,9 +91,7 @@ function extractEmail(emailStr: string): string {
 // Check if a filename is an inline email image (logos, signatures, etc.)
 function isInlineImage(filename: string): boolean {
   const lower = filename.toLowerCase()
-  // Match image001.jpg, image.png, image003.jpeg etc.
   if (/^image\d{0,3}\.(jpg|jpeg|png|gif)$/.test(lower)) return true
-  // Match Outlook-xxxxxx.png (Outlook signature images)
   if (/^outlook-.*\.(jpg|jpeg|png|gif)$/.test(lower)) return true
   return false
 }
@@ -122,7 +119,6 @@ async function downloadAttachment(accessToken: string, messageId: string, attach
     if (!res.ok) { console.error(`Attachment download failed: ${res.status}`); return null }
     const data = await res.json()
     if (!data.data) return null
-    // Gmail returns base64url — convert to standard base64 then to bytes
     const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/')
     const binary = atob(b64)
     const bytes = new Uint8Array(binary.length)
@@ -142,7 +138,7 @@ async function uploadToStorage(supabase: any, orgId: string, poNumber: string, f
   } catch (err) { console.error('Upload error:', err); return null }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -158,7 +154,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabaseAnon = Deno.env.get('SUPABASE_ANON_KEY') || supabaseKey
 
-    // Create a client with the user's JWT to verify their identity
     const userClient = createClient(supabaseUrl, supabaseAnon, {
       global: { headers: { Authorization: authHeader } }
     })
@@ -167,22 +162,22 @@ serve(async (req) => {
       throw new Error('Authentication failed. Please log in again.')
     }
 
-    const { organization_id, user_id, deepSync } = await req.json()
+    const { organization_id, user_id, mode } = await req.json()
+    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync
+    const syncMode = mode || 'full'
     if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
-    // 2) Validate input formats
     if (!isValidUUID(organization_id) || !isValidUUID(user_id)) {
       throw new Error('Invalid organization or user ID format')
     }
 
-    // 3) Verify the authenticated user matches the claimed user_id
     if (user.id !== user_id) {
       throw new Error('You can only sync emails for your own account')
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // 4) Verify the user is a member of this organization AND get their Gmail tokens
+    // Verify membership and get Gmail tokens
     const { data: member, error: memberError } = await supabase
       .from('organization_members')
       .select('gmail_refresh_token, gmail_email, gmail_last_sync')
@@ -194,11 +189,454 @@ serve(async (req) => {
       throw new Error('You are not a member of this organization')
     }
 
+    // ============================================================
+    // MODE: MATCH — AI matching of already-stored emails in batches
+    // ============================================================
+    if (syncMode === 'match') {
+      // Get unmatched emails (no matched_order_id and no user_linked_order_id)
+      const { data: unmatchedEmails, error: fetchErr } = await supabase
+        .from('synced_emails')
+        .select('*')
+        .eq('organization_id', organization_id)
+        .is('matched_order_id', null)
+        .is('user_linked_order_id', null)
+        .order('date', { ascending: true })
+        .limit(15) // Process 15 at a time for accuracy
+
+      if (fetchErr) throw fetchErr
+      if (!unmatchedEmails || unmatchedEmails.length === 0) {
+        // Count total to report completion
+        const { count: totalCount } = await supabase
+          .from('synced_emails')
+          .select('id', { count: 'exact', head: true })
+          .eq('organization_id', organization_id)
+        const { count: matchedCount } = await supabase
+          .from('synced_emails')
+          .select('id', { count: 'exact', head: true })
+          .eq('organization_id', organization_id)
+          .not('matched_order_id', 'is', null)
+
+        return new Response(JSON.stringify({
+          mode: 'match',
+          done: true,
+          matched: 0,
+          remaining: 0,
+          totalEmails: totalCount || 0,
+          totalMatched: matchedCount || 0,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // Get current orders
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('id, order_id, company, supplier, product, current_stage, skipped_stages')
+        .eq('organization_id', organization_id)
+
+      let ordersList = (orders || []).map((o: any) => ({
+        uuid: o.id,
+        id: o.order_id,
+        company: o.company,
+        supplier: o.supplier,
+        product: o.product,
+        currentStage: o.current_stage,
+        skippedStages: o.skipped_stages || [],
+      }))
+
+      // Get product catalog
+      let catalogSection = ''
+      try {
+        const { data: products } = await supabase
+          .from('products')
+          .select('name, size, glaze, freeze_type, markets')
+          .eq('organization_id', organization_id)
+          .eq('is_active', true)
+
+        if (products && products.length > 0) {
+          const grouped = new Map<string, { sizes: Set<string>, glazes: Set<string>, freezes: Set<string> }>()
+          for (const p of products) {
+            if (!grouped.has(p.name)) grouped.set(p.name, { sizes: new Set(), glazes: new Set(), freezes: new Set() })
+            const g = grouped.get(p.name)!
+            if (p.size) g.sizes.add(p.size)
+            if (p.glaze != null) g.glazes.add(Math.round(p.glaze * 100) + '%')
+            if (p.freeze_type) g.freezes.add(p.freeze_type)
+          }
+          const catalogText = Array.from(grouped).map(([name, attrs]) => {
+            const parts = [name]
+            if (attrs.sizes.size > 0) parts.push(`Sizes: ${[...attrs.sizes].join(', ')}`)
+            if (attrs.glazes.size > 0) parts.push(`Glaze: ${[...attrs.glazes].join(', ')}`)
+            if (attrs.freezes.size > 0) parts.push(`Freeze: ${[...attrs.freezes].join(', ')}`)
+            return parts.join(' | ')
+          }).join('\n')
+          catalogSection = `\nPRODUCT CATALOG:\n${catalogText}\n`
+        }
+      } catch (err) { console.error('Could not fetch product catalog:', err) }
+
+      // Fetch user corrections for AI learning
+      let correctionExamples = ''
+      try {
+        const { data: corrections } = await supabase
+          .from('synced_emails')
+          .select('subject, from_email, user_linked_order_id')
+          .eq('organization_id', organization_id)
+          .not('user_linked_at', 'is', null)
+          .order('user_linked_at', { ascending: false })
+          .limit(10)
+
+        if (corrections && corrections.length > 0) {
+          const linkedOrderIds = corrections.map((c: any) => c.user_linked_order_id).filter(Boolean)
+          const { data: linkedOrders } = await supabase.from('orders').select('id, order_id, company, product').in('id', linkedOrderIds)
+          const orderMap: Record<string, any> = {}
+          for (const o of linkedOrders || []) orderMap[o.id] = o
+          const examples = corrections.map((c: any) => {
+            const order = orderMap[c.user_linked_order_id]
+            const orderLabel = order ? `${order.order_id} (${order.company} - ${order.product})` : c.user_linked_order_id
+            return `- Email from "${c.from_email}" with subject "${c.subject}" was manually linked to order ${orderLabel}`
+          }).join('\n')
+          correctionExamples = `\nRECENT USER CORRECTIONS (learn from these):\n${examples}\n`
+        }
+      } catch (err) { console.error('Failed to fetch corrections:', err) }
+
+      // If no orders exist yet, run discovery mode first
+      let createdOrderCount = 0
+      if (ordersList.length === 0) {
+        console.log('No orders found — running discovery from emails...')
+
+        const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
+Analyze these emails and identify all distinct purchase orders you can find.
+${catalogSection}
+EMAILS:
+${unmatchedEmails.map((e: any, i: number) => `
+--- Email ${i + 1} ---
+From: ${e.from_name} <${e.from_email}>
+To: ${e.to_email}
+Subject: ${e.subject}
+Date: ${e.date}
+Has Attachment: ${e.has_attachment}
+Body (first 4000 chars): ${(e.body_text || '').substring(0, 4000)}
+`).join('\n')}
+
+For each distinct purchase order you can identify, extract:
+- po_number: The PO/reference number (look for patterns like "GI/PO/...", "PO-...", or any order reference)
+- company: The buyer company name
+- supplier: The supplier/seller company name
+- product: Main product being traded
+- from_location: Where goods ship FROM
+- highest_stage: The HIGHEST stage this order has reached based on ALL email evidence (1-8)
+- skipped_stages: Array of stage numbers that were SKIPPED (no email evidence found for them). For example, if an order went from stage 1 directly to stage 3 with no evidence of stage 2, skipped_stages would be [2].
+- stage_reasoning: Brief explanation
+
+STAGE DEFINITIONS:
+${STAGE_TRIGGERS}
+
+Stage 1 = Order Confirmed (PO exists/was sent)
+Stage 8 = DHL Shipped (DHL tracking number shared)
+
+IMPORTANT RULES FOR SKIPPED STAGES:
+- It's common for some stages to be skipped or happen without email evidence
+- If you see evidence of stage 5 but nothing for stages 3 and 4, set highest_stage to 5 and skipped_stages to [3, 4]
+- The order should be set to the HIGHEST confirmed stage, not limited to sequential advancement
+- Only include stages as "skipped" if they are BETWEEN stage 1 and the highest_stage
+
+RULES:
+- Only include orders where you found a clear PO number or order reference
+- Be PRECISE with company names — similar names are DIFFERENT entities
+- Every field MUST be filled with real data from the emails
+- Each order should appear only once (deduplicate by PO number)
+- Ganesh International is usually the buyer/trading company — the supplier is the factory/producer
+- Return VALID JSON only, no markdown
+
+Return a JSON array:
+[{ "po_number": "...", "company": "...", "supplier": "...", "product": "...", "from_location": "...", "highest_stage": 1, "skipped_stages": [], "stage_reasoning": "..." }]
+
+If no purchase orders found, return: []`
+
+        try {
+          const discoveryRes = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-5-20250929',
+              max_tokens: 4000,
+              messages: [{ role: 'user', content: discoveryPrompt }],
+            }),
+          })
+          if (discoveryRes.ok) {
+            const discoveryData = await discoveryRes.json()
+            const discoveryText = discoveryData.content?.[0]?.text || '[]'
+            const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
+            const discoveredOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+
+            // Deduplicate by PO number — keep highest stage
+            const poMap = new Map<string, any>()
+            for (const order of discoveredOrders) {
+              if (!order.po_number) continue
+              const existing = poMap.get(order.po_number)
+              if (!existing || (order.highest_stage || 1) > (existing.highest_stage || 1)) {
+                poMap.set(order.po_number, order)
+              }
+            }
+
+            for (const disc of poMap.values()) {
+              const { data: newOrder, error: createErr } = await supabase
+                .from('orders')
+                .insert({
+                  organization_id,
+                  order_id: disc.po_number,
+                  po_number: disc.po_number,
+                  company: disc.company || 'Unknown',
+                  supplier: disc.supplier || 'Unknown',
+                  product: disc.product || 'Unknown',
+                  from_location: disc.from_location || 'India',
+                  current_stage: disc.highest_stage || 1,
+                  skipped_stages: disc.skipped_stages || [],
+                  order_date: new Date().toISOString().split('T')[0],
+                  status: 'sent',
+                  specs: '',
+                  metadata: { created_by: 'email_sync', stage_reasoning: disc.stage_reasoning || '' },
+                })
+                .select('id')
+                .single()
+
+              if (!createErr && newOrder) {
+                createdOrderCount++
+                await supabase.from('order_history').insert({
+                  order_id: newOrder.id,
+                  organization_id,
+                  stage: disc.highest_stage || 1,
+                  timestamp: new Date().toISOString(),
+                  from_address: 'System (Email Sync)',
+                  subject: `Order discovered from emails — Stage ${disc.highest_stage || 1}`,
+                  body: disc.stage_reasoning || `Order ${disc.po_number} discovered during email sync`,
+                })
+              }
+            }
+
+            // Re-fetch orders
+            if (createdOrderCount > 0) {
+              const { data: freshOrders } = await supabase
+                .from('orders')
+                .select('id, order_id, company, supplier, product, current_stage, skipped_stages')
+                .eq('organization_id', organization_id)
+              ordersList = (freshOrders || []).map((o: any) => ({
+                uuid: o.id,
+                id: o.order_id,
+                company: o.company,
+                supplier: o.supplier,
+                product: o.product,
+                currentStage: o.current_stage,
+                skippedStages: o.skipped_stages || [],
+              }))
+            }
+          }
+        } catch (err: any) {
+          console.error('Discovery error:', err.message)
+        }
+      }
+
+      // Now run AI matching on the unmatched emails
+      if (ordersList.length === 0) {
+        // Still no orders after discovery — stop to avoid infinite loop
+        console.log('No orders found after discovery attempt. Stopping match loop.')
+        return new Response(JSON.stringify({
+          mode: 'match',
+          done: true,
+          matched: 0,
+          created: createdOrderCount,
+          remaining: 0,
+          totalEmails: unmatchedEmails.length,
+          totalMatched: 0,
+          message: 'No orders could be discovered from emails. Try adding orders manually first.',
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Match these emails to existing purchase orders.
+${catalogSection}
+ACTIVE ORDERS:
+${JSON.stringify(ordersList, null, 2)}
+
+STAGE DEFINITIONS:
+${STAGE_TRIGGERS}
+${correctionExamples}
+EMAILS TO MATCH:
+${unmatchedEmails.map((e: any, i: number) => `
+--- Email ${i + 1} ---
+Gmail ID: ${e.gmail_id}
+From: ${e.from_name} <${e.from_email}>
+To: ${e.to_email}
+Subject: ${e.subject}
+Date: ${e.date}
+Has Attachment: ${e.has_attachment}
+Body (first 4000 chars): ${(e.body_text || '').substring(0, 4000)}
+`).join('\n')}
+
+For each email, determine:
+1. Which order it matches (by PO number, company, supplier, or product). Use the order "id" field (PO number).
+2. What stage this email represents (the stage the email is evidence of, regardless of current order stage).
+3. A brief summary.
+
+CRITICAL RULES FOR STAGE DETECTION:
+- The detected_stage is the stage this email provides EVIDENCE for — it can be ANY stage, not just current+1.
+- If an email shows evidence of stage 6 but the order is at stage 3, still report detected_stage as 6.
+- Sometimes steps get skipped in real trade — that's OK. The system will handle marking skipped stages.
+- If no order matches, set matched_order_id to null.
+- If no stage is detected, set detected_stage to null.
+- Return VALID JSON only, no markdown.
+
+Return a JSON array:
+[{ "gmail_id": "...", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "Brief explanation" }]`
+
+      let aiResults: any[] = []
+      try {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5-20250929',
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: aiPrompt }],
+          }),
+        })
+        if (aiRes.ok) {
+          const aiData = await aiRes.json()
+          const aiText = aiData.content?.[0]?.text || '[]'
+          const jsonMatch = aiText.match(/\[[\s\S]*\]/)
+          aiResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+        } else {
+          console.error(`AI match error: ${aiRes.status}`)
+        }
+      } catch (err) {
+        console.error('AI matching error:', err)
+      }
+
+      // Process results
+      const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
+      let matchedCount = 0
+      let advancedCount = 0
+
+      for (const email of unmatchedEmails) {
+        const ai = aiMap.get(email.gmail_id) || {}
+        const matchedOrderId = ai.matched_order_id || null
+        const detectedStage = ai.detected_stage || null
+        const summary = ai.summary || null
+
+        if (!matchedOrderId) continue // Skip unmatched
+
+        // Update the synced_email with match info
+        await supabase
+          .from('synced_emails')
+          .update({
+            matched_order_id: matchedOrderId,
+            detected_stage: detectedStage,
+            ai_summary: summary,
+          })
+          .eq('id', email.id)
+
+        matchedCount++
+
+        // Handle stage advancement with skip support
+        if (detectedStage) {
+          const order = ordersList.find((o: any) => o.id === matchedOrderId)
+          if (order && detectedStage > order.currentStage) {
+            // Calculate skipped stages
+            const newSkipped = [...(order.skippedStages || [])]
+            for (let s = order.currentStage + 1; s < detectedStage; s++) {
+              if (!newSkipped.includes(s)) newSkipped.push(s)
+            }
+
+            // Advance to the detected stage
+            const { error: stageError } = await supabase
+              .from('orders')
+              .update({
+                current_stage: detectedStage,
+                skipped_stages: newSkipped,
+              })
+              .eq('order_id', matchedOrderId)
+              .eq('organization_id', organization_id)
+
+            if (!stageError) {
+              advancedCount++
+              // Update local copy so next emails in batch see new stage
+              order.currentStage = detectedStage
+              order.skippedStages = newSkipped
+
+              // Log in order_history
+              await supabase.from('order_history').insert({
+                organization_id,
+                order_id: order.uuid,
+                stage: detectedStage,
+                from_address: `${email.from_name} <${email.from_email}>`,
+                subject: `Auto-advanced: ${email.subject}`,
+                body: summary || `Stage advanced based on email from ${email.from_name}`,
+                timestamp: email.date || new Date().toISOString(),
+                has_attachment: email.has_attachment || false,
+              })
+
+              // Mark as auto-advanced
+              await supabase.from('synced_emails').update({ auto_advanced: true }).eq('id', email.id)
+            }
+          } else if (order) {
+            // Email matches an order but doesn't advance stage — still log in history
+            await supabase.from('order_history').insert({
+              organization_id,
+              order_id: order.uuid,
+              stage: detectedStage,
+              from_address: `${email.from_name} <${email.from_email}>`,
+              subject: email.subject,
+              body: summary || `Email from ${email.from_name}`,
+              timestamp: email.date || new Date().toISOString(),
+              has_attachment: email.has_attachment || false,
+            })
+          }
+        }
+      }
+
+      // Count remaining unmatched
+      const { count: remainingCount } = await supabase
+        .from('synced_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization_id)
+        .is('matched_order_id', null)
+        .is('user_linked_order_id', null)
+
+      const { count: totalEmails } = await supabase
+        .from('synced_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization_id)
+
+      const { count: totalMatched } = await supabase
+        .from('synced_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization_id)
+        .not('matched_order_id', 'is', null)
+
+      return new Response(JSON.stringify({
+        mode: 'match',
+        done: (remainingCount || 0) === 0,
+        matched: matchedCount,
+        advanced: advancedCount,
+        created: createdOrderCount,
+        remaining: remainingCount || 0,
+        totalEmails: totalEmails || 0,
+        totalMatched: totalMatched || 0,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ============================================================
+    // MODE: PULL — Just download emails from Gmail, no AI matching
+    // ============================================================
     if (!member.gmail_refresh_token) {
       throw new Error('Gmail not connected. Please connect Gmail in Settings first.')
     }
 
-    // 5) Get org settings to retrieve client_id
+    // Get org settings for client_id
     const { data: settings, error: settingsError } = await supabase
       .from('organization_settings')
       .select('gmail_client_id')
@@ -206,10 +644,10 @@ serve(async (req) => {
       .single()
 
     if (settingsError || !settings?.gmail_client_id) {
-      throw new Error('Google Client ID not configured. Please ask the admin to set it up.')
+      throw new Error('Google Client ID not configured.')
     }
 
-    // 6) Refresh the access token
+    // Refresh access token
     const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
     if (!clientSecret) throw new Error('client_secret is missing')
 
@@ -227,51 +665,40 @@ serve(async (req) => {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
-    // 7) Check if this is an onboarding sync (no orders yet) or deep sync to set email limits
-    const { count: orderCount } = await supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('organization_id', organization_id)
-    const isOnboarding = (orderCount || 0) === 0
-    const isDeep = deepSync === true
-    const gmailMaxResults = (isOnboarding || isDeep) ? 500 : 50
-    const emailProcessLimit = (isOnboarding || isDeep) ? 500 : 20
-    console.log(`Sync mode: ${isOnboarding ? 'ONBOARDING' : isDeep ? 'DEEP SYNC' : 'DAILY'} (limit ${emailProcessLimit})`)
-
-    // 8) Build Gmail search query
-    // Deep sync: go back 6 months regardless of last_sync
-    // First sync (no last_sync): use 2-month lookback
-    // Normal sync: use time since last sync
-    const lastSync = isDeep
-      ? new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+    // For pull mode: always do deep sync (6 months)
+    const isPull = syncMode === 'pull'
+    const lookbackDays = isPull ? 180 : 7
+    const emailLimit = isPull ? 500 : 50
+    const lastSync = isPull
+      ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
       : member.gmail_last_sync
         ? new Date(member.gmail_last_sync)
         : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 
-    // 9) Fetch message list from Gmail (paginate for onboarding to get up to 500)
+    console.log(`${syncMode.toUpperCase()} mode: lookback ${lookbackDays}d, limit ${emailLimit}`)
+
+    // Fetch message IDs from Gmail (paginate)
     let messageIds: string[] = []
     let pageToken: string | undefined = undefined
     do {
-      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${gmailMaxResults}` + (pageToken ? `&pageToken=${pageToken}` : '')
+      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${emailLimit}` + (pageToken ? `&pageToken=${pageToken}` : '')
       const listRes = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
       const listData = await listRes.json()
       const ids = (listData.messages || []).map((m: any) => m.id)
       messageIds = messageIds.concat(ids)
       pageToken = listData.nextPageToken
-      // Stop if we've reached our limit or no more pages
-    } while (pageToken && messageIds.length < emailProcessLimit)
-    // Cap at the limit
-    messageIds = messageIds.slice(0, emailProcessLimit)
+    } while (pageToken && messageIds.length < emailLimit)
+    messageIds = messageIds.slice(0, emailLimit)
 
     if (messageIds.length === 0) {
-      // Update last sync time even if no new emails
       await supabase.from('organization_members').update({ gmail_last_sync: new Date().toISOString() }).eq('user_id', user_id).eq('organization_id', organization_id)
-      return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ mode: syncMode, synced: 0, total: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 10) Check which emails we already have
+    // Check which emails we already have
     const { data: existingEmails } = await supabase
       .from('synced_emails')
       .select('gmail_id')
@@ -284,11 +711,11 @@ serve(async (req) => {
 
     if (newMessageIds.length === 0) {
       await supabase.from('organization_members').update({ gmail_last_sync: new Date().toISOString() }).eq('user_id', user_id).eq('organization_id', organization_id)
-      return new Response(JSON.stringify({ synced: 0, advanced: 0, emails: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ mode: syncMode, synced: 0, total: messageIds.length, alreadyHad: existingIds.size }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // 11) Fetch full content of new messages (in parallel batches of 10 for speed)
-    const toFetch = newMessageIds.slice(0, emailProcessLimit)
+    // Fetch full content of new messages (in batches of 10)
+    const toFetch = newMessageIds.slice(0, emailLimit)
     const emails: any[] = []
     const BATCH_SIZE = 10
 
@@ -304,7 +731,6 @@ serve(async (req) => {
           const headers = msg.payload?.headers || []
           const body = extractBody(msg.payload)
           const attachmentParts = extractAttachmentParts(msg.payload)
-          const hasAttachment = attachmentParts.length > 0
 
           return {
             gmail_id: msgId,
@@ -314,450 +740,18 @@ serve(async (req) => {
             subject: getHeader(headers, 'Subject'),
             body_text: body.substring(0, 5000),
             date: getHeader(headers, 'Date'),
-            has_attachment: hasAttachment,
-            attachment_parts: attachmentParts,
+            has_attachment: attachmentParts.length > 0,
           }
         })
       )
       emails.push(...batchResults)
     }
-    console.log(`Fetched ${emails.length} emails`)
+    console.log(`Fetched ${emails.length} new emails from Gmail`)
 
-    // 11) Get active orders for AI matching
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('id, order_id, company, supplier, product, current_stage')
-      .eq('organization_id', organization_id)
-
-    let ordersList = (orders || []).map((o: any) => ({
-      uuid: o.id,
-      id: o.order_id,
-      company: o.company,
-      supplier: o.supplier,
-      product: o.product,
-      currentStage: o.current_stage,
-    }))
-
-    // 11a) Fetch product catalog for AI context
-    let productCatalogText = ''
-    try {
-      const { data: products } = await supabase
-        .from('products')
-        .select('name, size, glaze, freeze_type, markets')
-        .eq('organization_id', organization_id)
-        .eq('is_active', true)
-
-      if (products && products.length > 0) {
-        const grouped = new Map<string, { sizes: Set<string>, glazes: Set<string>, freezes: Set<string> }>()
-        for (const p of products) {
-          if (!grouped.has(p.name)) {
-            grouped.set(p.name, { sizes: new Set(), glazes: new Set(), freezes: new Set() })
-          }
-          const g = grouped.get(p.name)!
-          if (p.size) g.sizes.add(p.size)
-          if (p.glaze != null) g.glazes.add(Math.round(p.glaze * 100) + '%')
-          if (p.freeze_type) g.freezes.add(p.freeze_type)
-        }
-
-        productCatalogText = Array.from(grouped).map(([name, attrs]) => {
-          const parts = [name]
-          if (attrs.sizes.size > 0) parts.push(`Sizes: ${[...attrs.sizes].join(', ')}`)
-          if (attrs.glazes.size > 0) parts.push(`Glaze: ${[...attrs.glazes].join(', ')}`)
-          if (attrs.freezes.size > 0) parts.push(`Freeze: ${[...attrs.freezes].join(', ')}`)
-          return parts.join(' | ')
-        }).join('\n')
-      }
-    } catch (err) {
-      console.error('Could not fetch product catalog:', err)
-    }
-
-    const catalogSection = productCatalogText
-      ? `\nPRODUCT CATALOG (use these exact product names when identifying products in emails):\n${productCatalogText}\n`
-      : ''
-
-    // 11b) ONBOARDING MODE — if no orders exist, discover them from emails
-    let createdOrderCount = 0
-    if (ordersList.length === 0) {
-      console.log('Onboarding mode: no orders found, running discovery...')
-
-      // Process emails in batches of 50 so Claude can handle them
-      const DISCOVERY_BATCH = 50
-      const allDiscovered: any[] = []
-
-      for (let b = 0; b < emails.length; b += DISCOVERY_BATCH) {
-        const emailBatch = emails.slice(b, b + DISCOVERY_BATCH)
-        console.log(`Discovery batch ${Math.floor(b / DISCOVERY_BATCH) + 1}: emails ${b + 1}-${b + emailBatch.length}`)
-
-        const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
-Analyze these emails and identify all distinct purchase orders you can find.
-${catalogSection}
-EMAILS:
-${emailBatch.map((e: any, i: number) => `
---- Email ${i + 1} ---
-From: ${e.from_name} <${e.from_email}>
-To: ${e.to_email}
-Subject: ${e.subject}
-Date: ${e.date}
-Has Attachment: ${e.has_attachment}
-Body (first 4000 chars): ${e.body_text.substring(0, 4000)}
-`).join('\n')}
-
-For each distinct purchase order you can identify, extract:
-- po_number: The PO/reference number (look for patterns like "GI/PO/...", "PO-...", or any order reference number)
-- company: The buyer company name (the customer buying the goods)
-- supplier: The supplier/seller company name (the one producing/shipping the goods)
-- product: Main product being traded (e.g. "Frozen Shrimp PDTO", "Frozen Squid Rings")
-- from_location: Where the goods ship FROM (usually India, Vietnam, China, etc.)
-- current_stage: What stage this order has reached (1-8) based on the email evidence
-- stage_reasoning: Brief explanation of why you chose that stage
-
-STAGE DEFINITIONS:
-${STAGE_TRIGGERS}
-
-Stage 1 = Order Confirmed (PO exists/was sent)
-Stage 8 = DHL Shipped (DHL tracking number shared)
-
-RULES:
-- Only include orders where you found a clear PO number or order reference in the emails
-- Be PRECISE with company names. Companies with similar names are DIFFERENT entities (e.g. "Silver Seafoods" and "Silver Star Seafoods" are two separate companies — never merge or confuse them). Always use the exact name as written in the emails.
-- Every field (company, supplier, product) MUST be filled with real data from the emails. Look across ALL emails for each PO to build the most complete picture. If you truly cannot determine company, supplier, or product for an order, skip it entirely — do not return orders with "Unknown" fields.
-- If you can't determine the stage, default to 1
-- Each order should appear only once (deduplicate by PO number)
-- Ganesh International is usually the buyer/trading company — the supplier is the factory or producer
-- Return VALID JSON only, no markdown wrapping
-
-Return a JSON array:
-[{ "po_number": "...", "company": "...", "supplier": "...", "product": "...", "from_location": "...", "current_stage": 1, "stage_reasoning": "..." }]
-
-If no purchase orders can be identified, return an empty array: []`
-
-        try {
-          const discoveryRes = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': ANTHROPIC_API_KEY,
-              'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-              model: 'claude-opus-4-5-20251101',
-              max_tokens: 4000,
-              messages: [{ role: 'user', content: discoveryPrompt }],
-            }),
-          })
-          if (!discoveryRes.ok) {
-            console.error(`  Discovery API error: ${discoveryRes.status} ${discoveryRes.statusText}`)
-            const errBody = await discoveryRes.text()
-            console.error(`  Response: ${errBody.substring(0, 500)}`)
-          } else {
-            const discoveryData = await discoveryRes.json()
-            const discoveryText = discoveryData.content?.[0]?.text || '[]'
-            const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
-            const batchOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-            console.log(`  Batch found ${batchOrders.length} orders`)
-            allDiscovered.push(...batchOrders)
-          }
-        } catch (batchErr: any) {
-          console.error(`  Discovery batch error:`, batchErr.message)
-        }
-        // Rate limit protection: wait 2s between discovery batches
-        if (b + DISCOVERY_BATCH < emails.length) await delay(2000)
-      }
-
-      // Deduplicate by PO number — keep the one with the highest stage
-      const poMap = new Map<string, any>()
-      for (const order of allDiscovered) {
-        if (!order.po_number) continue
-        const existing = poMap.get(order.po_number)
-        if (!existing || (order.current_stage || 1) > (existing.current_stage || 1)) {
-          poMap.set(order.po_number, order)
-        }
-      }
-      const discoveredOrders = Array.from(poMap.values())
-      console.log(`Discovery found ${discoveredOrders.length} unique orders from ${allDiscovered.length} total`)
-
-      // Create each discovered order in the database
-      for (const disc of discoveredOrders) {
-        if (!disc.po_number) continue
-
-        const { data: newOrder, error: createErr } = await supabase
-          .from('orders')
-          .insert({
-            organization_id,
-            order_id: disc.po_number,
-            po_number: disc.po_number,
-            company: disc.company || 'Unknown',
-            supplier: disc.supplier || 'Unknown',
-            product: disc.product || 'Unknown',
-            from_location: disc.from_location || 'India',
-            current_stage: disc.current_stage || 1,
-            order_date: new Date().toISOString().split('T')[0],
-            status: 'sent',
-            specs: '',
-            metadata: { created_by: 'onboarding_sync', stage_reasoning: disc.stage_reasoning || '' },
-          })
-          .select('id')
-          .single()
-
-        if (createErr) {
-          console.error(`Failed to create order ${disc.po_number}:`, createErr.message)
-          continue
-        }
-
-        createdOrderCount++
-
-        // Add history entry
-        if (newOrder) {
-          await supabase.from('order_history').insert({
-            order_id: newOrder.id,
-            organization_id,
-            stage: disc.current_stage || 1,
-            timestamp: new Date().toISOString(),
-            from_address: 'System (Onboarding Sync)',
-            subject: 'Order discovered from email history',
-            body: disc.stage_reasoning || `Order ${disc.po_number} discovered during onboarding sync`,
-          })
-        }
-      }
-
-      // Re-fetch orders so the matching prompt below has them
-      if (createdOrderCount > 0) {
-        const { data: freshOrders } = await supabase
-          .from('orders')
-          .select('id, order_id, company, supplier, product, current_stage')
-          .eq('organization_id', organization_id)
-
-        ordersList = (freshOrders || []).map((o: any) => ({
-          uuid: o.id,
-          id: o.order_id,
-          company: o.company,
-          supplier: o.supplier,
-          product: o.product,
-          currentStage: o.current_stage,
-        }))
-      }
-    }
-
-    // 11.5) Fetch recent user corrections for AI learning
-    let correctionExamples = ''
-    try {
-      const { data: corrections } = await supabase
-        .from('synced_emails')
-        .select('subject, from_email, user_linked_order_id')
-        .eq('organization_id', organization_id)
-        .not('user_linked_at', 'is', null)
-        .order('user_linked_at', { ascending: false })
-        .limit(10)
-
-      if (corrections && corrections.length > 0) {
-        // Look up order details for the linked orders
-        const linkedOrderIds = corrections.map((c: any) => c.user_linked_order_id).filter(Boolean)
-        const { data: linkedOrders } = await supabase
-          .from('orders')
-          .select('id, order_id, company, product')
-          .in('id', linkedOrderIds)
-
-        const orderMap: Record<string, any> = {}
-        for (const o of linkedOrders || []) {
-          orderMap[o.id] = o
-        }
-
-        const examples = corrections.map((c: any) => {
-          const order = orderMap[c.user_linked_order_id]
-          const orderLabel = order ? `${order.order_id} (${order.company} - ${order.product})` : c.user_linked_order_id
-          return `- Email from "${c.from_email}" with subject "${c.subject}" was manually linked to order ${orderLabel}`
-        }).join('\n')
-
-        correctionExamples = `
-RECENT USER CORRECTIONS (learn from these patterns to improve matching):
-${examples}
-Use these examples to better match similar emails from the same senders or about similar topics.
-`
-      }
-    } catch (err) {
-      console.error('Failed to fetch corrections:', err)
-    }
-
-    // 12) AI Analysis — send emails + orders to Claude for matching (in batches of 50)
-    const MATCH_BATCH = 50
-    let aiResults: any[] = []
-
-    for (let b = 0; b < emails.length; b += MATCH_BATCH) {
-      const emailBatch = emails.slice(b, b + MATCH_BATCH)
-      console.log(`Matching batch ${Math.floor(b / MATCH_BATCH) + 1}: emails ${b + 1}-${b + emailBatch.length}`)
-
-      const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Analyze these emails and match them to existing purchase orders.
-${catalogSection}
-ACTIVE ORDERS:
-${JSON.stringify(ordersList, null, 2)}
-
-STAGE TRIGGER DEFINITIONS:
-${STAGE_TRIGGERS}
-${correctionExamples}
-NEW EMAILS TO ANALYZE:
-${emailBatch.map((e: any, i: number) => `
---- Email ${i + 1} ---
-Gmail ID: ${e.gmail_id}
-From: ${e.from_name} <${e.from_email}>
-To: ${e.to_email}
-Subject: ${e.subject}
-Date: ${e.date}
-Has Attachment: ${e.has_attachment}
-Body (first 4000 chars): ${e.body_text.substring(0, 4000)}
-`).join('\n')}
-
-For each email, determine:
-1. Which order it matches (by PO number in subject/body, company name, supplier name, or product). Use the order "id" field.
-2. What stage it should advance to (only if it clearly triggers a stage transition AND the order's currentStage is exactly one below the detected stage).
-3. A brief summary of what this email means for the order.
-
-IMPORTANT RULES:
-- Only suggest a stage advance if you are CONFIDENT the email is a clear trigger.
-- The detected_stage should be the NEW stage the order should move TO (not the current one).
-- Only advance by one stage at a time (e.g. if order is at stage 2, only advance to 3, not to 5).
-- If no order matches or no stage trigger is found, set matched_order_id and detected_stage to null.
-- Return VALID JSON only, no markdown.
-
-Return a JSON array with one object per email:
-[
-  {
-    "gmail_id": "...",
-    "matched_order_id": "PO-NUMBER or null",
-    "detected_stage": 3 or null,
-    "summary": "Brief explanation"
-  }
-]`
-
-      try {
-        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-4-5-20251101',
-            max_tokens: 4000,
-            messages: [{ role: 'user', content: aiPrompt }],
-          }),
-        })
-        if (!aiRes.ok) {
-          console.error(`Matching API error: ${aiRes.status} ${aiRes.statusText}`)
-          const errBody = await aiRes.text()
-          console.error(`  Response: ${errBody.substring(0, 500)}`)
-        } else {
-          const aiData = await aiRes.json()
-          const aiText = aiData.content?.[0]?.text || '[]'
-          const jsonMatch = aiText.match(/\[[\s\S]*\]/)
-          const batchResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-          aiResults.push(...batchResults)
-        }
-      } catch (aiErr) {
-        console.error(`Matching batch error:`, aiErr)
-      }
-      // Rate limit protection: wait 1s between matching batches
-      if (b + MATCH_BATCH < emails.length) await delay(1000)
-    }
-    console.log(`AI matching complete: ${aiResults.length} results`)
-
-    // Build lookup from gmail_id to AI result
-    const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
-
-    // 13) Store emails and process auto-advances
-    const storedEmails: any[] = []
-    let advancedCount = 0
-
+    // Store emails in DB (no AI matching in pull mode)
+    let storedCount = 0
     for (const email of emails) {
-      const ai = aiMap.get(email.gmail_id) || {}
-      const matchedOrderId = ai.matched_order_id || null
-      const detectedStage = ai.detected_stage || null
-      const summary = ai.summary || null
-
-      // Download attachments if this email matches an order and has files
-      let uploadedAttachments: any[] = []
-      if (matchedOrderId && email.attachment_parts?.length > 0) {
-        for (const part of email.attachment_parts) {
-          if (part.size > 10 * 1024 * 1024) { console.log(`Skipping large attachment: ${part.filename} (${part.size} bytes)`); continue }
-          const fileData = await downloadAttachment(accessToken, email.gmail_id, part.attachmentId)
-          if (!fileData) continue
-          const publicUrl = await uploadToStorage(supabase, organization_id, matchedOrderId, part.filename, fileData, part.mimeType)
-          if (publicUrl) {
-            uploadedAttachments.push(JSON.stringify({ name: part.filename, meta: { pdfUrl: publicUrl, mimeType: part.mimeType } }))
-          }
-        }
-        if (uploadedAttachments.length > 0) console.log(`Uploaded ${uploadedAttachments.length} attachments for ${matchedOrderId}`)
-      }
-
-      // Check if we should auto-advance
-      let autoAdvanced = false
-      if (matchedOrderId && detectedStage) {
-        const order = ordersList.find((o: any) => o.id === matchedOrderId)
-        if (order && order.currentStage === detectedStage - 1) {
-          // Auto-advance the order
-          const { error: stageError } = await supabase
-            .from('orders')
-            .update({ current_stage: detectedStage })
-            .eq('order_id', matchedOrderId)
-            .eq('organization_id', organization_id)
-
-          if (!stageError) {
-            autoAdvanced = true
-            advancedCount++
-
-            // Log stage change in order_history (use UUID, not PO number)
-            await supabase.from('order_history').insert({
-              organization_id,
-              order_id: order.uuid,
-              stage: detectedStage,
-              from_address: `${email.from_name} <${email.from_email}>`,
-              subject: `Auto-advanced: ${email.subject}`,
-              body: summary || `Stage advanced based on email from ${email.from_name}`,
-              timestamp: new Date().toISOString(),
-              has_attachment: uploadedAttachments.length > 0,
-              attachments: uploadedAttachments.length > 0 ? uploadedAttachments : null,
-            })
-
-            // Create in-app notification
-            const { data: members } = await supabase
-              .from('organization_members')
-              .select('user_id')
-              .eq('organization_id', organization_id)
-
-            for (const member of (members || [])) {
-              await supabase.from('notifications').insert({
-                user_id: member.user_id,
-                organization_id,
-                type: 'order_update',
-                title: `Order ${matchedOrderId} advanced to Stage ${detectedStage}`,
-                message: summary,
-                data: { orderId: matchedOrderId, newStage: detectedStage, emailGmailId: email.gmail_id },
-              })
-            }
-          }
-        }
-      }
-
-      // For matched emails that didn't advance but have attachments, still save them
-      if (matchedOrderId && !autoAdvanced && uploadedAttachments.length > 0) {
-        const order = ordersList.find((o: any) => o.id === matchedOrderId)
-        if (order) {
-          await supabase.from('order_history').insert({
-            organization_id,
-            order_id: order.uuid,
-            stage: detectedStage || order.currentStage,
-            from_address: `${email.from_name} <${email.from_email}>`,
-            subject: email.subject,
-            body: summary || `Email attachment from ${email.from_name}`,
-            timestamp: new Date().toISOString(),
-            has_attachment: true,
-            attachments: uploadedAttachments,
-          })
-        }
-      }
-
-      // Store email in synced_emails with connected_user_id
-      const { data: inserted, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('synced_emails')
         .upsert({
           organization_id,
@@ -769,33 +763,31 @@ Return a JSON array with one object per email:
           body_text: email.body_text,
           date: new Date(email.date).toISOString(),
           has_attachment: email.has_attachment,
-          matched_order_id: matchedOrderId,
-          detected_stage: detectedStage,
-          ai_summary: summary,
-          auto_advanced: autoAdvanced,
+          matched_order_id: null,
+          detected_stage: null,
+          ai_summary: null,
+          auto_advanced: false,
           connected_user_id: user_id,
         }, { onConflict: 'organization_id,gmail_id' })
-        .select()
-        .single()
 
-      if (!insertError && inserted) {
-        storedEmails.push(inserted)
-      }
+      if (!insertError) storedCount++
     }
 
-    // 14) Update last sync time in organization_members (per-user)
-    await supabase
-      .from('organization_members')
-      .update({ gmail_last_sync: new Date().toISOString() })
-      .eq('user_id', user_id)
+    // Update last sync time
+    await supabase.from('organization_members').update({ gmail_last_sync: new Date().toISOString() }).eq('user_id', user_id).eq('organization_id', organization_id)
+
+    // Count total stored emails
+    const { count: totalStored } = await supabase
+      .from('synced_emails')
+      .select('id', { count: 'exact', head: true })
       .eq('organization_id', organization_id)
 
     return new Response(
       JSON.stringify({
-        synced: storedEmails.length,
-        advanced: advancedCount,
-        created: createdOrderCount,
-        emails: storedEmails,
+        mode: syncMode,
+        synced: storedCount,
+        total: totalStored || 0,
+        alreadyHad: existingIds.size,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

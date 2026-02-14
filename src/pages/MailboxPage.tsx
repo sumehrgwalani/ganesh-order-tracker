@@ -14,6 +14,8 @@ interface Props {
   userId?: string;
 }
 
+type SyncPhase = 'idle' | 'pulling' | 'matching' | 'done';
+
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
   const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder, refetch } = useSyncedEmails(orgId);
@@ -22,7 +24,11 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Two-phase sync state
+  const [syncPhase, setSyncPhase] = useState<SyncPhase>('idle');
+  const [syncProgress, setSyncProgress] = useState('');
+  const [matchProgress, setMatchProgress] = useState({ matched: 0, remaining: 0, total: 0 });
 
   // Build order options for the link modal
   const orderOptions = orders.map((o) => ({
@@ -43,22 +49,78 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     }
   };
 
-  const handleDeepSync = async () => {
+  const handleFullSync = async () => {
     if (!orgId || !userId) return;
-    setIsSyncing(true);
-    showToast('Starting full sync — this may take a few minutes...', 'info');
+
+    // Phase 1: Pull emails from Gmail
+    setSyncPhase('pulling');
+    setSyncProgress('Downloading emails from Gmail...');
+
     try {
-      const { data, error } = await supabase.functions.invoke('sync-emails', {
-        body: { organization_id: orgId, user_id: userId, deepSync: true },
+      const { data: pullData, error: pullError } = await supabase.functions.invoke('sync-emails', {
+        body: { organization_id: orgId, user_id: userId, mode: 'pull' },
       });
-      if (error) throw error;
-      const synced = data?.synced || 0;
-      showToast(`Full sync complete — ${synced} emails processed`, 'success');
+      if (pullError) throw pullError;
+
+      const pulled = pullData?.synced || 0;
+      const total = pullData?.total || 0;
+      setSyncProgress(`Downloaded ${pulled} new emails (${total} total)`);
+      showToast(`Phase 1 complete — ${pulled} emails downloaded`, 'success');
+
+      // Phase 2: AI matching in batches
+      setSyncPhase('matching');
+      let batchNum = 0;
+      let isDone = false;
+
+      const MAX_BATCHES = 50; // Safety limit to prevent infinite loops
+      while (!isDone && batchNum < MAX_BATCHES) {
+        batchNum++;
+        const { data: matchData, error: matchError } = await supabase.functions.invoke('sync-emails', {
+          body: { organization_id: orgId, user_id: userId, mode: 'match' },
+        });
+        if (matchError) throw matchError;
+
+        const remaining = matchData?.remaining || 0;
+        const totalEmails = matchData?.totalEmails || 0;
+        const totalMatched = matchData?.totalMatched || 0;
+        const created = matchData?.created || 0;
+
+        setMatchProgress({ matched: totalMatched, remaining, total: totalEmails });
+        setSyncProgress(
+          remaining > 0
+            ? `AI matching batch ${batchNum}: ${totalMatched} matched, ${remaining} remaining...`
+            : `Complete! ${totalMatched} emails matched to orders`
+        );
+
+        if (matchData?.message) {
+          showToast(matchData.message, 'info');
+        }
+
+        if (created > 0) {
+          showToast(`Discovered ${created} new orders from emails`, 'success');
+        }
+
+        isDone = matchData?.done === true || remaining === 0;
+
+        if (!isDone) {
+          // Small delay between batches
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+
+      setSyncPhase('done');
+      showToast('Full sync complete!', 'success');
       refetch();
+
+      // Reset after a few seconds
+      setTimeout(() => {
+        setSyncPhase('idle');
+        setSyncProgress('');
+      }, 5000);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Sync failed', 'error');
-    } finally {
-      setIsSyncing(false);
+      setSyncPhase('idle');
+      setSyncProgress('');
     }
   };
 
@@ -84,6 +146,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   };
 
   const currentEmails = activeTab === 'matched' ? matchedEmails : unmatchedEmails;
+  const isSyncing = syncPhase !== 'idle' && syncPhase !== 'done';
 
   if (loading) {
     return (
@@ -104,19 +167,49 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         onBack={() => navigate('/')}
         actions={
           <button
-            onClick={handleDeepSync}
+            onClick={handleFullSync}
             disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               isSyncing
                 ? 'bg-blue-50 text-blue-600'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             <Icon name="RefreshCw" size={16} className={isSyncing ? 'animate-spin' : ''} />
-            {isSyncing ? 'Syncing...' : 'Full Sync'}
+            {syncPhase === 'pulling' ? 'Pulling...' : syncPhase === 'matching' ? 'Matching...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
           </button>
         }
       />
+
+      {/* Sync progress banner */}
+      {syncPhase !== 'idle' && (
+        <div className={`mb-4 rounded-xl px-4 py-3 flex items-center gap-3 ${
+          syncPhase === 'done' ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'
+        }`}>
+          {syncPhase !== 'done' && (
+            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          )}
+          {syncPhase === 'done' && <Icon name="CheckCircle" size={20} className="text-green-600 flex-shrink-0" />}
+          <div className="flex-1">
+            <p className={`text-sm font-medium ${syncPhase === 'done' ? 'text-green-800' : 'text-blue-800'}`}>
+              {syncProgress}
+            </p>
+            {syncPhase === 'matching' && matchProgress.total > 0 && (
+              <div className="mt-2">
+                <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.round(((matchProgress.total - matchProgress.remaining) / matchProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-blue-600 mt-1">
+                  {matchProgress.total - matchProgress.remaining} of {matchProgress.total} processed
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
@@ -155,7 +248,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
           </h3>
           <p className="text-gray-500 text-sm">
             {activeTab === 'matched'
-              ? 'Emails will appear here once Gmail sync matches them to your orders.'
+              ? 'Click "Full Sync" to pull emails from Gmail and match them to orders.'
               : 'General emails that don\'t match any order will show up here.'}
           </p>
         </div>
