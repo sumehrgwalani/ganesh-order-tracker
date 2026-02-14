@@ -5,21 +5,24 @@ import PageHeader from '../components/PageHeader';
 import LinkEmailModal from '../components/LinkEmailModal';
 import { useSyncedEmails, SyncedEmail } from '../hooks/useSyncedEmails';
 import { useToast } from '../components/Toast';
+import { supabase } from '../lib/supabase';
 import type { Order } from '../types';
 
 interface Props {
   orgId: string | null;
   orders: Order[];
+  userId?: string;
 }
 
-function MailboxPage({ orgId, orders }: Props) {
+function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
-  const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder } = useSyncedEmails(orgId);
+  const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder, refetch } = useSyncedEmails(orgId);
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Build order options for the link modal
   const orderOptions = orders.map((o) => ({
@@ -37,6 +40,25 @@ function MailboxPage({ orgId, orders }: Props) {
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Failed to link email', 'error');
       throw err;
+    }
+  };
+
+  const handleDeepSync = async () => {
+    if (!orgId || !userId) return;
+    setIsSyncing(true);
+    showToast('Starting full sync — this may take a few minutes...', 'info');
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-emails', {
+        body: { organization_id: orgId, user_id: userId, deepSync: true },
+      });
+      if (error) throw error;
+      const synced = data?.synced || 0;
+      showToast(`Full sync complete — ${synced} emails processed`, 'success');
+      refetch();
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Sync failed', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -76,7 +98,25 @@ function MailboxPage({ orgId, orders }: Props) {
 
   return (
     <div>
-      <PageHeader title="Mailbox" subtitle="Email integration for order tracking" onBack={() => navigate('/')} />
+      <PageHeader
+        title="Mailbox"
+        subtitle="Email integration for order tracking"
+        onBack={() => navigate('/')}
+        actions={
+          <button
+            onClick={handleDeepSync}
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+              isSyncing
+                ? 'bg-blue-50 text-blue-600'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Icon name="RefreshCw" size={16} className={isSyncing ? 'animate-spin' : ''} />
+            {isSyncing ? 'Syncing...' : 'Full Sync'}
+          </button>
+        }
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">

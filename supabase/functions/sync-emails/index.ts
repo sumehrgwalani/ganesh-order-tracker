@@ -167,7 +167,7 @@ serve(async (req) => {
       throw new Error('Authentication failed. Please log in again.')
     }
 
-    const { organization_id, user_id } = await req.json()
+    const { organization_id, user_id, deepSync } = await req.json()
     if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
     // 2) Validate input formats
@@ -227,22 +227,26 @@ serve(async (req) => {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
-    // 7) Check if this is an onboarding sync (no orders yet) to set email limits
+    // 7) Check if this is an onboarding sync (no orders yet) or deep sync to set email limits
     const { count: orderCount } = await supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', organization_id)
     const isOnboarding = (orderCount || 0) === 0
-    const gmailMaxResults = isOnboarding ? 500 : 50
-    const emailProcessLimit = isOnboarding ? 500 : 20
-    console.log(`Sync mode: ${isOnboarding ? 'ONBOARDING (limit 500)' : 'DAILY (limit 20)'}`)
+    const isDeep = deepSync === true
+    const gmailMaxResults = (isOnboarding || isDeep) ? 500 : 50
+    const emailProcessLimit = (isOnboarding || isDeep) ? 500 : 20
+    console.log(`Sync mode: ${isOnboarding ? 'ONBOARDING' : isDeep ? 'DEEP SYNC' : 'DAILY'} (limit ${emailProcessLimit})`)
 
     // 8) Build Gmail search query
-    // On first sync (no last_sync), use 2-month lookback
-    // On subsequent syncs, use time since last sync
-    const lastSync = member.gmail_last_sync
-      ? new Date(member.gmail_last_sync)
-      : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
+    // Deep sync: go back 6 months regardless of last_sync
+    // First sync (no last_sync): use 2-month lookback
+    // Normal sync: use time since last sync
+    const lastSync = isDeep
+      ? new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+      : member.gmail_last_sync
+        ? new Date(member.gmail_last_sync)
+        : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
     const afterEpoch = Math.floor(lastSync.getTime() / 1000)
     const query = `after:${afterEpoch}`
 

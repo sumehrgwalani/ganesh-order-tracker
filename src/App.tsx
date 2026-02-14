@@ -258,7 +258,7 @@ function App() {
                   setExpandedOrder={setExpandedOrder}
                 />
               } />
-              <Route path="/mailbox" element={<MailboxPage orgId={orgId} orders={orders} />} />
+              <Route path="/mailbox" element={<MailboxPage orgId={orgId} orders={orders} userId={user?.id} />} />
               <Route path="/create-po" element={
                 <POGeneratorPage
                   contacts={contacts}
