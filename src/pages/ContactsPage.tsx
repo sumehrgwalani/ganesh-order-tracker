@@ -4,8 +4,6 @@ import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
 import ContactImportModal from '../components/ContactImportModal';
-import CompanySettingsModal from '../components/CompanySettingsModal';
-import ComposeEmailModal from '../components/ComposeEmailModal';
 import PhoneIcon from '../components/PhoneIcon';
 import type { ContactFormData, ContactsMap } from '../types';
 
@@ -26,14 +24,12 @@ interface Contact {
 
 interface Props {
   dbContacts?: ContactsMap;
-  orgId?: string | null;
   onAddContact?: (formData: ContactFormData) => Promise<any>;
   onUpdateContact?: (email: string, updates: Partial<Contact>) => Promise<void>;
   onDeleteContact?: (email: string) => Promise<void>;
   onBulkImport?: (contacts: Array<{ email: string; name: string; company: string; role: string; phone?: string; address?: string; country?: string; notes?: string }>) => Promise<{ inserted: number; updated: number }>;
   onBulkDelete?: (emails: string[]) => Promise<void>;
   onRefresh?: () => Promise<void>;
-  onUpdateContactsByCompany?: (company: string, updates: Partial<Contact>) => Promise<void>;
 }
 
 // Helper to convert ContactsMap to Contact[] — defined outside component for stability
@@ -56,7 +52,7 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
-function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh, onUpdateContactsByCompany }: Props) {
+function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -65,10 +61,7 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
   const [showModal, setShowModal] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  const [emailTo, setEmailTo] = useState<string | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
-  // Company settings modal state
-  const [companySettingsFor, setCompanySettingsFor] = useState<string | null>(null);
   // Batch delete state
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -148,6 +141,8 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
     );
 
     if (editingContact) {
+      // Save snapshot for rollback
+      const snapshot = [...contacts];
       // Optimistic local update — instant UI feedback
       const updated: Contact = {
         ...editingContact,
@@ -164,7 +159,7 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
       };
       setContacts(prev => prev.map(c => c.id === editingContact.id ? updated : c));
 
-      // Persist to Supabase in background — save the category as role if user picked one
+      // Persist to Supabase — rollback on failure
       const dbRole = contactData.category && contactData.category !== 'other'
         ? contactData.category.charAt(0).toUpperCase() + contactData.category.slice(1)
         : role;
@@ -179,9 +174,14 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
           color: contactData.color,
           initials,
           default_brand: contactData.default_brand || '',
-        }).catch(err => console.error('Failed to save contact:', err));
+        }).catch(err => {
+          console.error('Failed to save contact, reverting:', err);
+          setContacts(snapshot);
+        });
       }
     } else {
+      // Save snapshot for rollback
+      const snapshot = [...contacts];
       // Optimistic local add
       const newContact: Contact = {
         id: contactData.email,
@@ -199,9 +199,12 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
       };
       setContacts(prev => [...prev, newContact]);
 
-      // Persist to Supabase in background
+      // Persist to Supabase — rollback on failure
       if (onAddContact) {
-        onAddContact(contactData).catch(err => console.error('Failed to add contact:', err));
+        onAddContact(contactData).catch(err => {
+          console.error('Failed to add contact, reverting:', err);
+          setContacts(snapshot);
+        });
       }
     }
 
@@ -216,12 +219,17 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
 
   const handleDeleteContact = async (contactId: string) => {
     if (confirm('Are you sure you want to delete this contact?')) {
+      // Save snapshot for rollback
+      const snapshot = [...contacts];
       // Optimistic local delete — instant UI feedback
       setContacts(prev => prev.filter(c => c.id !== contactId));
 
-      // Persist to Supabase in background
+      // Persist to Supabase — rollback on failure
       if (onDeleteContact) {
-        onDeleteContact(contactId).catch(err => console.error('Failed to delete contact:', err));
+        onDeleteContact(contactId).catch(err => {
+          console.error('Failed to delete contact, reverting:', err);
+          setContacts(snapshot);
+        });
       }
     }
   };
@@ -276,23 +284,6 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
       initials: contact.initials,
       default_brand: contact.default_brand || '',
     };
-  };
-
-  const handleSaveCompanySettings = async (brand: string, packing: string) => {
-    if (!companySettingsFor) return;
-    // Optimistic local update
-    setContacts(prev =>
-      prev.map(c => c.company === companySettingsFor ? { ...c, default_brand: brand, default_packing: packing } : c)
-    );
-    // Persist to DB
-    if (onUpdateContactsByCompany) {
-      try {
-        await onUpdateContactsByCompany(companySettingsFor, { default_brand: brand, default_packing: packing });
-      } catch (err) {
-        console.error('Failed to save company settings:', err);
-      }
-    }
-    setCompanySettingsFor(null);
   };
 
   return (
@@ -470,23 +461,10 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800">{company}</h3>
-                      <p className="text-sm text-gray-500">
-                        {companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}
-                        {companyContacts[0]?.default_brand && <span className="ml-2 text-blue-500">· {companyContacts[0].default_brand}</span>}
-                        {companyContacts[0]?.default_packing && <span className="ml-2 text-green-500">· {companyContacts[0].default_packing}</span>}
-                      </p>
+                      <p className="text-sm text-gray-500">{companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCompanySettingsFor(company); }}
-                      className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600"
-                      title="Company settings"
-                    >
-                      <Icon name="Settings" size={16} />
-                    </button>
-                    <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                  </div>
+                  <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
 
                 {isExpanded && (
@@ -524,11 +502,6 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
                         </div>
                         {/* Col 3: Action buttons */}
                         <div className="flex gap-1 flex-shrink-0">
-                          {!isPlaceholderEmail(contact.email) && (
-                            <button onClick={() => setEmailTo(contact.email)} className="p-2 hover:bg-blue-50 rounded-lg" title="Send Email">
-                              <Icon name="Send" size={16} className="text-blue-400" />
-                            </button>
-                          )}
                           <button onClick={() => handleEditContact(contact)} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit">
                             <Icon name="Settings" size={16} className="text-gray-400" />
                           </button>
@@ -633,17 +606,6 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
         />
       )}
 
-      {/* Company Settings Modal */}
-      {companySettingsFor && (
-        <CompanySettingsModal
-          company={companySettingsFor}
-          defaultBrand={contacts.find(c => c.company === companySettingsFor)?.default_brand || ''}
-          defaultPacking={contacts.find(c => c.company === companySettingsFor)?.default_packing || ''}
-          onSave={handleSaveCompanySettings}
-          onClose={() => setCompanySettingsFor(null)}
-        />
-      )}
-
       {/* Import Modal */}
       {showImportModal && onBulkImport && (
         <ContactImportModal
@@ -682,15 +644,6 @@ function ContactsPage({ dbContacts, orgId, onAddContact, onUpdateContact, onDele
           onClose={() => setShowImportModal(false)}
         />
       )}
-
-      {/* Compose Email Modal */}
-      <ComposeEmailModal
-        isOpen={!!emailTo}
-        onClose={() => setEmailTo(null)}
-        orgId={orgId || null}
-        contacts={dbContacts}
-        prefillTo={emailTo ? [emailTo] : undefined}
-      />
     </div>
   );
 }

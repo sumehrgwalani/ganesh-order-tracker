@@ -342,6 +342,7 @@ CREATE POLICY "orders_select_policy"
   FOR SELECT
   USING (
     organization_id IN (SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid())
+    AND (deleted_at IS NULL)
   );
 
 CREATE POLICY "orders_insert_policy"
@@ -528,8 +529,3 @@ CREATE INDEX idx_contacts_email ON public.contacts(email);
 CREATE INDEX idx_orders_order_id ON public.orders(order_id);
 CREATE INDEX idx_product_inquiries_status ON public.product_inquiries(status);
 CREATE INDEX idx_order_history_stage ON public.order_history(stage);
-
--- Performance indexes for common query patterns
-CREATE INDEX IF NOT EXISTS idx_orders_org_status ON public.orders(organization_id, status);
-CREATE INDEX IF NOT EXISTS idx_order_history_order_timestamp ON public.order_history(order_id, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_organization_members_org_user ON public.organization_members(organization_id, user_id);

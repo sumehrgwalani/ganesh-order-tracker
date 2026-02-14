@@ -15,14 +15,13 @@ ALTER TABLE public.products
 
 -- Step 2: Seed product catalog data
 -- Uses the first organization found (Ganesh International)
+-- Uses ON CONFLICT to safely upsert — re-running this migration won't delete existing data
 DO $$
 DECLARE
   org UUID;
 BEGIN
   SELECT id INTO org FROM public.organizations LIMIT 1;
 
-  -- Upsert products (safe to re-run without data loss)
-  -- Using ON CONFLICT to update existing products rather than deleting all first
   INSERT INTO public.products (organization_id, name, category, product_type, size, glaze, freeze_type, catching_method, markets, is_active) VALUES
   -- ========================
   -- CUTTLEFISH
@@ -187,15 +186,4 @@ BEGIN
     markets = EXCLUDED.markets,
     is_active = EXCLUDED.is_active;
 
-END $$;
-
--- Add unique constraint to support ON CONFLICT (run once, safe to re-run)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'uq_products_org_name_size_freeze'
-  ) THEN
-    ALTER TABLE public.products ADD CONSTRAINT uq_products_org_name_size_freeze
-      UNIQUE (organization_id, name, size, freeze_type);
-  END IF;
 END $$;
