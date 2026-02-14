@@ -152,6 +152,29 @@ export function useNotifications(userId: string | null) {
       return { error: null, alreadyMember: true }
     }
 
+    // Remove user from any existing org first (user can only be in one org)
+    const { data: oldMemberships } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId)
+
+    if (oldMemberships && oldMemberships.length > 0) {
+      for (const old of oldMemberships) {
+        await supabase.from('organization_members').delete()
+          .eq('user_id', userId).eq('organization_id', old.organization_id)
+        // Clean up auto-created empty orgs
+        const { data: remaining } = await supabase
+          .from('organization_members')
+          .select('id')
+          .eq('organization_id', old.organization_id)
+          .limit(1)
+        if (!remaining || remaining.length === 0) {
+          await supabase.from('organizations').delete()
+            .eq('id', old.organization_id)
+        }
+      }
+    }
+
     // Join the organization
     const { error: memberError } = await supabase
       .from('organization_members')
