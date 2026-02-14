@@ -3,16 +3,32 @@ import { HistoryEntry, getAttachmentName } from '../types';
 import Icon from './Icon';
 import ContactAvatar from './ContactAvatar';
 import { getContactInfo } from '../utils/helpers';
+import ReassignEmailModal from './ReassignEmailModal';
+
+interface OrderOption {
+  id: string;
+  poNumber: string;
+  company: string;
+  product: string;
+}
 
 interface Props {
   entry: HistoryEntry;
   defaultExpanded?: boolean;
+  orderId?: string;
+  allOrders?: OrderOption[];
+  onReassign?: (entryId: string, newOrderId: string, note: string) => Promise<void>;
+  onRemove?: (entryId: string, note: string) => Promise<void>;
 }
 
-function ExpandableEmailCard({ entry, defaultExpanded = false }: Props) {
+function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [showReassign, setShowReassign] = useState(false);
   const contact = getContactInfo(entry.from);
   const formatTime = (ts: string) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  const canReassign = entry.id && orderId && allOrders && allOrders.length > 1 && onReassign;
+  const isSystemEntry = entry.from === 'System';
 
   return (
     <div className={`border rounded-xl transition-all ${expanded ? 'border-blue-300 shadow-md' : 'border-gray-200 hover:border-blue-200'} bg-white overflow-hidden`}>
@@ -67,7 +83,34 @@ function ExpandableEmailCard({ entry, defaultExpanded = false }: Props) {
               </div>
             </div>
           )}
+          {/* Reassign button - only for real emails (not system entries) */}
+          {canReassign && !isSystemEntry && (
+            <div className="px-4 pb-3 border-t border-gray-100 pt-3">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowReassign(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+              >
+                <Icon name="ArrowRightLeft" size={12} />
+                Wrong Order? Reassign
+              </button>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Reassign Modal */}
+      {showReassign && orderId && allOrders && onReassign && (
+        <ReassignEmailModal
+          currentOrderId={orderId}
+          orders={allOrders}
+          onReassign={async (newOrderId, note) => {
+            if (entry.id && onReassign) await onReassign(entry.id, newOrderId, note);
+          }}
+          onRemove={async (note) => {
+            if (entry.id && onRemove) await onRemove(entry.id, note);
+          }}
+          onClose={() => setShowReassign(false)}
+        />
       )}
     </div>
   );

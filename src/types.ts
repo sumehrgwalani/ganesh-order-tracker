@@ -11,7 +11,6 @@ export interface Contact {
   notes: string;
   country: string;
   default_brand: string;
-  default_packing: string;
 }
 
 export interface ContactFormData {
@@ -26,7 +25,6 @@ export interface ContactFormData {
   country?: string;
   initials?: string;
   default_brand?: string;
-  default_packing?: string;
 }
 
 export type ContactsMap = Record<string, Contact>;
@@ -34,6 +32,7 @@ export type ContactsMap = Record<string, Contact>;
 export type AttachmentEntry = string | { name: string; meta?: Record<string, any> };
 
 export interface HistoryEntry {
+  id?: string;
   stage: number;
   timestamp: string;
   from: string;
@@ -168,9 +167,6 @@ export interface TeamMember {
   departments: Department[];          // multi-department support
   created_at: string;
   email?: string;          // from auth.users
-  gmail_refresh_token?: string | null;
-  gmail_email?: string | null;
-  gmail_last_sync?: string | null;
 }
 
 export interface Invitation {
@@ -185,27 +181,6 @@ export interface Invitation {
   status: 'pending' | 'accepted' | 'expired' | 'cancelled';
   created_at: string;
   expires_at: string;
-}
-
-// ===== Synced Email Types =====
-
-export interface SyncedEmail {
-  id: string;
-  organization_id: string;
-  gmail_id: string;
-  from_email: string | null;
-  from_name: string | null;
-  to_email: string | null;
-  subject: string | null;
-  body_text: string | null;
-  date: string | null;
-  has_attachment: boolean;
-  matched_order_id: string | null;
-  detected_stage: number | null;
-  ai_summary: string | null;
-  auto_advanced: boolean;
-  created_at: string;
-  connected_user_id: string | null;
 }
 
 // ===== Settings Types =====
@@ -231,10 +206,6 @@ export interface OrganizationSettings {
   smtp_from_email: string | null;
   smtp_use_tls: boolean;
   api_key: string | null;
-  gmail_refresh_token: string | null;
-  gmail_email: string | null;
-  gmail_last_sync: string | null;
-  gmail_client_id: string | null;
   notify_new_order: boolean;
   notify_order_updated: boolean;
   notify_stage_changed: boolean;
@@ -250,22 +221,6 @@ export interface UserPreferences {
   notify_order_updated: boolean | null;
   notify_stage_changed: boolean | null;
   notify_new_inquiry: boolean | null;
-}
-
-// ===== Email Sending Types =====
-
-export interface EmailAttachment {
-  filename: string;
-  data: string;       // base64 encoded
-  mimeType: string;
-}
-
-export interface EmailDraft {
-  recipients: string[];
-  subject: string;
-  body: string;
-  attachments: EmailAttachment[];
-  inReplyToMessageId?: string;
 }
 
 // ===== Notification Types =====

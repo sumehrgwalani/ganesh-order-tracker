@@ -92,6 +92,7 @@ export function useOrders(orgId: string | null) {
       history: (row.order_history || [])
         .sort((a: any, b: any) => a.stage - b.stage || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
         .map((h: any): HistoryEntry => ({
+          id: h.id || undefined,
           stage: h.stage,
           timestamp: h.timestamp,
           from: h.from_address || '',

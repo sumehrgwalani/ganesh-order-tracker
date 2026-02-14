@@ -2,30 +2,21 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
-import ComposeEmailModal from '../components/ComposeEmailModal';
 import { ORDER_STAGES, GI_LOGO_URL } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
-import type { Order, AttachmentEntry, ContactsMap } from '../types';
+import type { Order, AttachmentEntry } from '../types';
 import { getAttachmentName, getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface Props {
   orders: Order[];
-  orgId?: string | null;
-  contacts?: ContactsMap;
   onUpdateStage?: (orderId: string, newStage: number, oldStage?: number) => Promise<void>;
   onUpdateOrder?: (orderId: string, updates: Partial<Order>) => Promise<void>;
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-// Sanitize strings for safe HTML insertion (prevents XSS)
-function escapeHtml(str: string): string {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-}
-
-function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
+function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
@@ -39,8 +30,6 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
   const [amendModal, setAmendModal] = useState(false);
   const [amendItems, setAmendItems] = useState<any[]>([]);
   const [amendSaving, setAmendSaving] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [poBlob, setPoBlob] = useState<Blob | null>(null);
 
   const order = orders.find(o => o.id === orderId);
 
@@ -115,32 +104,6 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
             >
               <Icon name="Edit" size={16} />
               Amend PO
-            </button>
-            <button
-              onClick={async () => {
-                // Generate PO blob if not already available
-                if (!poBlob) {
-                  try {
-                    const html = buildPOHtml();
-                    const blob = await (html2pdf() as any).set({
-                      margin: [4, 5, 4, 5],
-                      image: { type: 'jpeg', quality: 0.98 },
-                      html2canvas: { scale: 2, useCORS: true },
-                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-                    }).from(html, 'string').output('blob');
-                    const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-                    setPoBlob(pdfBlob);
-                    setComposeOpen(true);
-                  } catch { setComposeOpen(true); }
-                } else {
-                  setComposeOpen(true);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm"
-            >
-              <Icon name="Send" size={16} />
-              Email PO
             </button>
           </div>
         );
@@ -349,21 +312,20 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
     const hasPacking = items.some((i: any) => i.packing);
     const hasCases = items.some((i: any) => i.cases);
 
-    // Sanitize all user-controlled values to prevent XSS
-    const supplierName = escapeHtml(meta?.supplier || order.supplier);
-    const supplierAddress = escapeHtml(meta?.supplierAddress || '');
-    const supplierCountry = escapeHtml((meta?.supplierCountry || order.from || 'India').toUpperCase());
-    const buyerName = escapeHtml(meta?.buyer || order.company);
-    const buyerBank = escapeHtml(meta?.buyerBank || '');
-    const destination = escapeHtml(meta?.destination || order.to || '');
-    const deliveryTerms = escapeHtml(meta?.deliveryTerms || '');
-    const deliveryDate = escapeHtml(meta?.deliveryDate || '');
-    const commission = escapeHtml(meta?.commission || '');
-    const overseasCommission = escapeHtml(meta?.overseasCommission || '');
-    const overseasCommissionCompany = escapeHtml(meta?.overseasCommissionCompany || '');
-    const payment = escapeHtml(meta?.payment || '');
-    const shippingMarks = escapeHtml(meta?.shippingMarks || '');
-    const loteNumber = escapeHtml(meta?.loteNumber || '');
+    const supplierName = meta?.supplier || order.supplier;
+    const supplierAddress = meta?.supplierAddress || '';
+    const supplierCountry = (meta?.supplierCountry || order.from || 'India').toUpperCase();
+    const buyerName = meta?.buyer || order.company;
+    const buyerBank = meta?.buyerBank || '';
+    const destination = meta?.destination || order.to || '';
+    const deliveryTerms = meta?.deliveryTerms || '';
+    const deliveryDate = meta?.deliveryDate || '';
+    const commission = meta?.commission || '';
+    const overseasCommission = meta?.overseasCommission || '';
+    const overseasCommissionCompany = meta?.overseasCommissionCompany || '';
+    const payment = meta?.payment || '';
+    const shippingMarks = meta?.shippingMarks || '';
+    const loteNumber = meta?.loteNumber || '';
     const poDate = meta?.date || order.date;
     const grandTotal = meta?.grandTotal || order.totalValue || '';
     const metaTotalKilos = meta?.totalKilos || order.totalKilos || 0;
@@ -562,9 +524,7 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
-      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-      setPoBlob(pdfBlob);
-      const url = URL.createObjectURL(pdfBlob);
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
       setPdfModal(prev => ({ ...prev, url, loading: false }));
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
@@ -583,9 +543,7 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(html, 'string').output('blob');
-      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-      setPoBlob(pdfBlob);
-      const url = URL.createObjectURL(pdfBlob);
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
       setPdfModal(prev => ({ ...prev, url, loading: false }));
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
@@ -596,27 +554,106 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
   const handleAttachmentClick = (name: string, stage: number) => {
     if (name.toLowerCase().endsWith('.pdf') && stage === 1) {
       previewPOasPDF();
-          return;
+      return;
     }
-        // Look for pdfUrl in attachment metadata
-        const stageHistory = order.history.filter(h => h.stage === stage && h.attachments?.length);
-        for (const h of stageHistory) {
-                for (const att of (h.attachments || [])) {
-                          const attName = getAttachmentName(att);
-                          const meta = getAttachmentMeta(att);
-                          if (attName === name && meta?.pdfUrl) {
-                                      setPdfModal({ open: true, url: meta.pdfUrl, title: name, loading: false });
-                                      return;
-                          }
-                }
+    // Look for pdfUrl in attachment metadata
+    const stageHistory = order.history.filter(h => h.stage === stage && h.attachments?.length);
+    for (const h of stageHistory) {
+      for (const att of (h.attachments || [])) {
+        const attName = getAttachmentName(att);
+        const meta = getAttachmentMeta(att);
+        if (attName === name && meta?.pdfUrl) {
+          setPdfModal({ open: true, url: meta.pdfUrl, title: name, loading: false });
+          return;
         }
-        // Fallback — no URL available
-        setPdfModal({ open: true, url: '', title: name, loading: false });
-  };   
+      }
+    }
+    // Fallback — no URL available
+    setPdfModal({ open: true, url: '', title: name, loading: false });
+  };
 
   const closePdfModal = () => {
     if (pdfModal.url) URL.revokeObjectURL(pdfModal.url);
     setPdfModal({ open: false, url: '', title: '', loading: false });
+  };
+
+  // Build order options for the reassign dropdown
+  const allOrderOptions = orders.map(o => ({
+    id: o.id,
+    poNumber: o.poNumber || o.id,
+    company: o.company,
+    product: o.product,
+  }));
+
+  // Handle reassigning an email to a different order
+  const handleReassignEmail = async (historyEntryId: string, newOrderId: string, note: string) => {
+    try {
+      // Find the destination order's DB UUID
+      const destOrder = orders.find(o => o.id === newOrderId);
+      if (!destOrder) return;
+
+      // Look up the DB UUID for the destination order
+      const { data: destRow } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_id', newOrderId)
+        .single();
+
+      if (!destRow) return;
+
+      // Move the order_history record to the new order
+      await supabase
+        .from('order_history')
+        .update({ order_id: destRow.id })
+        .eq('id', historyEntryId);
+
+      // Record the correction in synced_emails (match by subject + from for this order)
+      const entry = order.history.find(h => h.id === historyEntryId);
+      if (entry) {
+        await supabase
+          .from('synced_emails')
+          .update({
+            corrected_order_id: newOrderId,
+            correction_note: note || `Moved from ${order.id} to ${newOrderId}`,
+            corrected_at: new Date().toISOString(),
+          })
+          .eq('subject', entry.subject)
+          .eq('from_address', entry.from);
+      }
+
+      // Refresh orders data
+      window.location.reload();
+    } catch (err) {
+      console.error('Reassign failed:', err);
+    }
+  };
+
+  // Handle removing an email from this order (delete the history entry)
+  const handleRemoveEmail = async (historyEntryId: string, note: string) => {
+    try {
+      await supabase
+        .from('order_history')
+        .delete()
+        .eq('id', historyEntryId);
+
+      // Record the correction
+      const entry = order.history.find(h => h.id === historyEntryId);
+      if (entry) {
+        await supabase
+          .from('synced_emails')
+          .update({
+            corrected_order_id: 'REMOVED',
+            correction_note: note || `Removed from ${order.id}`,
+            corrected_at: new Date().toISOString(),
+          })
+          .eq('subject', entry.subject)
+          .eq('from_address', entry.from);
+      }
+
+      window.location.reload();
+    } catch (err) {
+      console.error('Remove failed:', err);
+    }
   };
 
   return (
@@ -695,9 +732,12 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
       {/* Order Summary Card */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Order Summary</h2>
-
-        {/* Parties & Route Row */}
-        <div className="grid grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-4 gap-6">
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Product</p>
+            <p className="font-medium text-gray-800">{order.product}</p>
+            <p className="text-sm text-gray-500">{order.specs}</p>
+          </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</p>
             <p className="font-medium text-gray-800">{order.company}</p>
@@ -714,69 +754,6 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
             <p className="text-sm text-gray-500">{order.date}</p>
           </div>
         </div>
-
-        {/* Line Items Table */}
-        {lineItems.length > 0 ? (
-          <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Product</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Glaze</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Packing</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Cases</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Kilos</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Price/Kg</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {lineItems.map((item: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-800">{item.product || '-'}</p>
-                      {(item.brand || item.freezing) && (
-                        <div className="flex gap-1.5 mt-1">
-                          {item.brand && <span className="text-xs px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">{item.brand}</span>}
-                          {item.freezing && <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{item.freezing}</span>}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{item.size || '-'}</td>
-                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
-                      {item.glaze || '-'}
-                      {item.glazeMarked && item.glazeMarked !== item.glaze && (
-                        <span className="block text-xs text-orange-500">Marked: {item.glazeMarked}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{item.packing || '-'}</td>
-                    <td className="px-3 py-3 text-gray-700 text-right font-medium whitespace-nowrap">{item.cases || '-'}</td>
-                    <td className="px-3 py-3 text-gray-700 text-right font-medium whitespace-nowrap">{item.kilos ? Number(item.kilos).toLocaleString() : '-'}</td>
-                    <td className="px-3 py-3 text-gray-700 text-right whitespace-nowrap">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
-                    <td className="px-4 py-3 text-gray-800 text-right font-semibold whitespace-nowrap">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.total).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {lineItems.length > 1 && (
-                <tfoot>
-                  <tr className="bg-gray-50 border-t border-gray-200">
-                    <td colSpan={4} className="px-4 py-2.5 text-sm font-semibold text-gray-700">Total</td>
-                    <td className="px-3 py-2.5 text-sm font-semibold text-gray-700 text-right">{lineItems.reduce((sum: number, i: any) => sum + (Number(i.cases) || 0), 0) || '-'}</td>
-                    <td className="px-3 py-2.5 text-sm font-semibold text-gray-700 text-right">{lineItems.reduce((sum: number, i: any) => sum + (Number(i.kilos) || 0), 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5"></td>
-                    <td className="px-4 py-2.5 text-sm font-bold text-blue-600 text-right">${lineItems.reduce((sum: number, i: any) => sum + (Number(i.total) || 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-        ) : (
-          <div className="bg-gray-50 rounded-xl p-4">
-            <p className="font-medium text-gray-800">{order.product}</p>
-            <p className="text-sm text-gray-500 mt-1">{order.specs}</p>
-          </div>
-        )}
 
         {/* Progress Bar */}
         <div className="mt-6 pt-6 border-t border-gray-100">
@@ -898,7 +875,15 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
         </div>
         <div className="space-y-3">
           {[...order.history].reverse().map((entry, idx) => (
-            <ExpandableEmailCard key={idx} entry={entry} defaultExpanded={idx === 0} />
+            <ExpandableEmailCard
+              key={entry.id || idx}
+              entry={entry}
+              defaultExpanded={idx === 0}
+              orderId={order.id}
+              allOrders={allOrderOptions}
+              onReassign={handleReassignEmail}
+              onRemove={handleRemoveEmail}
+            />
           ))}
         </div>
       </div>
@@ -1145,13 +1130,13 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
                           <td className="px-2 py-2" style={{ minWidth: 80 }}>
                             <input type="number" value={item.kilos} onChange={e => updateItem(idx, 'kilos', e.target.value)} className={`${inputClass} text-right`} />
                           </td>
-                          <td className="px-2 py-2" style={{ minWidth: 100 }}>
+                          <td className="px-2 py-2" style={{ minWidth: 80 }}>
                             <div className="flex items-center gap-1">
-                              <span className="text-gray-400 text-sm">{item.currency === 'USD' ? '$' : item.currency}</span>
-                              <input type="text" inputMode="decimal" value={Number(item.pricePerKg).toFixed(2)} onChange={e => updateItem(idx, 'pricePerKg', e.target.value)} className={`${inputClass} text-right`} />
+                              <span className="text-gray-400 text-xs">{item.currency === 'USD' ? '$' : item.currency}</span>
+                              <input type="number" step="0.01" value={item.pricePerKg} onChange={e => updateItem(idx, 'pricePerKg', e.target.value)} className={`${inputClass} text-right`} />
                             </div>
                           </td>
-                          <td className="px-2 py-2 text-right font-medium text-gray-800 whitespace-nowrap" style={{ minWidth: 100 }}>
+                          <td className="px-2 py-2 text-right font-medium text-gray-800" style={{ minWidth: 90 }}>
                             ${Number(item.total).toFixed(2)}
                           </td>
                           <td className="px-2 py-2 text-center">
@@ -1281,24 +1266,6 @@ function OrderDetailPage({ orders, orgId, contacts, onUpdateStage, onUpdateOrder
           </div>
         </div>
       )}
-
-      {/* Email PO Compose Modal */}
-      <ComposeEmailModal
-        isOpen={composeOpen}
-        onClose={() => setComposeOpen(false)}
-        orgId={orgId || null}
-        contacts={contacts}
-        prefillTo={(() => {
-          if (!contacts || !order) return undefined;
-          // Find supplier email from contacts by company name
-          const supplierEmail = Object.entries(contacts).find(([_, c]) =>
-            c.company.toLowerCase() === order.supplier.toLowerCase() && c.role.toLowerCase().includes('supplier')
-          );
-          return supplierEmail ? [supplierEmail[0]] : undefined;
-        })()}
-        prefillSubject={'Purchase Order ' + (order?.id || '')}
-        attachmentBlobs={poBlob ? [{ filename: 'PO_' + (order?.id || '').replace(/\//g, '-') + '.pdf', blob: poBlob, mimeType: 'application/pdf' }] : undefined}
-      />
     </div>
   );
 }

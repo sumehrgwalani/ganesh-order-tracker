@@ -10,6 +10,9 @@ const corsHeaders = {
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_MAIL_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY')!
 
+// Helper: delay between API calls to avoid rate limiting
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 // Validate UUID format
 function isValidUUID(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
@@ -84,6 +87,59 @@ function extractName(emailStr: string): string {
 function extractEmail(emailStr: string): string {
   const match = emailStr.match(/<([^>]+)>/)
   return match ? match[1] : emailStr
+}
+
+// Check if a filename is an inline email image (logos, signatures, etc.)
+function isInlineImage(filename: string): boolean {
+  const lower = filename.toLowerCase()
+  // Match image001.jpg, image.png, image003.jpeg etc.
+  if (/^image\d{0,3}\.(jpg|jpeg|png|gif)$/.test(lower)) return true
+  // Match Outlook-xxxxxx.png (Outlook signature images)
+  if (/^outlook-.*\.(jpg|jpeg|png|gif)$/.test(lower)) return true
+  return false
+}
+
+// Extract attachment parts from Gmail message payload (skips inline images)
+function extractAttachmentParts(payload: any): { filename: string; mimeType: string; attachmentId: string; size: number }[] {
+  const parts: any[] = []
+  function walk(p: any) {
+    if (p.filename && p.filename.length > 0 && p.body?.attachmentId && !isInlineImage(p.filename)) {
+      parts.push({ filename: p.filename, mimeType: p.mimeType || 'application/octet-stream', attachmentId: p.body.attachmentId, size: p.body.size || 0 })
+    }
+    if (p.parts) p.parts.forEach(walk)
+  }
+  if (payload) walk(payload)
+  return parts
+}
+
+// Download attachment data from Gmail API
+async function downloadAttachment(accessToken: string, messageId: string, attachmentId: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    if (!res.ok) { console.error(`Attachment download failed: ${res.status}`); return null }
+    const data = await res.json()
+    if (!data.data) return null
+    // Gmail returns base64url — convert to standard base64 then to bytes
+    const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/')
+    const binary = atob(b64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes
+  } catch (err) { console.error('Attachment download error:', err); return null }
+}
+
+// Upload file to Supabase Storage and return public URL
+async function uploadToStorage(supabase: any, orgId: string, poNumber: string, filename: string, data: Uint8Array, mimeType: string): Promise<string | null> {
+  try {
+    const path = `${orgId}/${poNumber}/${filename}`
+    const { error: uploadErr } = await supabase.storage.from('po-documents').upload(path, data, { contentType: mimeType, upsert: true })
+    if (uploadErr) { console.error(`Upload error for ${filename}:`, uploadErr.message); return null }
+    const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(path)
+    return urlData?.publicUrl || null
+  } catch (err) { console.error('Upload error:', err); return null }
 }
 
 serve(async (req) => {
@@ -243,7 +299,8 @@ serve(async (req) => {
           const msg = await msgRes.json()
           const headers = msg.payload?.headers || []
           const body = extractBody(msg.payload)
-          const hasAttachment = (msg.payload?.parts || []).some((p: any) => p.filename && p.filename.length > 0)
+          const attachmentParts = extractAttachmentParts(msg.payload)
+          const hasAttachment = attachmentParts.length > 0
 
           return {
             gmail_id: msgId,
@@ -254,6 +311,7 @@ serve(async (req) => {
             body_text: body.substring(0, 5000),
             date: getHeader(headers, 'Date'),
             has_attachment: hasAttachment,
+            attachment_parts: attachmentParts,
           }
         })
       )
@@ -264,10 +322,11 @@ serve(async (req) => {
     // 11) Get active orders for AI matching
     const { data: orders } = await supabase
       .from('orders')
-      .select('order_id, company, supplier, product, current_stage')
+      .select('id, order_id, company, supplier, product, current_stage')
       .eq('organization_id', organization_id)
 
     let ordersList = (orders || []).map((o: any) => ({
+      uuid: o.id,
       id: o.order_id,
       company: o.company,
       supplier: o.supplier,
@@ -299,7 +358,7 @@ To: ${e.to_email}
 Subject: ${e.subject}
 Date: ${e.date}
 Has Attachment: ${e.has_attachment}
-Body (first 2000 chars): ${e.body_text.substring(0, 2000)}
+Body (first 4000 chars): ${e.body_text.substring(0, 4000)}
 `).join('\n')}
 
 For each distinct purchase order you can identify, extract:
@@ -319,6 +378,8 @@ Stage 8 = DHL Shipped (DHL tracking number shared)
 
 RULES:
 - Only include orders where you found a clear PO number or order reference in the emails
+- Be PRECISE with company names. Companies with similar names are DIFFERENT entities (e.g. "Silver Seafoods" and "Silver Star Seafoods" are two separate companies — never merge or confuse them). Always use the exact name as written in the emails.
+- Every field (company, supplier, product) MUST be filled with real data from the emails. Look across ALL emails for each PO to build the most complete picture. If you truly cannot determine company, supplier, or product for an order, skip it entirely — do not return orders with "Unknown" fields.
 - If you can't determine the stage, default to 1
 - Each order should appear only once (deduplicate by PO number)
 - Ganesh International is usually the buyer/trading company — the supplier is the factory or producer
@@ -343,15 +404,23 @@ If no purchase orders can be identified, return an empty array: []`
               messages: [{ role: 'user', content: discoveryPrompt }],
             }),
           })
-          const discoveryData = await discoveryRes.json()
-          const discoveryText = discoveryData.content?.[0]?.text || '[]'
-          const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
-          const batchOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-          console.log(`  Batch found ${batchOrders.length} orders`)
-          allDiscovered.push(...batchOrders)
+          if (!discoveryRes.ok) {
+            console.error(`  Discovery API error: ${discoveryRes.status} ${discoveryRes.statusText}`)
+            const errBody = await discoveryRes.text()
+            console.error(`  Response: ${errBody.substring(0, 500)}`)
+          } else {
+            const discoveryData = await discoveryRes.json()
+            const discoveryText = discoveryData.content?.[0]?.text || '[]'
+            const jsonMatch = discoveryText.match(/\[[\s\S]*\]/)
+            const batchOrders = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+            console.log(`  Batch found ${batchOrders.length} orders`)
+            allDiscovered.push(...batchOrders)
+          }
         } catch (batchErr: any) {
           console.error(`  Discovery batch error:`, batchErr.message)
         }
+        // Rate limit protection: wait 2s between discovery batches
+        if (b + DISCOVERY_BATCH < emails.length) await delay(2000)
       }
 
       // Deduplicate by PO number — keep the one with the highest stage
@@ -414,10 +483,11 @@ If no purchase orders can be identified, return an empty array: []`
       if (createdOrderCount > 0) {
         const { data: freshOrders } = await supabase
           .from('orders')
-          .select('order_id, company, supplier, product, current_stage')
+          .select('id, order_id, company, supplier, product, current_stage')
           .eq('organization_id', organization_id)
 
         ordersList = (freshOrders || []).map((o: any) => ({
+          uuid: o.id,
           id: o.order_id,
           company: o.company,
           supplier: o.supplier,
@@ -452,7 +522,7 @@ To: ${e.to_email}
 Subject: ${e.subject}
 Date: ${e.date}
 Has Attachment: ${e.has_attachment}
-Body (first 2000 chars): ${e.body_text.substring(0, 2000)}
+Body (first 4000 chars): ${e.body_text.substring(0, 4000)}
 `).join('\n')}
 
 For each email, determine:
@@ -486,19 +556,27 @@ Return a JSON array with one object per email:
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-opus-4-5-20251101',
+            model: 'claude-sonnet-4-5-20250929',
             max_tokens: 4000,
             messages: [{ role: 'user', content: aiPrompt }],
           }),
         })
-        const aiData = await aiRes.json()
-        const aiText = aiData.content?.[0]?.text || '[]'
-        const jsonMatch = aiText.match(/\[[\s\S]*\]/)
-        const batchResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-        aiResults.push(...batchResults)
+        if (!aiRes.ok) {
+          console.error(`Matching API error: ${aiRes.status} ${aiRes.statusText}`)
+          const errBody = await aiRes.text()
+          console.error(`  Response: ${errBody.substring(0, 500)}`)
+        } else {
+          const aiData = await aiRes.json()
+          const aiText = aiData.content?.[0]?.text || '[]'
+          const jsonMatch = aiText.match(/\[[\s\S]*\]/)
+          const batchResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+          aiResults.push(...batchResults)
+        }
       } catch (aiErr) {
         console.error(`Matching batch error:`, aiErr)
       }
+      // Rate limit protection: wait 1s between matching batches
+      if (b + MATCH_BATCH < emails.length) await delay(1000)
     }
     console.log(`AI matching complete: ${aiResults.length} results`)
 
@@ -514,6 +592,21 @@ Return a JSON array with one object per email:
       const matchedOrderId = ai.matched_order_id || null
       const detectedStage = ai.detected_stage || null
       const summary = ai.summary || null
+
+      // Download attachments if this email matches an order and has files
+      let uploadedAttachments: any[] = []
+      if (matchedOrderId && email.attachment_parts?.length > 0) {
+        for (const part of email.attachment_parts) {
+          if (part.size > 10 * 1024 * 1024) { console.log(`Skipping large attachment: ${part.filename} (${part.size} bytes)`); continue }
+          const fileData = await downloadAttachment(accessToken, email.gmail_id, part.attachmentId)
+          if (!fileData) continue
+          const publicUrl = await uploadToStorage(supabase, organization_id, matchedOrderId, part.filename, fileData, part.mimeType)
+          if (publicUrl) {
+            uploadedAttachments.push(JSON.stringify({ name: part.filename, meta: { pdfUrl: publicUrl, mimeType: part.mimeType } }))
+          }
+        }
+        if (uploadedAttachments.length > 0) console.log(`Uploaded ${uploadedAttachments.length} attachments for ${matchedOrderId}`)
+      }
 
       // Check if we should auto-advance
       let autoAdvanced = false
@@ -531,19 +624,20 @@ Return a JSON array with one object per email:
             autoAdvanced = true
             advancedCount++
 
-            // Log stage change in order_history
+            // Log stage change in order_history (use UUID, not PO number)
             await supabase.from('order_history').insert({
               organization_id,
-              order_id: matchedOrderId,
+              order_id: order.uuid,
               stage: detectedStage,
               from_address: `${email.from_name} <${email.from_email}>`,
               subject: `Auto-advanced: ${email.subject}`,
               body: summary || `Stage advanced based on email from ${email.from_name}`,
               timestamp: new Date().toISOString(),
+              has_attachment: uploadedAttachments.length > 0,
+              attachments: uploadedAttachments.length > 0 ? uploadedAttachments : null,
             })
 
             // Create in-app notification
-            // Get all org members to notify
             const { data: members } = await supabase
               .from('organization_members')
               .select('user_id')
@@ -560,6 +654,24 @@ Return a JSON array with one object per email:
               })
             }
           }
+        }
+      }
+
+      // For matched emails that didn't advance but have attachments, still save them
+      if (matchedOrderId && !autoAdvanced && uploadedAttachments.length > 0) {
+        const order = ordersList.find((o: any) => o.id === matchedOrderId)
+        if (order) {
+          await supabase.from('order_history').insert({
+            organization_id,
+            order_id: order.uuid,
+            stage: detectedStage || order.currentStage,
+            from_address: `${email.from_name} <${email.from_email}>`,
+            subject: email.subject,
+            body: summary || `Email attachment from ${email.from_name}`,
+            timestamp: new Date().toISOString(),
+            has_attachment: true,
+            attachments: uploadedAttachments,
+          })
         }
       }
 
