@@ -170,8 +170,8 @@ function App() {
         setOrders(prev => prev.filter(o => o.id !== orderId));
       }
       showToast('Order archived successfully', 'success');
-    } catch (err: any) {
-      showToast(`Failed to archive order: ${err?.message || 'Unknown error'}`, 'error');
+    } catch (err: unknown) {
+      showToast(`Failed to archive order: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   };
 
@@ -181,8 +181,8 @@ function App() {
         await updateOrderStage(orderId, newStage, oldStage);
       }
       showToast('Order stage updated', 'success');
-    } catch (err: any) {
-      showToast(`Failed to update stage: ${err?.message || 'Unknown error'}`, 'error');
+    } catch (err: unknown) {
+      showToast(`Failed to update stage: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   };
 
@@ -192,8 +192,8 @@ function App() {
         await updateOrder(orderId, updates);
       }
       showToast('Order updated successfully', 'success');
-    } catch (err: any) {
-      showToast(`Failed to update order: ${err?.message || 'Unknown error'}`, 'error');
+    } catch (err: unknown) {
+      showToast(`Failed to update order: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   };
 

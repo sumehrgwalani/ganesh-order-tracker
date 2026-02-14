@@ -50,6 +50,7 @@ function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp 
           <button
             onClick={() => onStageSelect(null)}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            aria-label="Clear stage filter"
           >
             <Icon name="X" size={12} />
             Clear filter
@@ -65,6 +66,7 @@ function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp 
               ? 'bg-gray-800 text-white border-gray-800'
               : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
           }`}
+          aria-label={`All orders (${totalOrders})`}
         >
           <span className="font-medium">All</span>
           <span className={`px-1.5 py-0.5 rounded-full text-xs ${selectedStage === null ? 'bg-white/20' : 'bg-gray-200'}`}>
@@ -89,6 +91,7 @@ function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp 
                   : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed opacity-60'
               }`}
               title={`${stage.description}${hasOrders ? ` (${count} order${count > 1 ? 's' : ''})` : ' (no orders)'}`}
+              aria-label={`Filter by ${stage.name}${hasOrders ? ` (${count} order${count > 1 ? 's' : ''})` : ' (no orders)'}`}
             >
               <span className={`font-semibold ${isSelected ? 'text-white/80' : ''}`}>{i + 1}.</span>
               <span className="font-medium">{stage.name}</span>
@@ -108,9 +111,7 @@ function StageFilter({ selectedStage, onStageSelect, orders, stages: stagesProp 
       {selectedStage && (
         <div className="mt-3 pt-3 border-t border-gray-200">
           <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${
-              { blue: 'bg-blue-500', indigo: 'bg-indigo-500', purple: 'bg-purple-500', pink: 'bg-pink-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500', amber: 'bg-amber-500', teal: 'bg-teal-500', green: 'bg-green-500' }[ORDER_STAGES[selectedStage-1]?.color || 'blue'] || 'bg-blue-500'
-            }`}></span>
+            <span className={`w-3 h-3 rounded-full bg-${ORDER_STAGES[selectedStage-1]?.color || 'blue'}-500`}></span>
             <span className="text-sm font-medium text-gray-700">
               Showing {stageCounts[selectedStage]} order{stageCounts[selectedStage] !== 1 ? 's' : ''} at stage "{ORDER_STAGES[selectedStage-1]?.name}"
             </span>

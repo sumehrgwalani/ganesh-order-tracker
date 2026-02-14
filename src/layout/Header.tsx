@@ -77,6 +77,7 @@ function Header({
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
           >
             <Icon name="Bell" size={20} className="text-gray-500" />
             {unreadCount > 0 && (
@@ -102,6 +103,7 @@ function Header({
           <button
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:from-blue-600 hover:to-blue-700 transition-all"
+            aria-label="User profile menu"
           >
             <span className="text-white font-medium text-sm">{userInitial}</span>
           </button>

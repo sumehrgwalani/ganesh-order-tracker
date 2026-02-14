@@ -40,7 +40,7 @@ export function useProducts(orgId: string | null) {
         .order('size')
 
       if (fetchError) throw fetchError
-      setProducts((data || []).map((row: any) => ({
+      setProducts((data || []).map((row: Record<string, unknown>) => ({
         id: row.id,
         name: row.name,
         category: row.category || row.product_type || '',
@@ -53,8 +53,8 @@ export function useProducts(orgId: string | null) {
         is_active: row.is_active,
       })))
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -71,7 +71,7 @@ export function useProducts(orgId: string | null) {
 
       if (fetchError) throw fetchError
 
-      const converted: ProductInquiry[] = (data || []).map((row: any) => ({
+      const converted: ProductInquiry[] = (data || []).map((row: Record<string, unknown>) => ({
         product: row.product,
         sizes: row.sizes || undefined,
         total: row.total || '',
@@ -80,8 +80,8 @@ export function useProducts(orgId: string | null) {
       }))
       setInquiries(converted)
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     }
   }, [orgId])
 

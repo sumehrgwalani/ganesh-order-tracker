@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 import { useSettings } from '../hooks/useSettings';
 import { supabase } from '../lib/supabase';
+import type { OrganizationSettings } from '../types';
 
 interface SettingsPageProps {
   orgId: string | null;
@@ -201,7 +202,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
   const handleToggleNotification = async (key: keyof typeof userPrefs, value: boolean) => {
     const notificationKey = `notify_${key}` as const;
-    const updates: any = { [notificationKey]: value };
+    const updates: Record<string, boolean> = { [notificationKey]: value };
     const { error } = await updateUserNotifications(updates);
     if (error) {
       showStatus('error', 'Failed to update notification');
@@ -209,7 +210,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   };
 
   const handleSaveEmailSettings = async () => {
-    const updates: any = {
+    const updates: Partial<OrganizationSettings> = {
       email_provider: emailFormData.provider,
       smtp_host: emailFormData.provider === 'smtp' ? emailFormData.smtpHost : null,
       smtp_port: emailFormData.provider === 'smtp' ? parseInt(emailFormData.smtpPort, 10) : null,
@@ -252,7 +253,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
             onClick={() => setActiveTab(tab.id as TabType)}
             className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${activeTab === tab.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
           >
-            <Icon name={tab.icon as any} size={16} />
+            <Icon name={tab.icon} size={16} />
             {tab.label}
           </button>
         ))}

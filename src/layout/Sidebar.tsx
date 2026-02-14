@@ -33,7 +33,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path || (item.path === '/orders' && location.pathname.startsWith('/orders'));
           return (
-            <button key={item.path} onClick={() => navigate(item.path)} className={`p-3 rounded-xl transition-all group relative ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <button key={item.path} onClick={() => navigate(item.path)} className={`p-3 rounded-xl transition-all group relative ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`} aria-label={item.label}>
               <Icon name={item.icon} size={20} />
               <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">{item.label}</span>
             </button>
@@ -44,6 +44,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
         <button
           onClick={onBellClick}
           className="p-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl relative group"
+          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         >
           <Icon name="Bell" size={20} />
           {unreadCount > 0 && (
@@ -51,7 +52,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
           )}
           <span className="absolute left-full ml-1 px-1.5 py-0.5 bg-gray-800 text-white text-[10px] leading-tight rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Notifications</span>
         </button>
-        <button onClick={onSettingsClick} className={`p-3 rounded-xl transition-all ${location.pathname === '/settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}><Icon name="Settings" size={20} /></button>
+        <button onClick={onSettingsClick} className={`p-3 rounded-xl transition-all ${location.pathname === '/settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`} aria-label="Settings"><Icon name="Settings" size={20} /></button>
       </div>
     </div>
   );

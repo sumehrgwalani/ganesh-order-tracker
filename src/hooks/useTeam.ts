@@ -43,8 +43,8 @@ export function useTeam(orgId: string | null) {
       if (memberError) throw memberError
 
       // Fetch all member-department associations
-      const memberIds = (memberData || []).map((m: any) => m.id)
-      let mdRows: any[] = []
+      const memberIds = (memberData || []).map((m: { id: string }) => m.id)
+      let mdRows: Array<{ member_id: string; department_id: string }> = []
       if (memberIds.length > 0) {
         const { data: mdData, error: mdError } = await supabase
           .from('member_departments')
@@ -66,7 +66,7 @@ export function useTeam(orgId: string | null) {
       const deptById: Record<string, Department> = {}
       for (const d of depts) deptById[d.id] = d
 
-      const enrichedMembers: TeamMember[] = (memberData || []).map((m: any) => {
+      const enrichedMembers: TeamMember[] = (memberData || []).map((m: Record<string, string>) => {
         const deptIds = memberDeptMap[m.id] || []
         return {
           id: m.id,
@@ -92,15 +92,15 @@ export function useTeam(orgId: string | null) {
         .order('created_at', { ascending: false })
 
       if (invError) throw invError
-      const enrichedInvitations: Invitation[] = (invData || []).map((inv: any) => ({
+      const enrichedInvitations: Invitation[] = (invData || []).map((inv: Invitation & { departments?: Department }) => ({
         ...inv,
         department: inv.departments || undefined,
       }))
       setInvitations(enrichedInvitations)
 
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
       setInitialLoad(false)
@@ -143,7 +143,7 @@ export function useTeam(orgId: string | null) {
         .maybeSingle()
 
       if (existingMember) {
-        // User exists â create a notification for them
+        // User exists — create a notification for them
         const { data: orgData } = await supabase
           .from('organizations')
           .select('name')
@@ -229,7 +229,7 @@ export function useTeam(orgId: string | null) {
     }))
   }, [departments])
 
-  // Add a member to a department (multi-dept) â optimistic
+  // Add a member to a department (multi-dept) — optimistic
   const addMemberToDept = async (memberId: string, departmentId: string) => {
     updateMemberDeptLocally(memberId, departmentId, 'add')
     const { error } = await supabase
@@ -243,7 +243,7 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
-  // Remove a member from a department (multi-dept) â optimistic
+  // Remove a member from a department (multi-dept) — optimistic
   const removeMemberFromDept = async (memberId: string, departmentId: string) => {
     updateMemberDeptLocally(memberId, departmentId, 'remove')
     const { error } = await supabase
@@ -259,7 +259,7 @@ export function useTeam(orgId: string | null) {
     return { error }
   }
 
-  // Toggle a department for a member â optimistic
+  // Toggle a department for a member — optimistic
   const toggleMemberDept = async (memberId: string, departmentId: string) => {
     const member = members.find(m => m.id === memberId)
     if (!member) return { error: 'Member not found' }

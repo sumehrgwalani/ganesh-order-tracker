@@ -1,7 +1,30 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Order, HistoryEntry } from '../types'
+import type { Order, HistoryEntry, LineItem } from '../types'
 import { ORDER_STAGES } from '../data/constants'
+
+// DB row shapes returned by Supabase queries
+interface DbLineItem {
+  product?: string; brand?: string; freezing?: string; size?: string;
+  glaze?: string; glaze_marked?: string; packing?: string;
+  cases?: number; kilos?: number; price_per_kg?: number;
+  currency?: string; total?: number; sort_order?: number;
+}
+interface DbHistoryRow {
+  id?: string; stage: number; timestamp: string;
+  from_address?: string; to_address?: string;
+  subject?: string; body?: string;
+  has_attachment?: boolean; attachments?: string[];
+}
+interface DbOrderRow {
+  id: string; order_id: string; po_number?: string; pi_number?: string;
+  company: string; brand?: string; product: string; specs?: string;
+  from_location?: string; to_location?: string; order_date?: string;
+  current_stage: number; supplier: string; artwork_status?: string;
+  awb_number?: string; total_value?: string; total_kilos?: number;
+  metadata?: Record<string, unknown>; order_line_items?: DbLineItem[];
+  order_history?: DbHistoryRow[];
+}
 
 export function useOrders(orgId: string | null) {
   const [orders, setOrders] = useState<Order[]>([])
@@ -47,16 +70,16 @@ export function useOrders(orgId: string | null) {
 
       setOrders(convertRows(orderRows || []))
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
   }, [orgId])
 
   // Convert DB rows to app's Order format
-  const convertRows = (orderRows: any[]): Order[] => {
-    return orderRows.map((row: any) => ({
+  const convertRows = (orderRows: DbOrderRow[]): Order[] => {
+    return orderRows.map((row: DbOrderRow) => ({
       id: row.order_id,
       poNumber: row.po_number || '',
       piNumber: row.pi_number || undefined,
@@ -75,8 +98,8 @@ export function useOrders(orgId: string | null) {
       totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
       metadata: row.metadata || undefined,
       lineItems: (row.order_line_items || [])
-        .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((li: any) => ({
+        .sort((a: DbLineItem, b: DbLineItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((li: DbLineItem) => ({
           product: li.product || '',
           brand: li.brand || '',
           freezing: li.freezing || '',
@@ -91,8 +114,8 @@ export function useOrders(orgId: string | null) {
           total: li.total || 0,
         })),
       history: (row.order_history || [])
-        .sort((a: any, b: any) => a.stage - b.stage || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        .map((h: any): HistoryEntry => ({
+        .sort((a: DbHistoryRow, b: DbHistoryRow) => a.stage - b.stage || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        .map((h: DbHistoryRow): HistoryEntry => ({
           id: h.id || undefined,
           stage: h.stage,
           timestamp: h.timestamp,
@@ -179,8 +202,8 @@ export function useOrders(orgId: string | null) {
 
       await fetchOrders()
       return newOrder
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -224,8 +247,8 @@ export function useOrders(orgId: string | null) {
       })
 
       await fetchOrders()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -235,7 +258,7 @@ export function useOrders(orgId: string | null) {
     if (!orgId) return
     try {
       // Build the DB update payload from the Order fields provided
-      const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
+      const dbUpdates: Record<string, string | number | boolean | null | Record<string, unknown>> = { updated_at: new Date().toISOString() }
       if (updates.company !== undefined) dbUpdates.company = updates.company
       if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier
       if (updates.product !== undefined) dbUpdates.product = updates.product
@@ -276,7 +299,7 @@ export function useOrders(orgId: string | null) {
           .eq('order_id', orderRow.id)
 
         // Insert new line items
-        const lineItemRows = updates.lineItems.map((item: any, idx: number) => ({
+        const lineItemRows = updates.lineItems.map((item: LineItem, idx: number) => ({
           order_id: orderRow.id,
           product: String(item.product || ''),
           brand: String(item.brand || ''),
@@ -299,12 +322,12 @@ export function useOrders(orgId: string | null) {
       if (updates.history && updates.history.length > 0) {
         // Only insert entries that don't already exist (new amendment entries)
         // We identify new entries by checking for "AMENDED" in subject
-        const newEntries = updates.history.filter((h: any) =>
+        const newEntries = updates.history.filter((h: HistoryEntry) =>
           h.subject?.includes('AMENDED') &&
           h.timestamp && new Date(h.timestamp).getTime() > Date.now() - 60000
         )
         if (newEntries.length > 0) {
-          const historyRows = newEntries.map((h: any) => ({
+          const historyRows = newEntries.map((h: HistoryEntry) => ({
             order_id: orderRow.id,
             stage: h.stage,
             timestamp: h.timestamp,
@@ -320,8 +343,8 @@ export function useOrders(orgId: string | null) {
       }
 
       await fetchOrders()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -353,8 +376,8 @@ export function useOrders(orgId: string | null) {
 
       // Remove from local state immediately for responsive UI
       setOrders(prev => prev.filter(o => o.id !== orderId))
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -371,8 +394,8 @@ export function useOrders(orgId: string | null) {
 
       if (restoreError) throw restoreError
       await fetchOrders()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }

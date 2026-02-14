@@ -37,13 +37,12 @@ export function useContacts(orgId: string | null) {
           notes: row.notes || '',
           country: row.country || '',
           default_brand: row.default_brand || '',
-          default_packing: row.default_packing || '',
         }
       }
       setContacts(map)
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -74,7 +73,6 @@ export function useContacts(orgId: string | null) {
           color: formData.color || 'bg-gray-500',
           notes: '',
           default_brand: formData.default_brand || '',
-          default_packing: formData.default_packing || '',
         })
         .select()
         .single()
@@ -82,8 +80,8 @@ export function useContacts(orgId: string | null) {
       if (insertError) throw insertError
       // No refetch — ContactsPage handles optimistic UI update
       return data
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -106,8 +104,8 @@ export function useContacts(orgId: string | null) {
         }
         return prev
       })
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -123,8 +121,8 @@ export function useContacts(orgId: string | null) {
 
       if (deleteError) throw deleteError
       // No refetch — ContactsPage handles optimistic UI update
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -149,7 +147,7 @@ export function useContacts(orgId: string | null) {
       .select('email')
       .eq('organization_id', orgId)
       .in('email', emails)
-    const existingEmails = new Set((existing || []).map((e: any) => e.email.toLowerCase()))
+    const existingEmails = new Set((existing || []).map((e: { email: string }) => e.email.toLowerCase()))
 
     const records = rows.map((row, idx) => {
       const initials = row.name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2)
@@ -191,34 +189,8 @@ export function useContacts(orgId: string | null) {
 
       if (deleteError) throw deleteError
       await fetchContacts()
-    } catch (err: any) {
-      setError(err.message)
-      throw err
-    }
-  }
-
-  const updateContactsByCompany = async (company: string, updates: Partial<Contact>) => {
-    if (!orgId) return
-    try {
-      const { error: updateError } = await supabase
-        .from('contacts')
-        .update(updates)
-        .eq('organization_id', orgId)
-        .eq('company', company)
-
-      if (updateError) throw updateError
-      // Update local state for all contacts in this company
-      setContacts(prev => {
-        const updated = { ...prev }
-        for (const email in updated) {
-          if (updated[email].company === company) {
-            updated[email] = { ...updated[email], ...updates }
-          }
-        }
-        return updated
-      })
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
   }
@@ -229,7 +201,6 @@ export function useContacts(orgId: string | null) {
     error,
     addContact,
     updateContact,
-    updateContactsByCompany,
     deleteContact,
     bulkDeleteContacts,
     bulkUpsertContacts,

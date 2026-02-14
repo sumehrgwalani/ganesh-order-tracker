@@ -342,8 +342,8 @@ function ContactImportModal({ existingEmails, onImport, onClose }: Props) {
     try {
       const res = await onImport(allImportable);
       setResult(res);
-    } catch (err: any) {
-      setError(err.message || 'Import failed. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Import failed. Please try again.');
     } finally {
       setImporting(false);
     }

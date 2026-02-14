@@ -117,8 +117,8 @@ export function useSettings(orgId: string | null) {
       setDepartments(deptData || [])
 
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
       setInitialLoad(false)
@@ -232,8 +232,8 @@ export function useSettings(orgId: string | null) {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       return { error }
-    } catch (err: any) {
-      return { error: err.message }
+    } catch (err: unknown) {
+      return { error: err instanceof Error ? err.message : 'Unknown error' }
     }
   }
 
