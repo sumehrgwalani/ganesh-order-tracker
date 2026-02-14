@@ -13,7 +13,7 @@ function WTTLogo({ size = 40 }: WTTLogoProps) {
     <img
       src={LOGO_URL}
       alt="withthetide"
-      className="rounded-full object-contain"
+      className="object-contain"
       style={{ width: size, height: 'auto' }}
     />
   );
