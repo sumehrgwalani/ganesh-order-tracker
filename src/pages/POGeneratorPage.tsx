@@ -12,7 +12,6 @@ interface Props {
   orders?: Order[];
   setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
-  orgId?: string | null;
 }
 
 interface SupplierInfo {
@@ -79,7 +78,7 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated, orgId }: Props) {
+function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
@@ -162,7 +161,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [sendTo, setSendTo] = useState('');
   const [ccEmails, setCcEmails] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
-  const [emailBody, setEmailBody] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [buyerSearch, setBuyerSearch] = useState('');
@@ -171,6 +169,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [bulkCreate, setBulkCreate] = useState(false);
   const [bulkCount, setBulkCount] = useState(2);
   const [bulkPreviewIndex, setBulkPreviewIndex] = useState(0);
+  const [bulkDates, setBulkDates] = useState<string[]>([]);
   const [signatureData, setSignatureData] = useState<string>('');
   const [isDrawing, setIsDrawing] = useState(false);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -198,6 +197,16 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     const saved = localStorage.getItem('gi_signature');
     if (saved) setSignatureData(saved);
   }, []);
+
+  // Sync bulkDates array when bulk mode or count changes
+  useEffect(() => {
+    if (bulkCreate && bulkCount > 0) {
+      setBulkDates(prev => {
+        const newDates = Array.from({ length: bulkCount }, (_, i) => prev[i] || poData.date);
+        return newDates;
+      });
+    }
+  }, [bulkCreate, bulkCount, poData.date]);
 
   // Pre-fill form when amending an existing PO
   useEffect(() => {
@@ -379,7 +388,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
 
       // Call Supabase Edge Function
       const { data, error } = await supabase.functions.invoke('parse-po', {
-        body: { rawText: text, suppliers: suppliersList, buyers: buyersList, orgId },
+        body: { rawText: text, suppliers: suppliersList, buyers: buyersList },
       });
 
       if (error) {
@@ -398,120 +407,12 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         return;
       }
 
-      // --- Post-processing fixes ---
-
-      // Build reverse lookup: code → company name
-      const reverseCodes: Record<string, string> = {};
-      for (const [company, code] of Object.entries(BUYER_CODES)) {
-        reverseCodes[code.toLowerCase()] = company;
-      }
-
-      // 1) Resolve buyer abbreviation (e.g. "EG" → "Pescados E Guillem")
-      let resolvedBuyer = detectedBuyer || '';
-      if (resolvedBuyer) {
-        const buyerLower = resolvedBuyer.toLowerCase().trim();
-        if (reverseCodes[buyerLower]) {
-          resolvedBuyer = reverseCodes[buyerLower];
-        } else {
-          const partialMatch = buyersList.find(b => b.company.toLowerCase().includes(buyerLower));
-          if (partialMatch) resolvedBuyer = partialMatch.company;
-        }
-      }
-
-      // Fallback: if AI didn't detect a buyer, scan raw text for known buyer codes
-      if (!resolvedBuyer) {
-        const words = text.split(/[\s,;]+/).map(w => w.trim().toLowerCase()).filter(Boolean);
-        for (const word of words) {
-          if (reverseCodes[word]) {
-            resolvedBuyer = reverseCodes[word];
-            break;
-          }
-        }
-      }
-
-      // 2) Get buyer's default brand for filling in items without explicit brand
-      const matchedBuyerContact = resolvedBuyer
-        ? buyersList.find(b => b.company.toLowerCase() === resolvedBuyer.toLowerCase())
-        : null;
-      const buyerDefaultBrand = matchedBuyerContact
-        ? (contacts[matchedBuyerContact.email]?.default_brand || '')
-        : '';
-      const buyerDefaultPacking = matchedBuyerContact
-        ? (contacts[matchedBuyerContact.email]?.default_packing || '')
-        : '';
-
-      // 3) Fix each line item: default size, handle "plain carton" brand, apply default brand
-
-      // First: figure out which product index "plain carton" belongs to by scanning raw text
-      let plainCartonProductIndex = -1;
-      const textLower = text.toLowerCase();
-      if (textLower.includes('plain carton')) {
-        const plainPos = textLower.indexOf('plain carton');
-        // Extract keywords from each product name (words 4+ chars, skip "frozen")
-        let bestIdx = 0;
-        let bestPos = -1;
-        parsedItems.forEach((item: any, idx: number) => {
-          const prodName = (item.product || '').toLowerCase();
-          const keywords = prodName.split(/\s+/).filter((w: string) => w.length >= 4 && w !== 'frozen');
-          for (const kw of keywords) {
-            const pos = textLower.lastIndexOf(kw, plainPos);
-            if (pos !== -1 && pos < plainPos && pos > bestPos) {
-              bestPos = pos;
-              bestIdx = idx;
-            }
-          }
-        });
-        // Fallback: if no keyword match, assign to first product (plain carton usually near top)
-        plainCartonProductIndex = bestPos !== -1 ? bestIdx : 0;
-      }
-
-      const fixedItems = parsedItems.map((item: any, idx: number) => {
-        // Default size to "Assorted" when not specified
-        if (!item.size || item.size.trim() === '') {
-          item.size = 'Assorted';
-        }
-
-        // Detect "plain carton" in any field of this item
-        const allFields = [item.brand, item.packing, item.product].map(f => (f || '').toLowerCase());
-        const hasPlainCarton = allFields.some(f => f.includes('plain carton'));
-
-        // Also check if raw text analysis assigned "plain carton" to this product index
-        if (hasPlainCarton || idx === plainCartonProductIndex) {
-          item.brand = 'Plain Carton';
-          // Clean "plain carton" out of packing and product if it leaked there
-          if ((item.packing || '').toLowerCase().includes('plain carton')) {
-            item.packing = item.packing.replace(/plain\s*carton/i, '').replace(/,\s*$/, '').trim();
-          }
-          if ((item.product || '').toLowerCase().includes('plain carton')) {
-            item.product = item.product.replace(/plain\s*carton/i, '').replace(/,\s*$/, '').trim();
-          }
-        }
-
-        // If no brand specified, use buyer's default brand
-        if (!item.brand || item.brand.trim() === '') {
-          item.brand = buyerDefaultBrand;
-        }
-
-        // Apply buyer's packing preference for 1kg bag items
-        if (buyerDefaultPacking && item.packing) {
-          const packingStr = item.packing as string;
-          // Match patterns like "6x1 KG", "6 X 1 KG", "10x1kg" etc.
-          const bagMatch = packingStr.match(/^(\d+\s*[xX]\s*1\s*[kK][gG])\s*(.*)/);
-          if (bagMatch) {
-            // Replace bag type with buyer's preference: e.g. "6 X 1 KG Bag" → "6 X 1 KG Printed Bag"
-            item.packing = bagMatch[1] + ' ' + buyerDefaultPacking;
-          }
-        }
-
-        return item;
-      });
-
       // Post-process: recalculate cases and totals
-      const processedItems = recalculateAllLineItems(fixedItems);
+      const processedItems = recalculateAllLineItems(parsedItems);
       setLineItems(processedItems);
 
       // Update PO data with detected supplier/buyer
-      if (detectedSupplier || resolvedBuyer) {
+      if (detectedSupplier || detectedBuyer) {
         const matchedSupplier = detectedSupplier
           ? suppliersList.find(s => s.company.toLowerCase() === detectedSupplier.toLowerCase())
           : null;
@@ -522,51 +423,11 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           supplierEmail: detectedSupplierEmail || prev.supplierEmail,
           supplierAddress: matchedSupplier?.address || prev.supplierAddress,
           supplierCountry: matchedSupplier?.country || prev.supplierCountry,
-          buyer: resolvedBuyer || prev.buyer,
+          buyer: detectedBuyer || prev.buyer,
         }));
 
         if (detectedSupplier) setSupplierSearch(detectedSupplier);
-        if (resolvedBuyer) setBuyerSearch(resolvedBuyer);
-
-        // Trigger buyer auto-fill (PO number, destination, lote, etc.)
-        if (resolvedBuyer && matchedBuyerContact) {
-          const buyerCode = BUYER_CODES[resolvedBuyer] || resolvedBuyer.substring(0, 2).toUpperCase();
-          const newPONumber = getNextPONumber(resolvedBuyer);
-          const buyerDestinations: Record<string, string> = {
-            'PESCADOS E.GUILLEM': 'Valencia, Spain', 'Pescados E Guillem': 'Valencia, Spain',
-            'Seapeix': 'Barcelona, Spain', 'Noriberica': 'Portugal',
-            'Ruggiero Seafood': 'Italy', 'Fiorital': 'Italy', 'Ferrittica': 'Italy',
-            'Compesca': 'Spain', 'Soguima': 'Spain', 'Mariberica': 'Spain',
-          };
-          const autoDestination = Object.entries(buyerDestinations).find(
-            ([key]) => resolvedBuyer.toLowerCase().includes(key.toLowerCase())
-          )?.[1] || '';
-          const shipmentDate = new Date();
-          shipmentDate.setDate(shipmentDate.getDate() + 25);
-          const currentYear = new Date().getFullYear();
-          let maxLote = 0;
-          orders.forEach(o => {
-            if (o.company?.toLowerCase() === resolvedBuyer.toLowerCase()) {
-              const lote = o.metadata?.loteNumber || '';
-              const match = lote.match(/^(\d+)\/(\d{4})$/);
-              if (match && parseInt(match[2]) === currentYear) {
-                const num = parseInt(match[1]);
-                if (num > maxLote) maxLote = num;
-              }
-            }
-          });
-          const nextLote = String(maxLote + 1).padStart(4, '0') + '/' + currentYear;
-
-          setPOData(prev => ({
-            ...prev,
-            buyerCode: buyerCode,
-            poNumber: newPONumber,
-            destination: autoDestination || prev.destination,
-            deliveryDate: shipmentDate.toISOString().split('T')[0],
-            loteNumber: nextLote,
-            buyerBank: contacts[matchedBuyerContact.email]?.country || prev.buyerBank,
-          }));
-        }
+        if (detectedBuyer) setBuyerSearch(detectedBuyer);
       }
 
       // Build product description from unique products (case-insensitive dedup, include freezing + glaze)
@@ -818,21 +679,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       }
     }
 
-    // Auto-fill lote number: find highest lote for this buyer in current year, then increment
-    const currentYear = new Date().getFullYear();
-    let maxLote = 0;
-    orders.forEach(o => {
-      if (o.company?.toLowerCase() === buyerCompany.toLowerCase()) {
-        const lote = o.metadata?.loteNumber || '';
-        const match = lote.match(/^(\d+)\/(\d{4})$/);
-        if (match && parseInt(match[2]) === currentYear) {
-          const num = parseInt(match[1]);
-          if (num > maxLote) maxLote = num;
-        }
-      }
-    });
-    const nextLote = String(maxLote + 1).padStart(4, '0') + '/' + currentYear;
-
     setPOData({
       ...poData,
       buyer: buyerCompany,
@@ -842,7 +688,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       destination: autoDestination || poData.destination,
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',
-      loteNumber: nextLote,
     });
 
     // Auto-fill brand from buyer's default_brand setting (highest priority)
@@ -911,23 +756,14 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       setTimeout(() => setNotification(null), 4000);
       return;
     }
-    // Auto-fill missing brands from buyer's default brand before submitting
-    const currentBuyer = buyers.find(b => b.company === poData.buyer);
-    const defaultBrand = currentBuyer?.default_brand || '';
     const missingBrand = lineItems.filter(item => item.product && !item.brand);
-    if (missingBrand.length > 0 && defaultBrand) {
-      setLineItems(prev => prev.map(item =>
-        item.product && !item.brand ? { ...item, brand: defaultBrand } : item
-      ));
+    if (missingBrand.length > 0) {
+      setNotification({ type: 'error', message: `Brand is required for all products. ${missingBrand.length} item(s) missing brand.` });
+      setTimeout(() => setNotification(null), 4000);
+      return;
     }
     setSendTo(poData.supplierEmail || '');
-    setEmailSubject(isAmendment ? `AMENDED PO ${poData.poNumber}` : `NEW PO ${poData.poNumber}`);
-    const productDesc = poData.product || lineItems.map(li => li.product).filter(Boolean).join(', ') || 'Frozen Seafood';
-    if (isAmendment) {
-      setEmailBody(`Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`);
-    } else {
-      setEmailBody(`Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${productDesc}.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`);
-    }
+    setEmailSubject(`NEW PO ${poData.poNumber}`);
     setStatus('pending_approval');
     setShowPreview(true);
     setShowSignOff(true);
@@ -1045,7 +881,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
             to: sendTo || poData.supplierEmail,
             subject: `AMENDED PO ${poData.poNumber}`,
-            body: emailBody || `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
+            body: `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
             hasAttachment: true,
             attachments: [{
               name: `${poData.poNumber.replace(/\//g, '_')}.pdf`,
@@ -1117,6 +953,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       const filename = `${currentPONumber.replace(/\//g, '_')}.pdf`;
       const pdfUrl = supabase.storage.from('po-documents').getPublicUrl(filename).data.publicUrl;
 
+      // Use per-PO date in bulk mode, or the main date field for single PO
+      const orderDateStr = (bulkCreate && bulkDates[i]) ? bulkDates[i] : poData.date;
+      const orderDateFormatted = new Date(orderDateStr + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
       const newOrder: Order = {
         id: currentPONumber,
         poNumber: currentPONumber.split('/').pop() || currentPONumber,
@@ -1125,7 +965,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         specs: lineItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(s => s).join(', '),
         from: 'India',
         to: poData.destination || poData.buyerBank || 'Spain',
-        date: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
+        date: orderDateFormatted,
         currentStage: 1,
         supplier: poData.supplier.split(' - ')[0] || poData.supplier,
         totalValue: grandTotal,
@@ -1139,7 +979,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
             to: sendTo || poData.supplierEmail,
             subject: `NEW PO ${currentPONumber}`,
-            body: emailBody || `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+            body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
             hasAttachment: true,
             attachments: [{
               name: `${currentPONumber.replace(/\//g, '_')}.pdf`,
@@ -1159,7 +999,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                 payment: poData.payment || '',
                 shippingMarks: poData.shippingMarks || '',
                 loteNumber: poData.loteNumber || '',
-                date: poData.date,
+                date: orderDateStr,
                 product: poData.product || '',
                 totalCases: totalCases,
                 totalKilos: totalKilos,
@@ -1307,6 +1147,21 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <span className="block text-xs text-gray-500 mt-0.5 font-mono">
                     {currentPreviewPONumber}
                   </span>
+                  <div className="flex items-center gap-2 mt-1.5 justify-center">
+                    <label className="text-xs text-gray-500">Date:</label>
+                    <input
+                      type="date"
+                      value={bulkDates[bulkPreviewIndex] || poData.date}
+                      onChange={(e) => {
+                        setBulkDates(prev => {
+                          const updated = [...prev];
+                          updated[bulkPreviewIndex] = e.target.value;
+                          return updated;
+                        });
+                      }}
+                      className="px-2 py-0.5 border border-blue-300 rounded text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
                 </div>
                 <button
                   onClick={() => setBulkPreviewIndex(Math.min(bulkCount - 1, bulkPreviewIndex + 1))}
@@ -1344,7 +1199,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             {/* Date and PO Number */}
             <div className="flex justify-between mb-2">
               <div>
-                <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate(poData.date)}</span></p>
+                <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate((bulkCreate && bulkDates[bulkPreviewIndex]) ? bulkDates[bulkPreviewIndex] : poData.date)}</span></p>
               </div>
               <div>
                 <p className="font-medium text-gray-700">Purchase Order No: <span className="text-gray-900 font-bold">{currentPreviewPONumber}</span></p>
@@ -1669,19 +1524,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       />
                     </div>
                   )}
-
-                  {/* Email Body */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Content</label>
-                    <textarea
-                      value={emailBody}
-                      onChange={(e) => setEmailBody(e.target.value)}
-                      rows={10}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono leading-relaxed resize-y"
-                      placeholder="Email body that will be sent with the PO..."
-                    />
-                    <p className="text-xs text-gray-400 mt-1">The PO PDF will be attached automatically.</p>
-                  </div>
 
                   {/* Send To */}
                   <div>
