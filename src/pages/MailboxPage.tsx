@@ -263,7 +263,7 @@ function MailboxPage({ orgId }: Props) {
       </div>
 
       {/* Email List */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
@@ -307,24 +307,24 @@ function MailboxPage({ orgId }: Props) {
                       {contact.initials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-700">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-gray-700 truncate flex-1 min-w-0">
                           {email.from_name || email.from_email}
                         </span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
                           {email.auto_advanced && (
-                            <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium">Auto-Advanced</span>
+                            <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium whitespace-nowrap">Auto-Advanced</span>
                           )}
                           {email.matched_order_id && (
-                            <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">{email.matched_order_id}</span>
+                            <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium whitespace-nowrap">{email.matched_order_id}</span>
                           )}
-                          {email.has_attachment && <Icon name="Paperclip" size={14} className="text-gray-400" />}
-                          <span className="text-xs text-gray-500">{formatDate(email.date)}</span>
+                          {email.has_attachment && <Icon name="Paperclip" size={14} className="text-gray-400 flex-shrink-0" />}
+                          <span className="text-xs text-gray-500 whitespace-nowrap">{formatDate(email.date)}</span>
                         </div>
                       </div>
                       <p className="text-sm truncate text-gray-700">{email.subject}</p>
                       {email.ai_summary ? (
-                        <p className="text-xs text-gray-500 truncate mt-1">{email.ai_summary}</p>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2 overflow-hidden">{email.ai_summary}</p>
                       ) : (
                         <p className="text-xs text-gray-500 truncate mt-1">{(email.body_text || '').substring(0, 120)}</p>
                       )}
