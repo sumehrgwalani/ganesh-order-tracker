@@ -22,8 +22,10 @@ import { useProducts } from './hooks/useProducts';
 import { useNotifications } from './hooks/useNotifications';
 import { useToast } from './components/Toast';
 
-// Error Boundary to catch React render crashes
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -34,13 +36,15 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
           <div className="text-center max-w-md">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Something went wrong</h2>
-            <p className="text-gray-500 mb-4">An unexpected error occurred. Please refresh the page to try again.</p>
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">Something went wrong</h2>
+            <p className="text-gray-500 mb-4">An unexpected error occurred. Please try refreshing the page.</p>
             <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               Refresh Page
             </button>
@@ -166,8 +170,8 @@ function App() {
         setOrders(prev => prev.filter(o => o.id !== orderId));
       }
       showToast('Order archived successfully', 'success');
-    } catch {
-      showToast('Failed to archive order', 'error');
+    } catch (err: any) {
+      showToast(`Failed to archive order: ${err?.message || 'Unknown error'}`, 'error');
     }
   };
 
@@ -177,8 +181,8 @@ function App() {
         await updateOrderStage(orderId, newStage, oldStage);
       }
       showToast('Order stage updated', 'success');
-    } catch {
-      showToast('Failed to update stage', 'error');
+    } catch (err: any) {
+      showToast(`Failed to update stage: ${err?.message || 'Unknown error'}`, 'error');
     }
   };
 
@@ -188,112 +192,112 @@ function App() {
         await updateOrder(orderId, updates);
       }
       showToast('Order updated successfully', 'success');
-    } catch {
-      showToast('Failed to update order', 'error');
+    } catch (err: any) {
+      showToast(`Failed to update order: ${err?.message || 'Unknown error'}`, 'error');
     }
   };
 
   return (
     <ErrorBoundary>
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar
-        onSettingsClick={() => navigate('/settings')}
-        unreadCount={unreadCount}
-        onBellClick={() => {
-          // Scroll to top and the header bell handles the dropdown
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          lastSync={lastSync}
-          isSyncing={isSyncing}
-          onSyncClick={handleSync}
-          userEmail={user?.email}
-          onSignOut={signOut}
-          notifications={notifications}
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar
+          onSettingsClick={() => navigate('/settings')}
           unreadCount={unreadCount}
-          onMarkAsRead={markAsRead}
-          onMarkAllAsRead={markAllAsRead}
-          onAcceptInvitation={handleAcceptInvitation}
-          onDeclineInvitation={handleDeclineInvitation}
+          onBellClick={() => {
+            // Scroll to top and the header bell handles the dropdown
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
-        <main className="flex-1 overflow-auto p-6">
-          <Routes>
-            <Route path="/" element={
-              <DashboardContent
-                orders={orders}
-                stats={stats}
-                filteredOrders={filteredOrders}
-                selectedStage={selectedStage}
-                setSelectedStage={setSelectedStage}
-                onDeleteOrder={handleDeleteOrder}
-                productInquiries={productInquiries}
-              />
-            } />
-            <Route path="/orders" element={
-              <OrdersPage
-                orders={orders}
-                onDeleteOrder={handleDeleteOrder}
-              />
-            } />
-            <Route path="/orders/:orderId" element={
-              <OrderDetailPage
-                orders={orders}
-                onUpdateStage={handleUpdateStage}
-                onUpdateOrder={handleUpdateOrder}
-                onDeleteOrder={handleDeleteOrder}
-              />
-            } />
-            <Route path="/completed" element={
-              <CompletedPage
-                orders={orders}
-                expandedOrder={expandedOrder}
-                setExpandedOrder={setExpandedOrder}
-              />
-            } />
-            <Route path="/mailbox" element={<MailboxPage orgId={orgId} />} />
-            <Route path="/create-po" element={
-              <POGeneratorPage
-                contacts={contacts}
-                orders={orders}
-                setOrders={setOrders}
-                orgId={orgId}
-                onOrderCreated={(newOrder) => {
-                  const isExisting = orders.some(o => o.id === newOrder.id);
-                  if (isExisting && orgId && updateOrder) {
-                    // Amendment: update existing order
-                    updateOrder(newOrder.id, newOrder).catch(() => showToast('Failed to update order', 'error'));
-                  } else if (orgId && createOrder) {
-                    createOrder(newOrder).catch(() => showToast('Failed to save order', 'error'));
-                  }
-                  navigate('/orders/' + encodeURIComponent(newOrder.id));
-                }}
-              />
-            } />
-            <Route path="/inquiries" element={<InquiriesPage />} />
-            <Route path="/contacts" element={
-              <ContactsPage
-                dbContacts={dbContacts}
-                onAddContact={addContact}
-                onUpdateContact={updateContact}
-                onDeleteContact={deleteContact}
-                onBulkImport={bulkUpsertContacts}
-                onBulkDelete={bulkDeleteContacts}
-                onRefresh={refetchContacts}
-              />
-            } />
-            <Route path="/products" element={<ProductsPage orgId={orgId} />} />
-            <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
-            <Route path="/settings" element={<SettingsPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} signOut={signOut} />} />
-            {/* Redirect any unknown routes to dashboard */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            lastSync={lastSync}
+            isSyncing={isSyncing}
+            onSyncClick={handleSync}
+            userEmail={user?.email}
+            onSignOut={signOut}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkAsRead={markAsRead}
+            onMarkAllAsRead={markAllAsRead}
+            onAcceptInvitation={handleAcceptInvitation}
+            onDeclineInvitation={handleDeclineInvitation}
+          />
+          <main className="flex-1 overflow-auto p-6">
+            <Routes>
+              <Route path="/" element={
+                <DashboardContent
+                  orders={orders}
+                  stats={stats}
+                  filteredOrders={filteredOrders}
+                  selectedStage={selectedStage}
+                  setSelectedStage={setSelectedStage}
+                  onDeleteOrder={handleDeleteOrder}
+                  productInquiries={productInquiries}
+                />
+              } />
+              <Route path="/orders" element={
+                <OrdersPage
+                  orders={orders}
+                  onDeleteOrder={handleDeleteOrder}
+                />
+              } />
+              <Route path="/orders/:orderId" element={
+                <OrderDetailPage
+                  orders={orders}
+                  onUpdateStage={handleUpdateStage}
+                  onUpdateOrder={handleUpdateOrder}
+                  onDeleteOrder={handleDeleteOrder}
+                />
+              } />
+              <Route path="/completed" element={
+                <CompletedPage
+                  orders={orders}
+                  expandedOrder={expandedOrder}
+                  setExpandedOrder={setExpandedOrder}
+                />
+              } />
+              <Route path="/mailbox" element={<MailboxPage orgId={orgId} />} />
+              <Route path="/create-po" element={
+                <POGeneratorPage
+                  contacts={contacts}
+                  orders={orders}
+                  setOrders={setOrders}
+                  orgId={orgId}
+                  onOrderCreated={(newOrder) => {
+                    const isExisting = orders.some(o => o.id === newOrder.id);
+                    if (isExisting && orgId && updateOrder) {
+                      // Amendment: update existing order
+                      updateOrder(newOrder.id, newOrder).catch(() => showToast('Failed to update order', 'error'));
+                    } else if (orgId && createOrder) {
+                      createOrder(newOrder).catch(() => showToast('Failed to save order', 'error'));
+                    }
+                    navigate('/orders/' + encodeURIComponent(newOrder.id));
+                  }}
+                />
+              } />
+              <Route path="/inquiries" element={<InquiriesPage />} />
+              <Route path="/contacts" element={
+                <ContactsPage
+                  dbContacts={dbContacts}
+                  onAddContact={addContact}
+                  onUpdateContact={updateContact}
+                  onDeleteContact={deleteContact}
+                  onBulkImport={bulkUpsertContacts}
+                  onBulkDelete={bulkDeleteContacts}
+                  onRefresh={refetchContacts}
+                />
+              } />
+              <Route path="/products" element={<ProductsPage orgId={orgId} />} />
+              <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
+              <Route path="/settings" element={<SettingsPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} signOut={signOut} />} />
+              {/* Redirect any unknown routes to dashboard */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </div>
     </ErrorBoundary>
   );
 }

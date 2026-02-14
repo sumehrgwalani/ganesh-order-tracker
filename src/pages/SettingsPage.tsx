@@ -3,8 +3,6 @@ import Icon from '../components/Icon';
 import { useSettings } from '../hooks/useSettings';
 import { supabase } from '../lib/supabase';
 
-const GOOGLE_CLIENT_ID = '926394608211-jm7i99au8f6g3jkoobgusgnco312fcfl.apps.googleusercontent.com';
-
 interface SettingsPageProps {
   orgId: string | null;
   userRole: string;
@@ -48,14 +46,6 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   // Email tab
   const [emailFormData, setEmailFormData] = useState({ provider: 'none', smtpHost: '', smtpPort: '', smtpUsername: '', smtpPassword: '', smtpFromEmail: '', smtpUseTls: false, sendgridKey: '', resendKey: '' });
 
-  // Gmail integration (admin: client ID setup, user: personal connection)
-  const [gmailClientId, setGmailClientId] = useState('');
-  const [gmailConnecting, setGmailConnecting] = useState(false);
-  const [gmailDisconnecting, setGmailDisconnecting] = useState(false);
-  const [userGmailConnected, setUserGmailConnected] = useState(false);
-  const [userGmailEmail, setUserGmailEmail] = useState('');
-  const [userGmailLastSync, setUserGmailLastSync] = useState<string | null>(null);
-
   // Initialize form data when settings load
   useEffect(() => {
     if (orgName) setOrgFormData(prev => ({ ...prev, name: orgName }));
@@ -77,7 +67,6 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
         sendgridKey: orgSettings.sendgrid_api_key || '',
         resendKey: orgSettings.resend_api_key || '',
       }));
-      setGmailClientId(orgSettings.gmail_client_id || '');
     }
     if (userPrefs) {
       setProfileFormData({
@@ -127,7 +116,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
   const handleChangePassword = async () => {
     if (!passwordFormData.currentPassword) {
-      showStatus('error', 'Please enter your current password');
+      showStatus('error', 'Current password is required');
       return;
     }
     if (passwordFormData.newPassword !== passwordFormData.confirmPassword) {
@@ -138,21 +127,27 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       showStatus('error', 'Password must be at least 6 characters');
       return;
     }
-    // Verify current password by attempting sign-in
-    const { error: verifyError } = await supabase.auth.signInWithPassword({
-      email: currentUserEmail || '',
-      password: passwordFormData.currentPassword,
-    });
-    if (verifyError) {
-      showStatus('error', 'Current password is incorrect');
-      return;
-    }
-    const { error } = await changePassword(passwordFormData.currentPassword, passwordFormData.newPassword);
-    if (error) {
-      showStatus('error', 'Failed to change password');
-    } else {
-      showStatus('success', 'Password changed successfully');
-      setPasswordFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: currentUserEmail || '',
+        password: passwordFormData.currentPassword
+      });
+
+      if (verifyError) {
+        showStatus('error', 'Current password is incorrect');
+        return;
+      }
+
+      const { error } = await changePassword(passwordFormData.currentPassword, passwordFormData.newPassword);
+      if (error) {
+        showStatus('error', 'Failed to change password');
+      } else {
+        showStatus('success', 'Password changed successfully');
+        setPasswordFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      }
+    } catch (err) {
+      showStatus('error', 'An error occurred while changing password');
     }
   };
 
@@ -210,139 +205,6 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const { error } = await updateUserNotifications(updates);
     if (error) {
       showStatus('error', 'Failed to update notification');
-    }
-  };
-
-  // Fetch current user's Gmail connection status
-  const fetchUserGmailStatus = async () => {
-    if (!orgId) return;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: member, error: memberError } = await supabase
-        .from('organization_members')
-        .select('gmail_email, gmail_last_sync')
-        .eq('user_id', user.id)
-        .eq('organization_id', orgId)
-        .maybeSingle();
-
-      if (memberError) {
-        console.error('Gmail status query error:', memberError);
-        return;
-      }
-
-      if (member) {
-        setUserGmailConnected(!!member.gmail_email);
-        setUserGmailEmail(member.gmail_email || '');
-        setUserGmailLastSync(member.gmail_last_sync);
-      }
-    } catch (err) {
-      console.error('Failed to fetch user Gmail status:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchUserGmailStatus();
-
-    // Re-fetch when window regains focus (catches popup completion)
-    const handleFocus = () => fetchUserGmailStatus();
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [orgId]);
-
-  // Listen for Gmail OAuth result from popup window
-  useEffect(() => {
-    // Check sessionStorage first (fallback for non-popup flow)
-    const gmailResult = sessionStorage.getItem('gmail-oauth-result');
-    if (gmailResult) {
-      sessionStorage.removeItem('gmail-oauth-result');
-      try {
-        const result = JSON.parse(gmailResult);
-        if (result.success) {
-          showStatus('success', `Gmail connected: ${result.email}`);
-          setUserGmailConnected(true);
-          setUserGmailEmail(result.email);
-        } else {
-          showStatus('error', `Gmail connection failed: ${result.error}`);
-        }
-      } catch {}
-    }
-
-    // Listen for postMessage from popup
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'gmail-oauth-result') return;
-
-      setGmailConnecting(false);
-      if (event.data.success) {
-        showStatus('success', `Gmail connected: ${event.data.email}`);
-        setUserGmailConnected(true);
-        setUserGmailEmail(event.data.email);
-      } else {
-        showStatus('error', `Gmail connection failed: ${event.data.error}`);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const handleConnectGmail = () => {
-    // Save client ID in background (don't await - that blocks the popup)
-    updateOrgSettings({ gmail_client_id: GOOGLE_CLIENT_ID });
-    setGmailConnecting(true);
-
-    // Open a blank popup FIRST (must be synchronous from click to avoid browser blocking)
-    const popup = window.open('about:blank', 'gmail-auth', 'width=500,height=600,left=200,top=100');
-
-    const redirectUri = window.location.origin + window.location.pathname;
-    const scope = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=gmail-oauth`;
-
-    if (popup) {
-      // Redirect the already-opened popup to Google's auth page
-      popup.location.href = authUrl;
-      // Safety timeout: if popup communication fails, reset after 2 min
-      // and re-check Gmail status from the database
-      setTimeout(() => {
-        setGmailConnecting(false);
-        fetchUserGmailStatus();
-      }, 120000);
-    } else {
-      // Popup was blocked — fall back to same-window redirect
-      setGmailConnecting(false);
-      window.location.href = authUrl;
-    }
-  };
-
-  const handleUserDisconnectGmail = async () => {
-    if (!window.confirm('Disconnect Gmail? Email sync will stop working.')) return;
-    setGmailDisconnecting(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { error } = await supabase
-        .from('organization_members')
-        .update({
-          gmail_refresh_token: null,
-          gmail_email: null,
-          gmail_last_sync: null,
-        })
-        .eq('user_id', user.id)
-        .eq('organization_id', orgId);
-
-      if (error) throw error;
-
-      showStatus('success', 'Gmail disconnected');
-      setUserGmailConnected(false);
-      setUserGmailEmail('');
-      setUserGmailLastSync(null);
-    } catch (err: any) {
-      showStatus('error', 'Failed to disconnect Gmail');
-    } finally {
-      setGmailDisconnecting(false);
     }
   };
 
@@ -665,52 +527,97 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
         {/* Email Integration Tab */}
         {activeTab === 'email' && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Gmail</h3>
-            <p className="text-sm text-gray-500 mb-6">Connect your Gmail to sync emails and send POs directly from the app.</p>
-
-            {userGmailConnected ? (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                      <Icon name="Mail" size={24} className="text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-green-800 text-base">Gmail Connected</p>
-                      <p className="text-sm text-green-600">{userGmailEmail}</p>
-                      {userGmailLastSync && (
-                        <p className="text-xs text-green-500 mt-1">Last synced: {new Date(userGmailLastSync).toLocaleString()}</p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleUserDisconnectGmail}
-                    disabled={gmailDisconnecting}
-                    className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
-                  >
-                    {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Icon name="Mail" size={32} className="text-blue-500" />
-                </div>
-                <p className="text-gray-600 mb-5">Link your Gmail account to start syncing emails and sending POs.</p>
-                <button
-                  onClick={handleConnectGmail}
-                  disabled={gmailConnecting}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium text-base shadow-sm"
-                >
-                  <Icon name="Mail" size={20} />
-                  {gmailConnecting ? 'Connecting...' : 'Connect Gmail'}
-                </button>
+            {!isOwner && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-3">
+                <Icon name="AlertCircle" size={16} className="text-yellow-600 flex-shrink-0" />
+                <p className="text-sm text-yellow-800">Only the organization owner can configure email settings.</p>
               </div>
             )}
 
+            {isOwner && (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-blue-800">Email credentials are stored securely. The test email feature will be available soon.</p>
+                </div>
 
-            {saveStatus && <p className={`text-sm flex items-center gap-1 mt-4 ${saveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}><Icon name={saveStatus.type === 'success' ? 'CheckCircle' : 'AlertCircle'} size={14} /> {saveStatus.message}</p>}
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Email Provider</h3>
+                <div className="space-y-3 mb-6">
+                  {[
+                    { value: 'none', label: 'None' },
+                    { value: 'smtp', label: 'SMTP' },
+                    { value: 'sendgrid', label: 'SendGrid' },
+                    { value: 'resend', label: 'Resend' },
+                  ].map(option => (
+                    <label key={option.value} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="provider"
+                        value={option.value}
+                        checked={emailFormData.provider === option.value}
+                        onChange={(e) => setEmailFormData({ ...emailFormData, provider: e.target.value })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm font-medium text-gray-700">{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {emailFormData.provider === 'smtp' && (
+                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+                      <input type="text" value={emailFormData.smtpHost} onChange={(e) => setEmailFormData({ ...emailFormData, smtpHost: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
+                      <input type="number" value={emailFormData.smtpPort} onChange={(e) => setEmailFormData({ ...emailFormData, smtpPort: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                      <input type="text" value={emailFormData.smtpUsername} onChange={(e) => setEmailFormData({ ...emailFormData, smtpUsername: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                      <input type="password" value={emailFormData.smtpPassword} onChange={(e) => setEmailFormData({ ...emailFormData, smtpPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
+                      <input type="email" value={emailFormData.smtpFromEmail} onChange={(e) => setEmailFormData({ ...emailFormData, smtpFromEmail: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={emailFormData.smtpUseTls}
+                        onChange={(e) => setEmailFormData({ ...emailFormData, smtpUseTls: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Use TLS</span>
+                    </label>
+                  </div>
+                )}
+
+                {emailFormData.provider === 'sendgrid' && (
+                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SendGrid API Key</label>
+                      <input type="password" value={emailFormData.sendgridKey} onChange={(e) => setEmailFormData({ ...emailFormData, sendgridKey: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                  </div>
+                )}
+
+                {emailFormData.provider === 'resend' && (
+                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Resend API Key</label>
+                      <input type="password" value={emailFormData.resendKey} onChange={(e) => setEmailFormData({ ...emailFormData, resendKey: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={handleSaveEmailSettings} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Email Settings</button>
+                {saveStatus && <p className={`text-sm flex items-center gap-1 mt-3 ${saveStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}><Icon name={saveStatus.type === 'success' ? 'CheckCircle' : 'AlertCircle'} size={14} /> {saveStatus.message}</p>}
+              </>
+            )}
           </div>
         )}
 

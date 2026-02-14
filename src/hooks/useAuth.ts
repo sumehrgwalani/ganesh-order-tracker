@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Session, User } from '@supabase/supabase-js'
 
@@ -9,7 +9,7 @@ export function useAuth() {
   const [orgId, setOrgId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('member')
   const [userDepartment, setUserDepartment] = useState<string | null>(null)
-  const [fetchingOrg, setFetchingOrg] = useState(false)
+  const fetchingRef = useRef(false)
 
   useEffect(() => {
     // Get initial session
@@ -41,8 +41,8 @@ export function useAuth() {
   }, [])
 
   const fetchOrgId = async (userId: string, userEmail: string) => {
-    if (fetchingOrg) return
-    setFetchingOrg(true)
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     try {
       // Check if user already has an org membership
       const { data: membership } = await supabase
@@ -122,8 +122,8 @@ export function useAuth() {
     } catch (err) {
       console.error('Error in fetchOrgId:', err)
     } finally {
+      fetchingRef.current = false
       setLoading(false)
-      setFetchingOrg(false)
     }
   }
 

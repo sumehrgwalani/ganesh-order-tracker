@@ -12,6 +12,7 @@ BEGIN
   -- ============================================================================
   INSERT INTO organizations (name, slug)
   VALUES ('With The Tide', 'with-the-tide')
+  ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
   RETURNING id INTO org_id;
 
   -- ============================================================================

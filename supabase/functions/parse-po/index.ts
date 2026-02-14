@@ -3,12 +3,9 @@
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const ALLOWED_ORIGIN = 'https://sumehrgwalani.github.io';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -40,8 +37,8 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
       "packing": "string - packing format (e.g., '6 X 1 KG Bag', '10 KG Bulk') or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - freezing method: 'IQF', 'Semi IQF', 'Blast', 'Block', 'Plate'. Default to 'IQF' if not specified",
-      "cases": "number - total cartons/cases, or empty string if unknown. Calculate from kilos÷kgPerCarton if possible",
-      "kilos": "number - total kilograms (if MT given, multiply by 1000). Calculate from cases×kgPerCarton if possible",
+      "cases": "",
+      "kilos": "number - total kilograms (if MT given, multiply by 1000)",
       "pricePerKg": "number - price per kilogram",
       "currency": "string - 'USD' or 'EUR' based on $ or euro symbols. Default 'USD'",
       "total": ""
@@ -56,8 +53,7 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 
 ### Products
 - Always prefix product names with "Frozen" if not already present
-- If a Product Catalog is provided below, PREFER matching product names from the catalog. Use the exact catalog name format. If the catalog lists default glaze/freeze for a product and the input doesn't specify, use the catalog defaults.
-- Common product types: Squid (Tubes, Rings, Cut, Whole, Baby), Cuttlefish (Whole Cleaned, Strips), Octopus, Shrimp, Vannamei, Ribbon Fish
+- Common products: Squid (Tubes, Rings, Cut, Whole, Baby), Cuttlefish (Whole Cleaned, Strips), Octopus, Shrimp, Vannamei, Ribbon Fish
 - Processing styles go IN the product name, not as a brand: PBO, PND, PD, HLSO, HOSO, PUD, PDTO, CPTO, PTO, EZP, Butterfly
 - "Skin On" / "Skin Off" are product attributes, not brands
 
@@ -88,18 +84,8 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - Brand can appear in parentheses with or without "Marca", or after the product with "brand/Brand"
 
 ### Quantities & Pricing
-- Quantities can be given in KILOS, METRIC TONS, or CARTONS/CASES — these are different units!
-- "07 MT" or "7 MT" = 7000 kg (multiply MT by 1000) → put in "kilos"
-- "5000 kg" or "5000 kilos" → put in "kilos"
-- "500 cartons" or "500 cases" or "500 cajas" or "500 ctns" or "500 ctn" → put in "cases"
-- If quantity is given in CARTONS and packing is known, CALCULATE kilos: kilos = cases × kg-per-carton
-  Example: "500 cartons, packing 6x1kg" → cases=500, kilos=500×6=3000
-  Example: "200 cajas, packing 10kg bulk" → cases=200, kilos=200×10=2000
-- If quantity is given in KILOS and packing is known, CALCULATE cases: cases = kilos ÷ kg-per-carton (round up)
-  Example: "3000 kg, packing 6x1kg" → kilos=3000, cases=3000÷6=500
-- If you cannot calculate one from the other (no packing info), just fill in what you have
-- "cases" should be a number (integer) or empty string if unknown
-- "kilos" should be a number or empty string if unknown
+- "07 MT" or "7 MT" = 7000 kg (multiply MT by 1000)
+- "5 MT" = 5000 kg
 - "3.30 $" or "$3.30" or "3.30 USD" = price per kg of $3.30
 - "euro 4.50" or "4.50 EUR" = price of 4.50 EUR
 
@@ -126,8 +112,7 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - Products sharing the same packing/glaze should each get those values
 
 ### Important
-- Leave "total" as empty string - this is calculated by the frontend
-- "cases" can be a number (integer) if known or calculable, or empty string if truly unknown
+- Leave "cases" and "total" as empty strings - these are calculated by the frontend
 - "kilos" and "pricePerKg" should be numbers, not strings
 - If glaze is mentioned with "marked as" or "marked", put in glazeMarked
 - If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`;
@@ -139,15 +124,6 @@ serve(async (req) => {
   }
 
   try {
-    // Verify the caller is authenticated via JWT
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Missing or invalid authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
       return new Response(
@@ -156,16 +132,15 @@ serve(async (req) => {
       );
     }
 
-    let rawText: string, suppliers: any, buyers: any, orgId: string | undefined;
+    let rawText: string, suppliers: any[], buyers: any[];
     try {
       const body = await req.json();
       rawText = body.rawText;
       suppliers = Array.isArray(body.suppliers) ? body.suppliers : [];
       buyers = Array.isArray(body.buyers) ? body.buyers : [];
-      orgId = typeof body.orgId === 'string' ? body.orgId : undefined;
     } catch {
       return new Response(
-        JSON.stringify({ error: 'Invalid request body. Please send valid JSON.' }),
+        JSON.stringify({ error: 'Invalid request body.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -177,58 +152,6 @@ serve(async (req) => {
       );
     }
 
-    // Input length validation — reject excessively large inputs
-    if (rawText.length > 50000) {
-      return new Response(
-        JSON.stringify({ error: 'Input text too large. Please limit to 50,000 characters.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Fetch product catalog for better AI accuracy
-    let productCatalogContext = '';
-    if (orgId) {
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        const { data: products } = await supabase
-          .from('products')
-          .select('name, size, glaze, freeze_type, markets')
-          .eq('organization_id', orgId)
-          .eq('is_active', true);
-
-        if (products && products.length > 0) {
-          // Group by product name to keep it compact
-          const grouped = new Map<string, { sizes: Set<string>, glazes: Set<string>, freezes: Set<string>, markets: Set<string> }>();
-          for (const p of products) {
-            if (!grouped.has(p.name)) {
-              grouped.set(p.name, { sizes: new Set(), glazes: new Set(), freezes: new Set(), markets: new Set() });
-            }
-            const g = grouped.get(p.name)!;
-            if (p.size) g.sizes.add(p.size);
-            if (p.glaze != null) g.glazes.add(Math.round(p.glaze * 100) + '%');
-            if (p.freeze_type) g.freezes.add(p.freeze_type);
-            if (p.markets) p.markets.split(',').forEach((m: string) => g.markets.add(m.trim()));
-          }
-
-          const catalogLines = Array.from(grouped).map(([name, attrs]) => {
-            const parts = [name];
-            if (attrs.sizes.size > 0) parts.push(`Sizes: ${[...attrs.sizes].join(', ')}`);
-            if (attrs.glazes.size > 0) parts.push(`Glaze: ${[...attrs.glazes].join(', ')}`);
-            if (attrs.freezes.size > 0) parts.push(`Freeze: ${[...attrs.freezes].join(', ')}`);
-            return parts.join(' | ');
-          }).join('\n');
-
-          productCatalogContext = `\n\nProduct Catalog (use these exact product names and attributes when matching):\n${catalogLines}`;
-        }
-      } catch (err) {
-        console.error('Could not fetch product catalog:', err);
-        // Continue without catalog — not a blocker
-      }
-    }
-
     // Build context about available suppliers and buyers
     const supplierContext = suppliers && suppliers.length > 0
       ? `\n\nAvailable Suppliers (match abbreviations against these):\n${suppliers.map((s: Supplier) => `- "${s.company}" (email: ${s.email}${s.country ? ', country: ' + s.country : ''})`).join('\n')}`
@@ -238,12 +161,13 @@ serve(async (req) => {
       ? `\n\nAvailable Buyers (match abbreviations against these):\n${buyers.map((b: Buyer) => `- "${b.company}" (email: ${b.email}${b.country ? ', country: ' + b.country : ''})`).join('\n')}`
       : '';
 
-    const userMessage = `Parse this purchase order text into structured data:\n\n${rawText}${supplierContext}${buyerContext}${productCatalogContext}`;
+    const userMessage = `Parse this purchase order text into structured data:\n\n${rawText}${supplierContext}${buyerContext}`;
 
-    // Call Claude Haiku API with 30-second timeout
+    // Call Claude Haiku API
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
-    let response: Response;
+
+    let response;
     try {
       response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -301,14 +225,11 @@ serve(async (req) => {
     const aiResponse = await response.json();
     const content = aiResponse.content?.[0]?.text || '';
 
-    // Parse the JSON response from Claude - robust extraction
+    // Parse the JSON response from Claude
     let parsed;
     try {
-      // First try direct parse
-      let jsonStr = content.trim();
-      // Strip markdown code fences if present
-      jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      // If still not valid, find the first { to last } as fallback
+      let jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      // Robust: find first { to last } if response has extra text
       if (!jsonStr.startsWith('{')) {
         const firstBrace = jsonStr.indexOf('{');
         const lastBrace = jsonStr.lastIndexOf('}');
@@ -334,7 +255,7 @@ serve(async (req) => {
       packing: String(item.packing || ''),
       brand: String(item.brand || ''),
       freezing: String(item.freezing || 'IQF'),
-      cases: typeof item.cases === 'number' ? item.cases : (parseInt(item.cases) || ''),
+      cases: '',
       kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || ''),
       pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || ''),
       currency: String(item.currency || 'USD'),
