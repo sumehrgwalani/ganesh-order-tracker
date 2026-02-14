@@ -223,7 +223,7 @@ function App() {
                 setExpandedOrder={setExpandedOrder}
               />
             } />
-            <Route path="/mailbox" element={<MailboxPage />} />
+            <Route path="/mailbox" element={<MailboxPage orgId={orgId} />} />
             <Route path="/create-po" element={
               <POGeneratorPage
                 contacts={contacts}
