@@ -18,7 +18,7 @@ type SyncPhase = 'idle' | 'pulling' | 'matching' | 'done';
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
-  const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder, refetch } = useSyncedEmails(orgId);
+  const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder, unlinkEmail, refetch } = useSyncedEmails(orgId);
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
@@ -29,6 +29,15 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [syncPhase, setSyncPhase] = useState<SyncPhase>('idle');
   const [syncProgress, setSyncProgress] = useState('');
   const [matchProgress, setMatchProgress] = useState({ matched: 0, remaining: 0, total: 0 });
+
+  const handleUnlink = async (email: SyncedEmail) => {
+    try {
+      await unlinkEmail(email.id);
+      showToast('Email delinked from order', 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to delink email', 'error');
+    }
+  };
 
   // Build order options for the link modal
   const orderOptions = orders.map((o) => ({
@@ -41,6 +50,10 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const handleLink = async (orderId: string, orderPoNumber: string, note: string) => {
     if (!linkingEmail) return;
     try {
+      // If reassigning, clear old AI match first
+      if (linkingEmail.matched_order_id) {
+        await unlinkEmail(linkingEmail.id);
+      }
       await linkEmailToOrder(linkingEmail.id, orderId, orderPoNumber, note);
       showToast('Email linked to order', 'success');
     } catch (err: unknown) {
@@ -373,7 +386,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                         </div>
                       )}
 
-                      {/* Link to order button in expanded view (conversations) */}
+                      {/* Actions for conversations tab */}
                       {activeTab === 'conversations' && (
                         <button
                           onClick={() => setLinkingEmail(email)}
@@ -384,18 +397,34 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                         </button>
                       )}
 
-                      {/* View order link (matched) */}
+                      {/* Actions for matched tab: View, Reassign, Delink */}
                       {orderLabel && (
-                        <button
-                          onClick={() => {
-                            const orderId = email.matched_order_id || email.user_linked_order_id;
-                            if (orderId) navigate(`/orders/${encodeURIComponent(orderId)}`);
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                        >
-                          <Icon name="ExternalLink" size={14} />
-                          View Order
-                        </button>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => {
+                              const orderId = email.matched_order_id || email.user_linked_order_id;
+                              if (orderId) navigate(`/orders/${encodeURIComponent(orderId)}`);
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                          >
+                            <Icon name="ExternalLink" size={14} />
+                            View Order
+                          </button>
+                          <button
+                            onClick={() => setLinkingEmail(email)}
+                            className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                          >
+                            <Icon name="RefreshCw" size={14} />
+                            Reassign
+                          </button>
+                          <button
+                            onClick={() => handleUnlink(email)}
+                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
+                          >
+                            <Icon name="X" size={14} />
+                            Delink
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

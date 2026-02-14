@@ -116,6 +116,42 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
+  // Delink an email from its matched order (clears AI match or user link)
+  const unlinkEmail = async (emailId: string) => {
+    const { error: updateError } = await supabase
+      .from('synced_emails')
+      .update({
+        matched_order_id: null,
+        detected_stage: null,
+        ai_summary: null,
+        auto_advanced: false,
+        user_linked_order_id: null,
+        user_link_note: null,
+        user_linked_at: null,
+      })
+      .eq('id', emailId);
+
+    if (updateError) throw updateError;
+
+    // Update local state
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === emailId
+          ? {
+              ...e,
+              matched_order_id: null,
+              detected_stage: null,
+              ai_summary: null,
+              auto_advanced: false,
+              user_linked_order_id: null,
+              user_link_note: null,
+              user_linked_at: null,
+            }
+          : e
+      )
+    );
+  };
+
   return {
     emails,
     matchedEmails,
@@ -123,6 +159,7 @@ export function useSyncedEmails(orgId: string | null) {
     loading,
     error,
     linkEmailToOrder,
+    unlinkEmail,
     refetch: fetchEmails,
   };
 }
