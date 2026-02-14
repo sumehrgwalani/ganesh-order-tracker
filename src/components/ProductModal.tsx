@@ -11,7 +11,7 @@ interface Props {
 }
 
 const PRODUCT_TYPES = ['Cuttlefish', 'Squid', 'Shrimp', 'Fish', 'Other'];
-const FREEZE_TYPES = ['IQF', 'Blocks', 'Semi IQF', 'Blast', 'Jumble Blocks', 'Finger Laid', 'Tray Pack', 'Tray Pack Skin Off'];
+const FREEZE_TYPES = ['IQF', 'Blocks', 'Block Frozen', 'Semi IQF', 'Blast'];
 const CATCHING_METHODS = ['Trawler', 'One Day Hook Catch', 'Farmed'];
 const GLAZE_OPTIONS = [0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50];
 

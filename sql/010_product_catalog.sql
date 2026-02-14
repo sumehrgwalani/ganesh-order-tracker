@@ -73,11 +73,11 @@ BEGIN
   (org, 'Squid Whole Cleaned', 'Squid', 'Squid', 'U/10', 0.20, 'Blocks', 'Trawler', 'Italy, Spain, Portugal', true),
   (org, 'Squid Whole Cleaned', 'Squid', 'Squid', '10/20', 0.20, 'Blocks', 'Trawler', 'Italy, Spain, Portugal', true),
   (org, 'Squid Whole Cleaned', 'Squid', 'Squid', '20/40', 0.20, 'Blocks', 'Trawler', 'Italy, Spain, Portugal', true),
-  -- Baby Squid
-  (org, 'Baby Squid', 'Squid', 'Squid', '80/up', 0.10, 'Jumble Blocks', 'Trawler', 'Spain', true),
-  (org, 'Baby Squid', 'Squid', 'Squid', '80/up', 0.10, 'Finger Laid', 'Trawler', 'Spain', true),
-  (org, 'Baby Squid', 'Squid', 'Squid', '80/up', 0.10, 'Tray Pack', 'Trawler', 'Spain', true),
-  (org, 'Baby Squid', 'Squid', 'Squid', '80/up', 0.10, 'Tray Pack Skin Off', 'Trawler', 'Spain', true),
+  -- Baby Squid (packing types in name, freeze is Block Frozen)
+  (org, 'Baby Squid - Jumble Blocks', 'Squid', 'Squid', '80/up', 0.10, 'Block Frozen', 'Trawler', 'Spain', true),
+  (org, 'Baby Squid - Finger Laid', 'Squid', 'Squid', '80/up', 0.10, 'Block Frozen', 'Trawler', 'Spain', true),
+  (org, 'Baby Squid - Tray Pack', 'Squid', 'Squid', '80/up', 0.10, 'Block Frozen', 'Trawler', 'Spain', true),
+  (org, 'Baby Squid - Tray Pack Skin Off', 'Squid', 'Squid', '80/up', 0.10, 'Block Frozen', 'Trawler', 'Spain', true),
   -- Baby Squid Pin Bone Out
   (org, 'Baby Squid Pin Bone Out', 'Squid', 'Squid', '80/up', 0.20, 'IQF', 'Trawler', 'Spain', true),
   -- Cut Squid
