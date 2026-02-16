@@ -151,9 +151,7 @@ async function handlePOAttachment(
 ) {
   try {
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-    const poPart = parts.find(p =>
-      p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
-    )
+    const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
     if (!poPart) { console.log('No PDF/image attachment found for PO email'); return }
 
     const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
@@ -161,7 +159,7 @@ async function handlePOAttachment(
 
     const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
     if (!publicUrl) { console.log('Failed to upload PO attachment'); return }
-    console.log(`PO attachment uploaded: ${publicUrl}`)
+    console.log(`PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
 
     // Update the most recent stage 1 history entry with attachment URL
     const { data: historyRows } = await supabase
@@ -190,11 +188,9 @@ async function handlePIAttachment(
   matchedOrderId: string, orderUuid: string, organizationId: string, userId: string
 ) {
   try {
-    // 1. Get attachment parts from the Gmail message
+    // 1. Get attachment parts and pick the most likely PI document
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-    const piPart = parts.find(p =>
-      p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
-    )
+    const piPart = pickBestAttachment(parts, scorePIAttachment, email.subject || '')
     if (!piPart) { console.log('No PDF/image attachment found for PI email'); return }
 
     // 2. Download the attachment binary
@@ -298,6 +294,65 @@ async function handlePIAttachment(
   } catch (err) {
     console.error('PI attachment handling error:', err)
   }
+}
+
+// Score an attachment to determine how likely it is to be a PI document
+function scorePIAttachment(filename: string, subject: string): number {
+  const lower = filename.toLowerCase()
+  let score = 0
+  // Strong PI indicators in filename
+  if (/proforma/i.test(lower)) score += 10
+  if (/\bpi\b/i.test(lower)) score += 8
+  if (/invoice/i.test(lower)) score += 5
+  // Order number in filename is a good sign
+  const poMatch = subject.match(/\b(\d{4})\b/)
+  if (poMatch && lower.includes(poMatch[1])) score += 3
+  // Penalize non-PI documents
+  if (/spec|specification|coa|certificate|analysis/i.test(lower)) score -= 10
+  if (/label|artwork|design|logo/i.test(lower)) score -= 8
+  if (/packing|shipping|bill.*lading|bl\b/i.test(lower)) score -= 5
+  if (/photo|image\d/i.test(lower)) score -= 5
+  // PDFs are more likely to be PI documents than images
+  if (lower.endsWith('.pdf')) score += 2
+  return score
+}
+
+// Score an attachment to determine how likely it is to be a PO document
+function scorePOAttachment(filename: string, subject: string): number {
+  const lower = filename.toLowerCase()
+  let score = 0
+  // Strong PO indicators
+  if (/purchase.*order/i.test(lower)) score += 10
+  if (/\bpo\b/i.test(lower)) score += 8
+  // Order number in filename
+  const poMatch = subject.match(/\b(\d{4})\b/)
+  if (poMatch && lower.includes(poMatch[1])) score += 3
+  // Penalize non-PO documents
+  if (/spec|specification|coa|certificate|analysis/i.test(lower)) score -= 10
+  if (/proforma|invoice|\bpi\b/i.test(lower)) score -= 5
+  if (/label|artwork|design|logo/i.test(lower)) score -= 8
+  if (/photo|image\d/i.test(lower)) score -= 5
+  // PDFs and scanned JPGs are common for PO
+  if (lower.endsWith('.pdf')) score += 2
+  return score
+}
+
+// Pick the best attachment from a list using a scoring function
+function pickBestAttachment(
+  parts: { filename: string; mimeType: string; attachmentId: string; size: number }[],
+  scoreFn: (filename: string, subject: string) => number,
+  subject: string
+): { filename: string; mimeType: string; attachmentId: string; size: number } | undefined {
+  const validParts = parts.filter(p =>
+    p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
+  )
+  if (validParts.length === 0) return undefined
+  if (validParts.length === 1) return validParts[0]
+  // Score each and pick the best
+  const scored = validParts.map(p => ({ part: p, score: scoreFn(p.filename, subject) }))
+  scored.sort((a, b) => b.score - a.score)
+  console.log(`Attachment scoring: ${scored.map(s => `${s.part.filename}=${s.score}`).join(', ')}`)
+  return scored[0].part
 }
 
 // Check if a filename is an inline email image (logos, signatures, etc.)
