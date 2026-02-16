@@ -259,48 +259,50 @@ async function handlePOAttachment(
   matchedOrderId: string, orderUuid: string, organizationId: string
 ) {
   try {
-    console.log(`[PO-EXTRACT] START handlePOAttachment for ${matchedOrderId}, email.gmail_id=${email.gmail_id}`)
-    const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-    console.log(`[PO-EXTRACT] Got ${parts.length} attachment parts`)
-    const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
-    if (!poPart) { console.log('[PO-EXTRACT] No PDF/image attachment found for PO email'); return { debug: 'no_attachment' } }
-    console.log(`[PO-EXTRACT] Best attachment: ${poPart.filename} (${poPart.mimeType})`)
+    console.log(`[PO-EXTRACT] START for ${matchedOrderId}`)
 
-    const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
-    if (!fileData) { console.log('[PO-EXTRACT] Failed to download PO attachment'); return { debug: 'download_failed' } }
-    console.log(`[PO-EXTRACT] Downloaded ${fileData.length} bytes`)
+    // Step 1: Try to download and upload the attachment (may fail if Gmail token expired)
+    let publicUrl: string | null = null
+    let attachmentFilename = 'PO_document'
+    try {
+      const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
+      const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
+      if (poPart) {
+        const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
+        if (fileData) {
+          publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
+          attachmentFilename = poPart.filename
+          console.log(`[PO-EXTRACT] Attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
+        }
+      }
+    } catch (attachErr) {
+      console.log(`[PO-EXTRACT] Attachment download/upload failed: ${attachErr}`)
+    }
 
-    const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
-    if (!publicUrl) { console.log('[PO-EXTRACT] Failed to upload PO attachment'); return { debug: 'upload_failed' } }
-    console.log(`[PO-EXTRACT] PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
-
-    // Check if order already has line items (from app-generated PO) — don't overwrite
+    // Step 2: Extract PO data from email body text (works even without attachment)
     const { count: existingLineItems } = await supabase
       .from('order_line_items')
       .select('id', { count: 'exact', head: true })
       .eq('order_id', orderUuid)
 
-    // Get order info for AI context
     const { data: orderRow } = await supabase
       .from('orders')
-      .select('company, supplier')
+      .select('company, supplier, metadata')
       .eq('id', orderUuid)
       .single()
 
     let extractedData: any = null
-    let richMeta: any = { pdfUrl: publicUrl }
+    let extractedCount = 0
 
-    console.log(`[PO-EXTRACT] existingLineItems=${existingLineItems}, orderCompany=${orderRow?.company}, orderSupplier=${orderRow?.supplier}`)
     if (!existingLineItems || existingLineItems === 0) {
-      // Extract structured PO data from email text
-      console.log(`[PO-EXTRACT] Calling extractPODataFromEmail, email body_text length=${(email.body_text||'').length}`)
+      console.log(`[PO-EXTRACT] Extracting from email body (${(email.body_text||'').length} chars)`)
       extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
-      console.log(`[PO-EXTRACT] extractedData: ${extractedData ? `${extractedData.lineItems.length} items` : 'null'}`)
+      console.log(`[PO-EXTRACT] Result: ${extractedData ? `${extractedData.lineItems.length} items` : 'null'}`)
 
       if (extractedData && extractedData.lineItems.length > 0) {
-        console.log(`[PO-EXTRACT] Extracted ${extractedData.lineItems.length} line items from PO email for ${matchedOrderId}`)
+        extractedCount = extractedData.lineItems.length
 
-        // Insert line items into order_line_items table
+        // Insert line items
         const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
           order_id: orderUuid,
           organization_id: organizationId,
@@ -319,41 +321,29 @@ async function handlePOAttachment(
           sort_order: idx,
         }))
         const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
-        console.log(`[PO-EXTRACT] Insert line items result: ${insertErr ? `ERROR: ${insertErr.message}` : 'OK'}`)
+        if (insertErr) console.error(`[PO-EXTRACT] Insert error: ${insertErr.message}`)
+        else console.log(`[PO-EXTRACT] Inserted ${lineItemRows.length} line items`)
 
-        // Update order metadata fields
+        // Update order metadata
         const updates: any = {
           metadata: {
             ...(orderRow?.metadata || {}),
-            pdfUrl: publicUrl,
             extractedFromEmail: true,
+            ...(publicUrl ? { pdfUrl: publicUrl } : {}),
           },
         }
         if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
         if (extractedData.payment) updates.payment_terms = extractedData.payment
         if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
         if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
-
         await supabase.from('orders').update(updates).eq('id', orderUuid)
-
-        // Build rich metadata for history attachment (matching POGeneratorPage format)
-        richMeta = {
-          pdfUrl: publicUrl,
-          supplier: orderRow?.supplier || '',
-          buyer: orderRow?.company || '',
-          deliveryTerms: extractedData.deliveryTerms || '',
-          payment: extractedData.payment || '',
-          totalKilos: extractedData.totalKilos,
-          grandTotal: extractedData.totalValue,
-          extractedFromEmail: true,
-          lineItems: extractedData.lineItems,
-        }
+        console.log(`[PO-EXTRACT] Order metadata updated`)
       }
     } else {
-      console.log(`Order ${matchedOrderId} already has ${existingLineItems} line items — skipping extraction`)
+      console.log(`[PO-EXTRACT] Order already has ${existingLineItems} line items — skip`)
     }
 
-    // Update the most recent stage 1 history entry with attachment URL + metadata
+    // Step 3: Update history entry with attachment info
     const { data: historyRows } = await supabase
       .from('order_history')
       .select('id')
@@ -363,16 +353,29 @@ async function handlePOAttachment(
       .limit(1)
 
     if (historyRows && historyRows.length > 0) {
-      const attachmentEntry = JSON.stringify({ name: poPart.filename, meta: richMeta })
-      const { error: histErr } = await supabase
-        .from('order_history')
-        .update({ attachments: [attachmentEntry] })
-        .eq('id', historyRows[0].id)
-      console.log(`[PO-EXTRACT] History update: ${histErr ? `ERROR: ${histErr.message}` : 'OK'}, historyId=${historyRows[0].id}`)
-    } else {
-      console.log(`[PO-EXTRACT] No history row found for stage 1`)
+      const richMeta: any = publicUrl
+        ? {
+            pdfUrl: publicUrl,
+            supplier: orderRow?.supplier || '',
+            buyer: orderRow?.company || '',
+            ...(extractedData ? {
+              deliveryTerms: extractedData.deliveryTerms || '',
+              payment: extractedData.payment || '',
+              totalKilos: extractedData.totalKilos,
+              grandTotal: extractedData.totalValue,
+              extractedFromEmail: true,
+              lineItems: extractedData.lineItems,
+            } : {}),
+          }
+        : (extractedData ? { extractedFromEmail: true, lineItems: extractedData.lineItems } : {})
+
+      if (publicUrl || extractedData) {
+        const attachmentEntry = JSON.stringify({ name: attachmentFilename, meta: richMeta })
+        await supabase.from('order_history').update({ attachments: [attachmentEntry] }).eq('id', historyRows[0].id)
+      }
     }
-    return { debug: 'ok', file: poPart.filename, extracted: extractedData ? extractedData.lineItems.length : 0, url: publicUrl }
+
+    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount }
   } catch (err) {
     console.error('PO attachment handling error:', err)
     return { debug: 'error', error: String(err) }
