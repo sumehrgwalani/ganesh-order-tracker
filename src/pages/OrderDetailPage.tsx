@@ -1016,13 +1016,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                   { key: 'brand', label: 'Brand', options: brandOptions, customKey: '_customBrand' },
                 ].map(field => {
                   const currentVal = editForm[field.key] || '';
-                  const isCustom = editForm[field.customKey] === 'true';
+                  const isCustomMode = editForm[field.customKey] === 'true';
                   const isInList = field.options.includes(currentVal);
-                  const showCustomInput = isCustom || (!isInList && currentVal !== '');
                   return (
                     <div key={field.key}>
                       <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">{field.label}</label>
-                      {showCustomInput ? (
+                      {isCustomMode ? (
                         <div className="flex gap-1">
                           <input
                             type="text"
@@ -1030,11 +1029,11 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                             onChange={e => setEditForm(prev => ({ ...prev, [field.key]: e.target.value }))}
                             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             placeholder={`Type ${field.label.toLowerCase()}...`}
-                            autoFocus={isCustom && !currentVal}
+                            autoFocus
                           />
                           <button
                             type="button"
-                            onClick={() => setEditForm(prev => ({ ...prev, [field.customKey]: '', [field.key]: '' }))}
+                            onClick={() => setEditForm(prev => ({ ...prev, [field.customKey]: '' }))}
                             className="px-2 py-2 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200"
                             title="Switch to dropdown"
                           >
@@ -1042,25 +1041,28 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                           </button>
                         </div>
                       ) : (
-                        <div className="flex gap-1">
-                          <select
-                            value={currentVal}
-                            onChange={e => {
-                              if (e.target.value === '__custom__') {
-                                setEditForm(prev => ({ ...prev, [field.customKey]: 'true', [field.key]: '' }));
-                              } else {
-                                setEditForm(prev => ({ ...prev, [field.key]: e.target.value }));
-                              }
-                            }}
-                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                          >
-                            <option value="">— Select {field.label} —</option>
-                            {field.options.map(name => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
-                            <option value="__custom__">+ Type custom...</option>
-                          </select>
-                        </div>
+                        <select
+                          value={isInList || currentVal === '' ? currentVal : '__existing__'}
+                          onChange={e => {
+                            if (e.target.value === '__custom__') {
+                              setEditForm(prev => ({ ...prev, [field.customKey]: 'true', [field.key]: '' }));
+                            } else if (e.target.value === '__existing__') {
+                              // Keep current value
+                            } else {
+                              setEditForm(prev => ({ ...prev, [field.key]: e.target.value }));
+                            }
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                        >
+                          <option value="">— Select {field.label} —</option>
+                          {!isInList && currentVal !== '' && (
+                            <option value="__existing__">{currentVal}</option>
+                          )}
+                          {field.options.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                          <option value="__custom__">+ Type custom...</option>
+                        </select>
                       )}
                     </div>
                   );
