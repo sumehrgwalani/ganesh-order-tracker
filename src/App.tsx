@@ -256,8 +256,6 @@ function App() {
               <Route path="/completed" element={
                 <CompletedPage
                   orders={orders}
-                  expandedOrder={expandedOrder}
-                  setExpandedOrder={setExpandedOrder}
                 />
               } />
               <Route path="/mailbox" element={<MailboxPage orgId={orgId} orders={orders} userId={user?.id} />} />

@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
-import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import PageHeader from '../components/PageHeader';
 import type { Order } from '../types';
 
 interface Props {
   orders: Order[];
-  expandedOrder: string | null;
-  setExpandedOrder: (id: string | null) => void;
 }
 
-function CompletedPage({ orders, expandedOrder, setExpandedOrder }: Props) {
+function CompletedPage({ orders }: Props) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const completedOrders = orders.filter(o => o.currentStage === 8);
@@ -70,7 +67,11 @@ function CompletedPage({ orders, expandedOrder, setExpandedOrder }: Props) {
         <div className="space-y-0">
           {filteredOrders.length > 0 ? (
             filteredOrders.map(order => (
-              <div key={order.id} className="bg-green-50 rounded-xl border border-green-100 p-4 mb-3">
+              <div
+                key={order.id}
+                onClick={() => navigate('/orders/' + encodeURIComponent(order.id))}
+                className="bg-green-50 rounded-xl border border-green-100 p-4 mb-3 cursor-pointer hover:bg-green-100 hover:border-green-200 transition-colors"
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
@@ -85,27 +86,12 @@ function CompletedPage({ orders, expandedOrder, setExpandedOrder }: Props) {
                       <span className="text-gray-400">{order.supplier}</span>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right mr-3">
                     <p className="text-xs text-gray-500">{order.date}</p>
                     <p className="text-xs text-gray-400 mt-1">{order.from} → {order.to}</p>
                   </div>
-                  <button
-                    onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
-                    className="ml-4 p-2 hover:bg-green-100 rounded-lg transition-colors"
-                  >
-                    <Icon name="ChevronDown" size={16} className={`text-green-600 transition-transform ${expandedOrder === order.id ? 'rotate-180' : ''}`} />
-                  </button>
+                  <Icon name="ChevronRight" size={18} className="text-green-400" />
                 </div>
-                {expandedOrder === order.id && (
-                  <div className="mt-4 pt-4 border-t border-green-200">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Delivery Timeline</p>
-                    <div className="space-y-2">
-                      {order.history.slice(-3).reverse().map((entry, idx) => (
-                        <ExpandableEmailCard key={idx} entry={entry} defaultExpanded={idx === 0} />
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             ))
           ) : (

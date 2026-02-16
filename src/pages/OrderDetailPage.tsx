@@ -706,7 +706,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
       {/* Header */}
       <div className="flex items-center justify-between mb-6 relative z-10">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/orders')} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors z-20">
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-200 bg-gray-100 rounded-lg transition-colors z-20">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
