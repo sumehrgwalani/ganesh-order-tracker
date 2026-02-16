@@ -263,15 +263,15 @@ async function handlePOAttachment(
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
     console.log(`[PO-EXTRACT] Got ${parts.length} attachment parts`)
     const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
-    if (!poPart) { console.log('[PO-EXTRACT] No PDF/image attachment found for PO email'); return }
+    if (!poPart) { console.log('[PO-EXTRACT] No PDF/image attachment found for PO email'); return { debug: 'no_attachment' } }
     console.log(`[PO-EXTRACT] Best attachment: ${poPart.filename} (${poPart.mimeType})`)
 
     const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
-    if (!fileData) { console.log('[PO-EXTRACT] Failed to download PO attachment'); return }
+    if (!fileData) { console.log('[PO-EXTRACT] Failed to download PO attachment'); return { debug: 'download_failed' } }
     console.log(`[PO-EXTRACT] Downloaded ${fileData.length} bytes`)
 
     const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
-    if (!publicUrl) { console.log('[PO-EXTRACT] Failed to upload PO attachment'); return }
+    if (!publicUrl) { console.log('[PO-EXTRACT] Failed to upload PO attachment'); return { debug: 'upload_failed' } }
     console.log(`[PO-EXTRACT] PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
 
     // Check if order already has line items (from app-generated PO) — don't overwrite
@@ -364,13 +364,18 @@ async function handlePOAttachment(
 
     if (historyRows && historyRows.length > 0) {
       const attachmentEntry = JSON.stringify({ name: poPart.filename, meta: richMeta })
-      await supabase
+      const { error: histErr } = await supabase
         .from('order_history')
         .update({ attachments: [attachmentEntry] })
         .eq('id', historyRows[0].id)
+      console.log(`[PO-EXTRACT] History update: ${histErr ? `ERROR: ${histErr.message}` : 'OK'}, historyId=${historyRows[0].id}`)
+    } else {
+      console.log(`[PO-EXTRACT] No history row found for stage 1`)
     }
+    return { debug: 'ok', file: poPart.filename, extracted: extractedData ? extractedData.lineItems.length : 0, url: publicUrl }
   } catch (err) {
     console.error('PO attachment handling error:', err)
+    return { debug: 'error', error: String(err) }
   }
 }
 
@@ -1217,15 +1222,16 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         const orderUuid = orderMap.get(email.matched_order_id)
         if (!orderUuid) continue
         try {
+          let debugInfo: any = null
           if (email.detected_stage === 1) {
-            await handlePOAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id)
+            debugInfo = await handlePOAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id)
             poCount++
           } else {
             await handlePIAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id)
             piCount++
           }
           processed++
-          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok' })
+          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok', debugInfo })
           // Mark as processed so we don't re-download next batch
           await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
         } catch (err) {
