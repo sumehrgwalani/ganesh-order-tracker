@@ -148,11 +148,11 @@ async function getAttachmentPartsForMessage(accessToken: string, messageId: stri
 // Extract structured PO data from email text using Claude AI
 async function extractPODataFromEmail(
   email: any, orderCompany: string, orderSupplier: string
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number, _debug?: any } | null> {
   try {
     const emailText = `Subject: ${email.subject || ''}\n\nBody:\n${(email.body_text || '').substring(0, 6000)}`
     console.log(`[PO-EXTRACT] extractPODataFromEmail called, emailText length=${emailText.length}, apiKey=${!!ANTHROPIC_API_KEY}`)
-    if (emailText.length < 30) { console.log('[PO-EXTRACT] Email text too short, skipping'); return null }
+    if (emailText.length < 30) { console.log('[PO-EXTRACT] Email text too short, skipping'); return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: 'too_short' } }
 
     const prompt = `You are an expert seafood trading order parser for Ganesh International, a frozen foods trading company.
 Extract structured purchase order data from this email.
@@ -214,7 +214,7 @@ Rules:
     if (!res.ok) {
       const errBody = await res.text()
       console.error(`[PO-EXTRACT] AI API error: ${res.status} - ${errBody.substring(0, 200)}`)
-      return null
+      return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `api_error_${res.status}: ${errBody.substring(0, 150)}` }
     }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
@@ -256,7 +256,7 @@ Rules:
     }
   } catch (err) {
     console.error('PO data extraction error:', err)
-    return null
+    return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `catch_error: ${String(err).substring(0, 150)}` }
   }
 }
 
@@ -382,7 +382,7 @@ async function handlePOAttachment(
       }
     }
 
-    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount }
+    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount, emailBodyLen: (email.body_text||'').length, existingLineItems, extractedDataNull: extractedData === null, extractDebug: extractedData?._debug || 'none', apiKeyAvailable: !!ANTHROPIC_API_KEY }
   } catch (err) {
     console.error('PO attachment handling error:', err)
     return { debug: 'error', error: String(err) }
