@@ -193,15 +193,16 @@ Deno.serve(async (req) => {
     // MODE: MATCH — AI matching of already-stored emails in batches
     // ============================================================
     if (syncMode === 'match') {
-      // Get unmatched emails (no matched_order_id and no user_linked_order_id)
+      // Get unprocessed emails (no matched_order_id, no user_linked_order_id, and no ai_summary yet)
       const { data: unmatchedEmails, error: fetchErr } = await supabase
         .from('synced_emails')
         .select('*')
         .eq('organization_id', organization_id)
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
+        .is('ai_summary', null)
         .order('date', { ascending: true })
-        .limit(15) // Process 15 at a time for accuracy
+        .limit(5) // Small batches for high accuracy — prevents AI from mixing up emails
 
       if (fetchErr) throw fetchErr
       if (!unmatchedEmails || unmatchedEmails.length === 0) {
@@ -453,7 +454,7 @@ If no purchase orders found, return: []`
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
-      const aiPrompt = `You are an AI assistant for a frozen seafood trading company. Match these emails to existing purchase orders.
+      const aiPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International. Match each email below to an existing purchase order.
 ${catalogSection}
 ACTIVE ORDERS:
 ${JSON.stringify(ordersList, null, 2)}
@@ -463,31 +464,37 @@ ${STAGE_TRIGGERS}
 ${correctionExamples}
 EMAILS TO MATCH:
 ${unmatchedEmails.map((e: any, i: number) => `
---- Email ${i + 1} ---
-Gmail ID: ${e.gmail_id}
+=== EMAIL #${i + 1} ===
+GMAIL_ID: "${e.gmail_id}"
 From: ${e.from_name} <${e.from_email}>
 To: ${e.to_email}
 Subject: ${e.subject}
 Date: ${e.date}
 Has Attachment: ${e.has_attachment}
 Body (first 4000 chars): ${(e.body_text || '').substring(0, 4000)}
+=== END EMAIL #${i + 1} ===
 `).join('\n')}
 
-For each email, determine:
-1. Which order it matches (by PO number, company, supplier, or product). Use the order "id" field (PO number).
-2. What stage this email represents (the stage the email is evidence of, regardless of current order stage).
-3. A brief summary.
+INSTRUCTIONS — Process each email ONE AT A TIME:
+For each email above, determine:
+1. Which order it matches (by PO number, company, supplier, or product references in the email body/subject). Use the order "id" field (PO number like "GI/PO/...").
+2. What stage this email represents (the stage the email is evidence of).
+3. A brief summary of what THIS specific email is about. The summary MUST describe the actual content of THIS email — its subject and body — not any other email.
 
-CRITICAL RULES FOR STAGE DETECTION:
-- The detected_stage is the stage this email provides EVIDENCE for — it can be ANY stage, not just current+1.
-- If an email shows evidence of stage 6 but the order is at stage 3, still report detected_stage as 6.
-- Sometimes steps get skipped in real trade — that's OK. The system will handle marking skipped stages.
+ACCURACY RULES — READ CAREFULLY:
+- You MUST copy the GMAIL_ID exactly from each email header above. Do NOT swap or mix up IDs between emails.
+- The "summary" field must describe the content of the email with THAT gmail_id — not any other email.
+- Process each email independently. Do not let information from one email bleed into another.
+- If an email is about banking, compliance, or non-trade matters, set matched_order_id to null.
 - If no order matches, set matched_order_id to null.
 - If no stage is detected, set detected_stage to null.
-- Return VALID JSON only, no markdown.
 
-Return a JSON array:
-[{ "gmail_id": "...", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "Brief explanation" }]`
+STAGE RULES:
+- detected_stage is the stage this email provides EVIDENCE for — it can be ANY stage, not just current+1.
+- Sometimes steps get skipped in real trade — that's OK.
+
+Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.length} results, one per email, in the same order:
+[{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "What THIS specific email is about" }]`
 
       let aiResults: any[] = []
       try {
@@ -516,6 +523,16 @@ Return a JSON array:
         console.error('AI matching error:', err)
       }
 
+      // Validate: only keep results whose gmail_id actually matches an email we sent
+      const validGmailIds = new Set(unmatchedEmails.map((e: any) => e.gmail_id))
+      aiResults = aiResults.filter((r: any) => {
+        if (!validGmailIds.has(r.gmail_id)) {
+          console.warn(`AI returned unknown gmail_id: ${r.gmail_id} — skipping`)
+          return false
+        }
+        return true
+      })
+
       // Process results
       const aiMap = new Map(aiResults.map((r: any) => [r.gmail_id, r]))
       let matchedCount = 0
@@ -527,7 +544,22 @@ Return a JSON array:
         const detectedStage = ai.detected_stage || null
         const summary = ai.summary || null
 
-        if (!matchedOrderId) continue // Skip unmatched
+        if (!matchedOrderId) {
+          // Still save the AI summary so this email won't be re-processed
+          if (summary) {
+            await supabase
+              .from('synced_emails')
+              .update({ ai_summary: summary })
+              .eq('id', email.id)
+          } else {
+            // Set a placeholder summary so we don't reprocess
+            await supabase
+              .from('synced_emails')
+              .update({ ai_summary: 'No order match found' })
+              .eq('id', email.id)
+          }
+          continue
+        }
 
         // Update the synced_email with match info
         await supabase
@@ -598,13 +630,14 @@ Return a JSON array:
         }
       }
 
-      // Count remaining unmatched
+      // Count remaining unprocessed (no match AND no summary yet)
       const { count: remainingCount } = await supabase
         .from('synced_emails')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organization_id)
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
+        .is('ai_summary', null)
 
       const { count: totalEmails } = await supabase
         .from('synced_emails')
