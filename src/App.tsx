@@ -248,6 +248,8 @@ function App() {
               <Route path="/orders/:orderId" element={
                 <OrderDetailPage
                   orders={orders}
+                  contacts={contacts}
+                  products={dbProducts}
                   onUpdateStage={handleUpdateStage}
                   onUpdateOrder={handleUpdateOrder}
                   onDeleteOrder={handleDeleteOrder}

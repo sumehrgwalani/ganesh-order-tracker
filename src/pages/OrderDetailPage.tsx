@@ -5,18 +5,21 @@ import Icon from '../components/Icon';
 import { ORDER_STAGES, GI_LOGO_URL } from '../data/constants';
 import ExpandableEmailCard from '../components/ExpandableEmailCard';
 import OrderProgressBar from '../components/OrderProgressBar';
-import type { Order, AttachmentEntry } from '../types';
+import type { Order, AttachmentEntry, ContactsMap } from '../types';
 import { getAttachmentName, getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
+import type { CatalogProduct } from '../hooks/useProducts';
 
 interface Props {
   orders: Order[];
+  contacts?: ContactsMap;
+  products?: CatalogProduct[];
   onUpdateStage?: (orderId: string, newStage: number, oldStage?: number) => Promise<void>;
   onUpdateOrder?: (orderId: string, updates: Partial<Order>) => Promise<void>;
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
+function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
@@ -987,11 +990,76 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
+                {/* Buyer dropdown */}
+                <div>
+                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</label>
+                  <input
+                    type="text"
+                    list="edit-buyers-list"
+                    value={editForm.company || ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, company: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="Select or type..."
+                  />
+                  <datalist id="edit-buyers-list">
+                    {contacts && [...new Set(Object.values(contacts).filter(c => c.role === 'buyers' || c.role === 'buyer').map(c => c.company))].filter(Boolean).sort().map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </div>
+                {/* Supplier dropdown */}
+                <div>
+                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier</label>
+                  <input
+                    type="text"
+                    list="edit-suppliers-list"
+                    value={editForm.supplier || ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, supplier: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="Select or type..."
+                  />
+                  <datalist id="edit-suppliers-list">
+                    {contacts && [...new Set(Object.values(contacts).filter(c => c.role === 'suppliers' || c.role === 'supplier').map(c => c.company))].filter(Boolean).sort().map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </div>
+                {/* Product dropdown */}
+                <div>
+                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Product</label>
+                  <input
+                    type="text"
+                    list="edit-products-list"
+                    value={editForm.product || ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, product: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="Select or type..."
+                  />
+                  <datalist id="edit-products-list">
+                    {products && [...new Set(products.map(p => p.name))].filter(Boolean).sort().map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </div>
+                {/* Brand - auto-fill from selected buyer's default_brand */}
+                <div>
+                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Brand</label>
+                  <input
+                    type="text"
+                    list="edit-brands-list"
+                    value={editForm.brand || ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, brand: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="Select or type..."
+                  />
+                  <datalist id="edit-brands-list">
+                    {contacts && [...new Set(Object.values(contacts).map(c => c.default_brand))].filter(Boolean).sort().map(brand => (
+                      <option key={brand} value={brand} />
+                    ))}
+                  </datalist>
+                </div>
+                {/* Remaining text fields */}
                 {[
-                  { key: 'company', label: 'Buyer' },
-                  { key: 'supplier', label: 'Supplier' },
-                  { key: 'product', label: 'Product' },
-                  { key: 'brand', label: 'Brand' },
                   { key: 'from', label: 'Origin' },
                   { key: 'to', label: 'Destination' },
                   { key: 'piNumber', label: 'PI Number' },
