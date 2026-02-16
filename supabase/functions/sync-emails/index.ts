@@ -19,13 +19,21 @@ function isValidUUID(str: string): boolean {
 
 // Stage definitions for AI prompt
 const STAGE_TRIGGERS = `
-Stage 1 → 2 (Proforma Issued): Email contains or references a "proforma invoice", "PI", or proforma document. Often from the supplier.
-Stage 2 → 3 (Artwork Approved): Email says artwork is approved/confirmed/ok. Keywords: "artwork approved", "artwork ok", "artwork confirmed", "label approved", "artwork is ok".
-Stage 3 → 4 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate". Often from inspectors like Hansel Fernandez or J B Boda.
-Stage 4 → 5 (Schedule Confirmed): Email confirms vessel/shipping schedule. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked".
-Stage 5 → 6 (Draft Documents): Email contains draft shipping documents for review. Keywords: "draft BL", "draft documents", "draft bill of lading", "documents for review", "please check documents".
-Stage 6 → 7 (Final Documents): Email confirms final/original documents sent. Keywords: "final documents", "original documents", "documents sent", "originals couriered", "BL released".
-Stage 7 → 8 (DHL Shipped): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill".
+Stage 1 (PO Sent): Email is about sending a Purchase Order to a supplier. Subject contains "PURCHASE ORDER" or "NEW PURCHASE ORDER" + PO number. Body contains phrases like "PLEASE FIND ATTACHED NEW PO", "KINDLY ACKNOWLEDGE THE RECEIPT", "PLEASE SEND US PROFORMA". Sent BY Ganesh International TO the supplier. Has attachment (scanned PO document, JPG or PDF). This is the STARTING stage.
+
+Stage 2 (Proforma Issued): Email contains a Proforma Invoice (PI). Subject contains "PROFORMA INVOICE" or "NEW PROFORMA INVOICE" + PI number + PO number + supplier name. Format example: "NEW PROFORMA INVOICE - PI GI/PI/25-26/I02013 - PO 3004 - JJ SEAFOODS". Body is often EMPTY — all PI info is in the attachment (PDF or scanned JPG). Sent BY Ganesh International. Has attachment with the PI document. PI numbers follow formats like GI/PI/25-26/IXXXXX, PEI/PI/XXX/2025-26, PI/SSI/XXX/25-26, or SLS-XXX.
+
+Stage 3 (Artwork Approved): Email is about artwork or label approval. Subject contains "NEED APPROVAL", "NEED ARTWORK APPROVAL", or "NEED LABELS APPROVAL" + PI number + PO number. These are typically FORWARDED approval chains where the buyer (E. Guillem / Pescados) confirms artwork is OK. Approval phrases: "The artworks are OK", "The labels are OK", "OK, thank you", "encornet is OK". Reply phrases: "Well noted & thanks". The email thread shows the request for approval and the supplier's confirmation.
+
+Stage 4 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate", "pre-shipment inspection". Often from inspectors like Hansel Fernandez or J B Boda.
+
+Stage 5 (Schedule Confirmed): Email confirms vessel/shipping schedule. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked", "sailing schedule".
+
+Stage 6 (Draft Documents): Email contains draft shipping documents for review. Keywords: "draft BL", "draft documents", "draft bill of lading", "documents for review", "please check documents".
+
+Stage 7 (Final Documents): Email confirms final/original documents sent. Keywords: "final documents", "original documents", "documents sent", "originals couriered", "BL released".
+
+Stage 8 (DHL Shipped): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill".
 `
 
 // Decode base64url encoded Gmail message body
@@ -86,6 +94,146 @@ function extractName(emailStr: string): string {
 function extractEmail(emailStr: string): string {
   const match = emailStr.match(/<([^>]+)>/)
   return match ? match[1] : emailStr
+}
+
+// Extract PI number from email subject
+function extractPINumber(subject: string): string | null {
+  const patterns = [
+    /GI\/PI\/[\d\-]+\/[A-Za-z0-9]+/i,
+    /PEI\/PI\/[A-Za-z0-9]+\/[\d\-]+/i,
+    /PI\/SSI\/[A-Za-z0-9]+\/[\d\-]+/i,
+    /SLS\-[A-Za-z0-9]+/i,
+    /PI[\s\-#:]+([A-Za-z0-9\/-]+)/i,
+  ]
+  for (const p of patterns) {
+    const m = subject.match(p)
+    if (m) return m[0]
+  }
+  return null
+}
+
+// Refresh Gmail access token from refresh token
+async function refreshGmailToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string | null> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+      }),
+    })
+    const data = await res.json()
+    if (data.error) { console.error(`Token refresh failed: ${data.error}`); return null }
+    return data.access_token
+  } catch (err) { console.error('Token refresh error:', err); return null }
+}
+
+// Fetch attachment parts for a Gmail message
+async function getAttachmentPartsForMessage(accessToken: string, messageId: string): Promise<{ filename: string; mimeType: string; attachmentId: string; size: number }[]> {
+  try {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    if (!res.ok) return []
+    const msg = await res.json()
+    return extractAttachmentParts(msg.payload)
+  } catch (err) { console.error('Failed to fetch message attachments:', err); return [] }
+}
+
+// Handle PI attachment: download from Gmail, upload to storage, update order
+async function handlePIAttachment(
+  supabase: any, accessToken: string, email: any,
+  matchedOrderId: string, orderUuid: string, organizationId: string, userId: string
+) {
+  try {
+    // 1. Get attachment parts from the Gmail message
+    const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
+    const piPart = parts.find(p =>
+      p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
+    )
+    if (!piPart) { console.log('No PDF/image attachment found for PI email'); return }
+
+    // 2. Download the attachment binary
+    const fileData = await downloadAttachment(accessToken, email.gmail_id, piPart.attachmentId)
+    if (!fileData) { console.log('Failed to download PI attachment'); return }
+
+    // 3. Upload to Supabase Storage
+    const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, piPart.filename, fileData, piPart.mimeType)
+    if (!publicUrl) { console.log('Failed to upload PI attachment'); return }
+    console.log(`PI attachment uploaded: ${publicUrl}`)
+
+    // 4. Update the order_history entry with the attachment URL
+    // Find the most recent history entry for this order at stage 2
+    const { data: historyRows } = await supabase
+      .from('order_history')
+      .select('id')
+      .eq('order_id', orderUuid)
+      .eq('stage', 2)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+
+    if (historyRows && historyRows.length > 0) {
+      const attachmentEntry = JSON.stringify({ name: piPart.filename, meta: { pdfUrl: publicUrl } })
+      await supabase
+        .from('order_history')
+        .update({ attachments: [attachmentEntry] })
+        .eq('id', historyRows[0].id)
+    }
+
+    // 5. Extract PI number and update the order
+    const piNumber = extractPINumber(email.subject)
+    if (piNumber) {
+      await supabase
+        .from('orders')
+        .update({ pi_number: piNumber })
+        .eq('order_id', matchedOrderId)
+        .eq('organization_id', organizationId)
+      console.log(`Updated PI number: ${piNumber} for order ${matchedOrderId}`)
+    }
+
+    // 6. Check if sender is a known contact
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id, notes')
+      .eq('email', email.from_email)
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+
+    if (contact) {
+      // Known contact — track PI format in notes
+      if (piNumber) {
+        const formatPrefix = piNumber.split(/[\/\-]/g).slice(0, 2).join('/')
+        const currentNotes = contact.notes || ''
+        if (!currentNotes.includes(`PI Format: ${formatPrefix}`)) {
+          const newNotes = currentNotes
+            ? `${currentNotes}\nPI Format: ${formatPrefix}`
+            : `PI Format: ${formatPrefix}`
+          await supabase
+            .from('contacts')
+            .update({ notes: newNotes })
+            .eq('id', contact.id)
+        }
+      }
+    } else {
+      // Unknown contact — create notification
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        organization_id: organizationId,
+        type: 'unknown_contact',
+        title: 'PI from Unknown Contact',
+        message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
+        data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
+        read: false,
+      })
+      console.log(`Notification created for unknown contact: ${email.from_email}`)
+    }
+  } catch (err) {
+    console.error('PI attachment handling error:', err)
+  }
 }
 
 // Check if a filename is an inline email image (logos, signatures, etc.)
@@ -193,6 +341,9 @@ Deno.serve(async (req) => {
     // MODE: MATCH — AI matching of already-stored emails in batches
     // ============================================================
     if (syncMode === 'match') {
+      // Lazy Gmail token — only refreshed when PI attachment needs downloading
+      let gmailAccessToken: string | null = null
+
       // Get unprocessed emails (no matched_order_id, no user_linked_order_id, and no ai_summary yet)
       const { data: unmatchedEmails, error: fetchErr } = await supabase
         .from('synced_emails')
@@ -613,6 +764,24 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
               // Mark as auto-advanced
               await supabase.from('synced_emails').update({ auto_advanced: true }).eq('id', email.id)
+
+              // Handle PI attachment download for Stage 2
+              if (detectedStage === 2 && email.has_attachment) {
+                if (!gmailAccessToken && member.gmail_refresh_token) {
+                  const { data: settings } = await supabase
+                    .from('organization_settings')
+                    .select('gmail_client_id')
+                    .eq('organization_id', organization_id)
+                    .single()
+                  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+                  if (settings?.gmail_client_id && clientSecret) {
+                    gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+                  }
+                }
+                if (gmailAccessToken) {
+                  await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                }
+              }
             }
           } else if (order) {
             // Email matches an order but doesn't advance stage — still log in history
@@ -626,6 +795,24 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               timestamp: email.date || new Date().toISOString(),
               has_attachment: email.has_attachment || false,
             })
+
+            // Handle PI attachment for Stage 2 even if order already at/past stage 2 (revision)
+            if (detectedStage === 2 && email.has_attachment) {
+              if (!gmailAccessToken && member.gmail_refresh_token) {
+                const { data: settings } = await supabase
+                  .from('organization_settings')
+                  .select('gmail_client_id')
+                  .eq('organization_id', organization_id)
+                  .single()
+                const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+                if (settings?.gmail_client_id && clientSecret) {
+                  gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+                }
+              }
+              if (gmailAccessToken) {
+                await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+              }
+            }
           }
         }
       }
