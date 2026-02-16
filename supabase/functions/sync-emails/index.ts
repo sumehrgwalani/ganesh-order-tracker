@@ -347,11 +347,15 @@ function pickBestAttachment(
     p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
   )
   if (validParts.length === 0) return undefined
-  if (validParts.length === 1) return validParts[0]
-  // Score each and pick the best
+  // Score each and pick the best, but skip if score is too low (e.g. spec sheets)
   const scored = validParts.map(p => ({ part: p, score: scoreFn(p.filename, subject) }))
   scored.sort((a, b) => b.score - a.score)
   console.log(`Attachment scoring: ${scored.map(s => `${s.part.filename}=${s.score}`).join(', ')}`)
+  // If best score is negative, it's likely not a real PI/PO document — skip it
+  if (scored[0].score < -3) {
+    console.log(`Skipping attachment ${scored[0].part.filename} — score too low (${scored[0].score})`)
+    return undefined
+  }
   return scored[0].part
 }
 
