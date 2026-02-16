@@ -374,8 +374,8 @@ Deno.serve(async (req) => {
       throw new Error('Authentication failed. Please log in again.')
     }
 
-    const { organization_id, user_id, mode } = await req.json()
-    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync
+    const { organization_id, user_id, mode, batch_size } = await req.json()
+    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync, 'reprocess' = re-download PI/PO attachments
     const syncMode = mode || 'full'
     if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
@@ -936,6 +936,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       const gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
       if (!gmailAccessToken) throw new Error('Failed to refresh Gmail token')
 
+      const reprocessLimit = batch_size || 10
       const { data: emails, error: fetchErr } = await supabase
         .from('synced_emails')
         .select('id, gmail_id, subject, from_name, from_email, date, has_attachment, matched_order_id, detected_stage')
@@ -943,7 +944,9 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         .not('matched_order_id', 'is', null)
         .eq('has_attachment', true)
         .in('detected_stage', [1, 2])
+        .eq('attachment_processed', false)
         .order('date', { ascending: true })
+        .limit(reprocessLimit)
 
       if (fetchErr) throw fetchErr
       if (!emails || emails.length === 0) {
@@ -972,8 +975,12 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           }
           processed++
           results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok' })
+          // Mark as processed so we don't re-download next batch
+          await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
         } catch (err) {
           results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'error', error: String(err) })
+          // Mark as processed even on error to avoid infinite retries
+          await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
         }
         await delay(200)
       }
