@@ -1008,74 +1008,63 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                {/* Buyer dropdown */}
-                <div>
-                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</label>
-                  <input
-                    type="text"
-                    list="edit-buyers-list"
-                    value={editForm.company || ''}
-                    onChange={e => setEditForm(prev => ({ ...prev, company: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    placeholder="Select or type..."
-                  />
-                  <datalist id="edit-buyers-list">
-                    {buyerOptions.map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                {/* Supplier dropdown */}
-                <div>
-                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier</label>
-                  <input
-                    type="text"
-                    list="edit-suppliers-list"
-                    value={editForm.supplier || ''}
-                    onChange={e => setEditForm(prev => ({ ...prev, supplier: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    placeholder="Select or type..."
-                  />
-                  <datalist id="edit-suppliers-list">
-                    {supplierOptions.map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                {/* Product dropdown */}
-                <div>
-                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Product</label>
-                  <input
-                    type="text"
-                    list="edit-products-list"
-                    value={editForm.product || ''}
-                    onChange={e => setEditForm(prev => ({ ...prev, product: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    placeholder="Select or type..."
-                  />
-                  <datalist id="edit-products-list">
-                    {productOptions.map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                {/* Brand - auto-fill from selected buyer's default_brand */}
-                <div>
-                  <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">Brand</label>
-                  <input
-                    type="text"
-                    list="edit-brands-list"
-                    value={editForm.brand || ''}
-                    onChange={e => setEditForm(prev => ({ ...prev, brand: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    placeholder="Select or type..."
-                  />
-                  <datalist id="edit-brands-list">
-                    {brandOptions.map(brand => (
-                      <option key={brand} value={brand} />
-                    ))}
-                  </datalist>
-                </div>
+                {/* Dropdown fields: Buyer, Supplier, Product, Brand */}
+                {[
+                  { key: 'company', label: 'Buyer', options: buyerOptions, customKey: '_customBuyer' },
+                  { key: 'supplier', label: 'Supplier', options: supplierOptions, customKey: '_customSupplier' },
+                  { key: 'product', label: 'Product', options: productOptions, customKey: '_customProduct' },
+                  { key: 'brand', label: 'Brand', options: brandOptions, customKey: '_customBrand' },
+                ].map(field => {
+                  const currentVal = editForm[field.key] || '';
+                  const isCustom = editForm[field.customKey] === 'true';
+                  const isInList = field.options.includes(currentVal);
+                  const showCustomInput = isCustom || (!isInList && currentVal !== '');
+                  return (
+                    <div key={field.key}>
+                      <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">{field.label}</label>
+                      {showCustomInput ? (
+                        <div className="flex gap-1">
+                          <input
+                            type="text"
+                            value={currentVal}
+                            onChange={e => setEditForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            placeholder={`Type ${field.label.toLowerCase()}...`}
+                            autoFocus={isCustom && !currentVal}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditForm(prev => ({ ...prev, [field.customKey]: '', [field.key]: '' }))}
+                            className="px-2 py-2 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200"
+                            title="Switch to dropdown"
+                          >
+                            <Icon name="List" size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          <select
+                            value={currentVal}
+                            onChange={e => {
+                              if (e.target.value === '__custom__') {
+                                setEditForm(prev => ({ ...prev, [field.customKey]: 'true', [field.key]: '' }));
+                              } else {
+                                setEditForm(prev => ({ ...prev, [field.key]: e.target.value }));
+                              }
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                          >
+                            <option value="">— Select {field.label} —</option>
+                            {field.options.map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                            <option value="__custom__">+ Type custom...</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 {/* Remaining text fields */}
                 {[
                   { key: 'from', label: 'Origin' },
