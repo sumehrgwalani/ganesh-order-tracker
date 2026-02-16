@@ -259,16 +259,20 @@ async function handlePOAttachment(
   matchedOrderId: string, orderUuid: string, organizationId: string
 ) {
   try {
+    console.log(`[PO-EXTRACT] START handlePOAttachment for ${matchedOrderId}, email.gmail_id=${email.gmail_id}`)
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
+    console.log(`[PO-EXTRACT] Got ${parts.length} attachment parts`)
     const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
-    if (!poPart) { console.log('No PDF/image attachment found for PO email'); return }
+    if (!poPart) { console.log('[PO-EXTRACT] No PDF/image attachment found for PO email'); return }
+    console.log(`[PO-EXTRACT] Best attachment: ${poPart.filename} (${poPart.mimeType})`)
 
     const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
-    if (!fileData) { console.log('Failed to download PO attachment'); return }
+    if (!fileData) { console.log('[PO-EXTRACT] Failed to download PO attachment'); return }
+    console.log(`[PO-EXTRACT] Downloaded ${fileData.length} bytes`)
 
     const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
-    if (!publicUrl) { console.log('Failed to upload PO attachment'); return }
-    console.log(`PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
+    if (!publicUrl) { console.log('[PO-EXTRACT] Failed to upload PO attachment'); return }
+    console.log(`[PO-EXTRACT] PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
 
     // Check if order already has line items (from app-generated PO) — don't overwrite
     const { count: existingLineItems } = await supabase
@@ -286,12 +290,15 @@ async function handlePOAttachment(
     let extractedData: any = null
     let richMeta: any = { pdfUrl: publicUrl }
 
+    console.log(`[PO-EXTRACT] existingLineItems=${existingLineItems}, orderCompany=${orderRow?.company}, orderSupplier=${orderRow?.supplier}`)
     if (!existingLineItems || existingLineItems === 0) {
       // Extract structured PO data from email text
+      console.log(`[PO-EXTRACT] Calling extractPODataFromEmail, email body_text length=${(email.body_text||'').length}`)
       extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
+      console.log(`[PO-EXTRACT] extractedData: ${extractedData ? `${extractedData.lineItems.length} items` : 'null'}`)
 
       if (extractedData && extractedData.lineItems.length > 0) {
-        console.log(`Extracted ${extractedData.lineItems.length} line items from PO email for ${matchedOrderId}`)
+        console.log(`[PO-EXTRACT] Extracted ${extractedData.lineItems.length} line items from PO email for ${matchedOrderId}`)
 
         // Insert line items into order_line_items table
         const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
@@ -311,7 +318,8 @@ async function handlePOAttachment(
           total: (item.kilos || 0) * (item.pricePerKg || 0),
           sort_order: idx,
         }))
-        await supabase.from('order_line_items').insert(lineItemRows)
+        const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
+        console.log(`[PO-EXTRACT] Insert line items result: ${insertErr ? `ERROR: ${insertErr.message}` : 'OK'}`)
 
         // Update order metadata fields
         const updates: any = {
