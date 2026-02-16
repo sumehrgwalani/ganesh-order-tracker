@@ -144,7 +144,116 @@ async function getAttachmentPartsForMessage(accessToken: string, messageId: stri
   } catch (err) { console.error('Failed to fetch message attachments:', err); return [] }
 }
 
-// Handle PO attachment: download from Gmail, upload to storage, update order history
+// Extract structured PO data from email text using Claude AI
+async function extractPODataFromEmail(
+  email: any, orderCompany: string, orderSupplier: string
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
+  try {
+    const emailText = `Subject: ${email.subject || ''}\n\nBody:\n${(email.body_text || '').substring(0, 6000)}`
+    if (emailText.length < 30) return null // Too little text to extract anything
+
+    const prompt = `You are an expert seafood trading order parser for Ganesh International, a frozen foods trading company.
+Extract structured purchase order data from this email.
+
+CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences.
+
+Email text:
+${emailText}
+
+Known context:
+- Buyer: ${orderCompany || 'Unknown'}
+- Supplier: ${orderSupplier || 'Unknown'}
+
+Return this JSON structure:
+{
+  "lineItems": [
+    {
+      "product": "string - full product name, start with 'Frozen' (e.g. 'Frozen Cut Squid Skin On')",
+      "size": "string - size range (e.g. '20/40', '40/60') or empty string",
+      "glaze": "string - glaze percentage (e.g. '25% Glaze') or empty string",
+      "glazeMarked": "string - marked/declared glaze if different, or empty string",
+      "packing": "string - packing format (e.g. '6 X 1 KG Bag', '10 KG Bulk') or empty string",
+      "brand": "string - brand name or empty string",
+      "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
+      "cases": "",
+      "kilos": "number - total kg (if MT given, multiply by 1000)",
+      "pricePerKg": "number - price per kg",
+      "currency": "string - 'USD' or 'EUR'. Default 'USD'",
+      "total": ""
+    }
+  ],
+  "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
+  "payment": "string - payment terms or empty string",
+  "destination": "string - delivery destination or empty string",
+  "commission": "string - commission details or empty string"
+}
+
+Rules:
+- Always prefix product names with "Frozen" if not already
+- "07 MT" or "7 MT" = 7000 kg
+- Leave "cases" and "total" as empty strings
+- If you cannot find line item details, return empty lineItems array
+- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, glaseo=Glaze, bolsa=Bag, granel=Bulk`
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+
+    if (!res.ok) { console.error(`PO extraction AI error: ${res.status}`); return null }
+    const aiData = await res.json()
+    const text = aiData.content?.[0]?.text || ''
+
+    // Parse JSON from response
+    let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    if (!jsonStr.startsWith('{')) {
+      const first = jsonStr.indexOf('{')
+      const last = jsonStr.lastIndexOf('}')
+      if (first !== -1 && last > first) jsonStr = jsonStr.substring(first, last + 1)
+    }
+    const parsed = JSON.parse(jsonStr)
+
+    const lineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: any) => ({
+      product: String(item.product || ''),
+      size: String(item.size || ''),
+      glaze: String(item.glaze || ''),
+      glazeMarked: String(item.glazeMarked || ''),
+      packing: String(item.packing || ''),
+      brand: String(item.brand || ''),
+      freezing: String(item.freezing || 'IQF'),
+      cases: '',
+      kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || 0),
+      pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || 0),
+      currency: String(item.currency || 'USD'),
+      total: '',
+    })) : []
+
+    const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+    const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
+
+    return {
+      lineItems,
+      deliveryTerms: String(parsed.deliveryTerms || ''),
+      payment: String(parsed.payment || ''),
+      totalKilos,
+      totalValue: Math.round(totalValue * 100) / 100,
+    }
+  } catch (err) {
+    console.error('PO data extraction error:', err)
+    return null
+  }
+}
+
+// Handle PO attachment: download from Gmail, upload to storage, extract data, update order
 async function handlePOAttachment(
   supabase: any, accessToken: string, email: any,
   matchedOrderId: string, orderUuid: string, organizationId: string
@@ -161,7 +270,82 @@ async function handlePOAttachment(
     if (!publicUrl) { console.log('Failed to upload PO attachment'); return }
     console.log(`PO attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
 
-    // Update the most recent stage 1 history entry with attachment URL
+    // Check if order already has line items (from app-generated PO) — don't overwrite
+    const { count: existingLineItems } = await supabase
+      .from('order_line_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('order_id', orderUuid)
+
+    // Get order info for AI context
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('company, supplier')
+      .eq('id', orderUuid)
+      .single()
+
+    let extractedData: any = null
+    let richMeta: any = { pdfUrl: publicUrl }
+
+    if (!existingLineItems || existingLineItems === 0) {
+      // Extract structured PO data from email text
+      extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
+
+      if (extractedData && extractedData.lineItems.length > 0) {
+        console.log(`Extracted ${extractedData.lineItems.length} line items from PO email for ${matchedOrderId}`)
+
+        // Insert line items into order_line_items table
+        const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
+          order_id: orderUuid,
+          organization_id: organizationId,
+          product: item.product,
+          brand: item.brand || '',
+          size: item.size || '',
+          glaze: item.glaze || '',
+          glaze_marked: item.glazeMarked || '',
+          packing: item.packing || '',
+          freezing: item.freezing || 'IQF',
+          cases: 0,
+          kilos: item.kilos || 0,
+          price_per_kg: item.pricePerKg || 0,
+          currency: item.currency || 'USD',
+          total: (item.kilos || 0) * (item.pricePerKg || 0),
+          sort_order: idx,
+        }))
+        await supabase.from('order_line_items').insert(lineItemRows)
+
+        // Update order metadata fields
+        const updates: any = {
+          metadata: {
+            ...(orderRow?.metadata || {}),
+            pdfUrl: publicUrl,
+            extractedFromEmail: true,
+          },
+        }
+        if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
+        if (extractedData.payment) updates.payment_terms = extractedData.payment
+        if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
+        if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
+
+        await supabase.from('orders').update(updates).eq('id', orderUuid)
+
+        // Build rich metadata for history attachment (matching POGeneratorPage format)
+        richMeta = {
+          pdfUrl: publicUrl,
+          supplier: orderRow?.supplier || '',
+          buyer: orderRow?.company || '',
+          deliveryTerms: extractedData.deliveryTerms || '',
+          payment: extractedData.payment || '',
+          totalKilos: extractedData.totalKilos,
+          grandTotal: extractedData.totalValue,
+          extractedFromEmail: true,
+          lineItems: extractedData.lineItems,
+        }
+      }
+    } else {
+      console.log(`Order ${matchedOrderId} already has ${existingLineItems} line items — skipping extraction`)
+    }
+
+    // Update the most recent stage 1 history entry with attachment URL + metadata
     const { data: historyRows } = await supabase
       .from('order_history')
       .select('id')
@@ -171,7 +355,7 @@ async function handlePOAttachment(
       .limit(1)
 
     if (historyRows && historyRows.length > 0) {
-      const attachmentEntry = JSON.stringify({ name: poPart.filename, meta: { pdfUrl: publicUrl } })
+      const attachmentEntry = JSON.stringify({ name: poPart.filename, meta: richMeta })
       await supabase
         .from('order_history')
         .update({ attachments: [attachmentEntry] })
