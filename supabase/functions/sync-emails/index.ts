@@ -259,17 +259,41 @@ async function handlePIAttachment(
         }
       }
     } else {
-      // Unknown contact — create notification
-      await supabase.from('notifications').insert({
-        user_id: userId,
-        organization_id: organizationId,
-        type: 'unknown_contact',
-        title: 'PI from Unknown Contact',
-        message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
-        data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
-        read: false,
-      })
-      console.log(`Notification created for unknown contact: ${email.from_email}`)
+      // Check if sender is an org member (e.g. your own company email) before flagging as unknown
+      const { data: orgMembers } = await supabase
+        .from('organization_members')
+        .select('gmail_email')
+        .eq('organization_id', organizationId)
+
+      const orgEmails = (orgMembers || []).map((m: any) => m.gmail_email?.toLowerCase()).filter(Boolean)
+      const isOrgEmail = orgEmails.includes(email.from_email?.toLowerCase())
+
+      if (isOrgEmail) {
+        // Auto-add org member as contact
+        const initials = email.from_name.split(' ').map((w: string) => w[0]?.toUpperCase()).join('').slice(0, 2)
+        await supabase.from('contacts').upsert({
+          organization_id: organizationId,
+          email: email.from_email,
+          name: email.from_name,
+          company: email.from_name,
+          role: 'Internal',
+          initials,
+          color: '#3B82F6',
+        }, { onConflict: 'email,organization_id' })
+        console.log(`Auto-added org member as contact: ${email.from_email}`)
+      } else {
+        // Unknown external contact — create notification
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          organization_id: organizationId,
+          type: 'unknown_contact',
+          title: 'PI from Unknown Contact',
+          message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
+          data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
+          read: false,
+        })
+        console.log(`Notification created for unknown contact: ${email.from_email}`)
+      }
     }
   } catch (err) {
     console.error('PI attachment handling error:', err)
