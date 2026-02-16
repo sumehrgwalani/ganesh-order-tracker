@@ -64,6 +64,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
     { id: 'schedule', title: 'Schedule Confirmed', icon: 'Calendar', color: 'teal', stage: 5, available: hasStageData(5) },
     { id: 'draftDocuments', title: 'Draft Documents', icon: 'File', color: 'amber', stage: 6, available: hasStageData(6) },
     { id: 'finalDocuments', title: 'Final Documents', icon: 'FileCheck', color: 'green', stage: 7, available: hasStageData(7) },
+    { id: 'dhlShipped', title: 'DHL Shipped', icon: 'Truck', color: 'emerald', stage: 8, available: hasStageData(8) },
   ];
 
   const formatDate = (ts: string) => {
@@ -299,6 +300,43 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
             {renderAttachments(7)}
           </div>
         );
+
+      case 'dhlShipped': {
+        const dhlHistory = order.history.filter(h => h.stage === 8);
+        const awb = order.awbNumber || dhlHistory.find(h => h.body?.match(/AWB\s*[\d]+/i))?.body?.match(/AWB\s*([\d]+)/i)?.[1] || '';
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {awb && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">AWB / Tracking Number</p>
+                  <p className="font-mono font-semibold text-blue-600">{awb}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Destination</p>
+                <p className="font-medium text-gray-800">{order.to || 'TBC'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
+                <p className="font-medium text-emerald-700">{order.currentStage >= 8 ? 'Shipped' : 'Pending'}</p>
+              </div>
+            </div>
+            {awb && (
+              <a
+                href={`https://www.dhl.com/en/express/tracking.html?AWB=${awb}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-xl transition-colors"
+              >
+                <Icon name="ExternalLink" size={16} />
+                Track on DHL
+              </a>
+            )}
+            {renderAttachments(8)}
+          </div>
+        );
+      }
 
       default:
         return null;
@@ -857,6 +895,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
               teal: hasDocuments ? 'bg-teal-50 border-teal-200 hover:bg-teal-100' : 'bg-gray-50 border-gray-200',
               amber: hasDocuments ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : 'bg-gray-50 border-gray-200',
               green: hasDocuments ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200',
+              emerald: hasDocuments ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' : 'bg-gray-50 border-gray-200',
             };
             const textColors: Record<string, string> = {
               blue: hasDocuments ? 'text-blue-700' : 'text-gray-400',
@@ -866,6 +905,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
               teal: hasDocuments ? 'text-teal-700' : 'text-gray-400',
               amber: hasDocuments ? 'text-amber-700' : 'text-gray-400',
               green: hasDocuments ? 'text-green-700' : 'text-gray-400',
+              emerald: hasDocuments ? 'text-emerald-700' : 'text-gray-400',
             };
             const iconColors: Record<string, string> = {
               blue: hasDocuments ? 'text-blue-500' : 'text-gray-300',
@@ -875,6 +915,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
               teal: hasDocuments ? 'text-teal-500' : 'text-gray-300',
               amber: hasDocuments ? 'text-amber-500' : 'text-gray-300',
               green: hasDocuments ? 'text-green-500' : 'text-gray-300',
+              emerald: hasDocuments ? 'text-emerald-500' : 'text-gray-300',
             };
 
             return (
