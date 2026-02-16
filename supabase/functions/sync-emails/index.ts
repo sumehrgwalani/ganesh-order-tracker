@@ -922,6 +922,68 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
     }
 
     // ============================================================
+    // MODE: REPROCESS — Re-download PI/PO attachments for matched emails
+    // ============================================================
+    if (syncMode === 'reprocess') {
+      if (!member.gmail_refresh_token) throw new Error('Gmail not connected')
+      const { data: settings } = await supabase
+        .from('organization_settings')
+        .select('gmail_client_id')
+        .eq('organization_id', organization_id)
+        .single()
+      const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+      if (!settings?.gmail_client_id || !clientSecret) throw new Error('Gmail not configured')
+      const gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+      if (!gmailAccessToken) throw new Error('Failed to refresh Gmail token')
+
+      const { data: emails, error: fetchErr } = await supabase
+        .from('synced_emails')
+        .select('id, gmail_id, subject, from_name, from_email, date, has_attachment, matched_order_id, detected_stage')
+        .eq('organization_id', organization_id)
+        .not('matched_order_id', 'is', null)
+        .eq('has_attachment', true)
+        .in('detected_stage', [1, 2])
+        .order('date', { ascending: true })
+
+      if (fetchErr) throw fetchErr
+      if (!emails || emails.length === 0) {
+        return new Response(JSON.stringify({ mode: 'reprocess', processed: 0, message: 'No PI/PO emails with attachments found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('id, order_id')
+        .eq('organization_id', organization_id)
+      const orderMap = new Map((orders || []).map((o: any) => [o.order_id, o.id]))
+
+      let processed = 0, piCount = 0, poCount = 0
+      const results: any[] = []
+
+      for (const email of emails) {
+        const orderUuid = orderMap.get(email.matched_order_id)
+        if (!orderUuid) continue
+        try {
+          if (email.detected_stage === 1) {
+            await handlePOAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id)
+            poCount++
+          } else {
+            await handlePIAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id)
+            piCount++
+          }
+          processed++
+          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok' })
+        } catch (err) {
+          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'error', error: String(err) })
+        }
+        await delay(200)
+      }
+
+      return new Response(JSON.stringify({
+        mode: 'reprocess', totalFound: emails.length, processed, poAttachments: poCount, piAttachments: piCount, results,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ============================================================
     // MODE: PULL — Just download emails from Gmail, no AI matching
     // ============================================================
     if (!member.gmail_refresh_token) {
