@@ -77,38 +77,73 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
   // Render document content based on section type
   const renderDocumentContent = (sectionId: string) => {
     switch (sectionId) {
-      case 'purchaseOrder':
+      case 'purchaseOrder': {
+        // Find PO document URL from order history (stored attachment from email)
+        const poUrl = (() => {
+          const stage1 = order.history.filter(h => h.stage === 1 && h.attachments?.length);
+          for (const h of stage1) {
+            for (const att of (h.attachments || [])) {
+              const meta = getAttachmentMeta(att);
+              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att) };
+            }
+          }
+          return null;
+        })();
         return (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={previewPOasPDF}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
-            >
-              <Icon name="FileText" size={16} />
-              View Purchase Order as PDF
-            </button>
-            <button
-              onClick={() => {
-                const meta = getPOMeta();
-                const items = meta?.lineItems || order.lineItems || [];
-                setAmendItems(items.map((li: any) => ({
-                  product: li.product || '', brand: li.brand || '', freezing: li.freezing || '',
-                  size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
-                  packing: li.packing || '', cases: li.cases || '', kilos: li.kilos || '',
-                  pricePerKg: li.pricePerKg || '', currency: li.currency || 'USD',
-                  total: Number(li.total) || 0,
-                })));
-                setAmendModal(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
-            >
-              <Icon name="Edit" size={16} />
-              Amend PO
-            </button>
+          <div className="space-y-3">
+            {poUrl && (
+              <button
+                onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `PO - ${order.id}`, loading: false })}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Icon name="FileText" size={16} />
+                View PO Document
+              </button>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={previewPOasPDF}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+              >
+                <Icon name="FileText" size={16} />
+                {poUrl ? 'View Generated PO' : 'View Purchase Order as PDF'}
+              </button>
+              <button
+                onClick={() => {
+                  const meta = getPOMeta();
+                  const items = meta?.lineItems || order.lineItems || [];
+                  setAmendItems(items.map((li: any) => ({
+                    product: li.product || '', brand: li.brand || '', freezing: li.freezing || '',
+                    size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
+                    packing: li.packing || '', cases: li.cases || '', kilos: li.kilos || '',
+                    pricePerKg: li.pricePerKg || '', currency: li.currency || 'USD',
+                    total: Number(li.total) || 0,
+                  })));
+                  setAmendModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Icon name="Edit" size={16} />
+                Amend PO
+              </button>
+            </div>
+            {renderAttachments(1)}
           </div>
         );
+      }
 
-      case 'proformaInvoice':
+      case 'proformaInvoice': {
+        // Find PI document URL from order history
+        const piUrl = (() => {
+          const stage2 = order.history.filter(h => h.stage === 2 && h.attachments?.length);
+          for (const h of stage2) {
+            for (const att of (h.attachments || [])) {
+              const meta = getAttachmentMeta(att);
+              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att) };
+            }
+          }
+          return null;
+        })();
         return (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -135,9 +170,19 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
                 <span className="font-bold text-indigo-800">USD {order.totalValue}</span>
               </div>
             )}
+            {piUrl && (
+              <button
+                onClick={() => setPdfModal({ open: true, url: piUrl.url, title: `PI - ${order.piNumber || order.id}`, loading: false })}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Icon name="FileText" size={16} />
+                View PI Document
+              </button>
+            )}
             {renderAttachments(2)}
           </div>
         );
+      }
 
       case 'artwork':
         return (
@@ -573,7 +618,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
   };
 
   const closePdfModal = () => {
-    if (pdfModal.url) URL.revokeObjectURL(pdfModal.url);
+    if (pdfModal.url && pdfModal.url.startsWith('blob:')) URL.revokeObjectURL(pdfModal.url);
     setPdfModal({ open: false, url: '', title: '', loading: false });
   };
 
@@ -758,7 +803,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
         {/* Progress Bar */}
         <div className="mt-6 pt-6 border-t border-gray-100">
           <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Order Progress</p>
-          <OrderProgressBar currentStage={order.currentStage} />
+          <OrderProgressBar currentStage={order.currentStage} skippedStages={order.skippedStages} />
         </div>
 
         {/* Additional Info */}
@@ -883,6 +928,7 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
               allOrders={allOrderOptions}
               onReassign={handleReassignEmail}
               onRemove={handleRemoveEmail}
+              onAttachmentClick={(name, url) => setPdfModal({ open: true, url, title: name, loading: false })}
             />
           ))}
         </div>
@@ -1210,7 +1256,13 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
                 {pdfModal.url && (
                   <a
                     href={pdfModal.url}
-                    download={pdfModal.title.replace(/[^a-zA-Z0-9-_.]/g, '_') + '.pdf'}
+                    download={(() => {
+                      const urlExt = pdfModal.url.split('?')[0].split('.').pop()?.toLowerCase();
+                      const ext = urlExt && ['pdf','jpg','jpeg','png','gif','webp'].includes(urlExt) ? `.${urlExt}` : '.pdf';
+                      return pdfModal.title.replace(/[^a-zA-Z0-9-_.]/g, '_') + ext;
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 font-medium"
                   >
                     <Icon name="Download" size={14} />
@@ -1235,11 +1287,21 @@ function OrderDetailPage({ orders, onUpdateStage, onUpdateOrder, onDeleteOrder }
                   <p className="text-sm text-gray-600 font-medium">Loading document...</p>
                 </div>
               ) : pdfModal.url ? (
-                <iframe
-                  src={pdfModal.url}
-                  className="w-full h-full border-0"
-                  title="PDF Preview"
-                />
+                /\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(pdfModal.url) ? (
+                  <div className="w-full h-full flex items-center justify-center p-4 overflow-auto bg-gray-100">
+                    <img
+                      src={pdfModal.url}
+                      alt={pdfModal.title}
+                      className="max-w-full max-h-full object-contain rounded shadow-lg"
+                    />
+                  </div>
+                ) : (
+                  <iframe
+                    src={pdfModal.url}
+                    className="w-full h-full border-0"
+                    title="PDF Preview"
+                  />
+                )
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-center p-8">
                   <div className="w-20 h-20 bg-gray-300 rounded-2xl flex items-center justify-center">

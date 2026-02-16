@@ -144,6 +144,46 @@ async function getAttachmentPartsForMessage(accessToken: string, messageId: stri
   } catch (err) { console.error('Failed to fetch message attachments:', err); return [] }
 }
 
+// Handle PO attachment: download from Gmail, upload to storage, update order history
+async function handlePOAttachment(
+  supabase: any, accessToken: string, email: any,
+  matchedOrderId: string, orderUuid: string, organizationId: string
+) {
+  try {
+    const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
+    const poPart = parts.find(p =>
+      p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
+    )
+    if (!poPart) { console.log('No PDF/image attachment found for PO email'); return }
+
+    const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
+    if (!fileData) { console.log('Failed to download PO attachment'); return }
+
+    const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
+    if (!publicUrl) { console.log('Failed to upload PO attachment'); return }
+    console.log(`PO attachment uploaded: ${publicUrl}`)
+
+    // Update the most recent stage 1 history entry with attachment URL
+    const { data: historyRows } = await supabase
+      .from('order_history')
+      .select('id')
+      .eq('order_id', orderUuid)
+      .eq('stage', 1)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+
+    if (historyRows && historyRows.length > 0) {
+      const attachmentEntry = JSON.stringify({ name: poPart.filename, meta: { pdfUrl: publicUrl } })
+      await supabase
+        .from('order_history')
+        .update({ attachments: [attachmentEntry] })
+        .eq('id', historyRows[0].id)
+    }
+  } catch (err) {
+    console.error('PO attachment handling error:', err)
+  }
+}
+
 // Handle PI attachment: download from Gmail, upload to storage, update order
 async function handlePIAttachment(
   supabase: any, accessToken: string, email: any,
@@ -765,8 +805,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               // Mark as auto-advanced
               await supabase.from('synced_emails').update({ auto_advanced: true }).eq('id', email.id)
 
-              // Handle PI attachment download for Stage 2
-              if (detectedStage === 2 && email.has_attachment) {
+              // Handle attachment download for Stage 1 (PO) or Stage 2 (PI)
+              if ((detectedStage === 1 || detectedStage === 2) && email.has_attachment) {
                 if (!gmailAccessToken && member.gmail_refresh_token) {
                   const { data: settings } = await supabase
                     .from('organization_settings')
@@ -779,7 +819,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                   }
                 }
                 if (gmailAccessToken) {
-                  await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                  if (detectedStage === 1) {
+                    await handlePOAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id)
+                  } else {
+                    await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                  }
                 }
               }
             }
@@ -796,8 +840,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               has_attachment: email.has_attachment || false,
             })
 
-            // Handle PI attachment for Stage 2 even if order already at/past stage 2 (revision)
-            if (detectedStage === 2 && email.has_attachment) {
+            // Handle attachment for Stage 1 or 2 even if order already past that stage
+            if ((detectedStage === 1 || detectedStage === 2) && email.has_attachment) {
               if (!gmailAccessToken && member.gmail_refresh_token) {
                 const { data: settings } = await supabase
                   .from('organization_settings')
@@ -810,9 +854,12 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                 }
               }
               if (gmailAccessToken) {
-                await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                if (detectedStage === 1) {
+                  await handlePOAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id)
+                } else {
+                  await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                }
               }
-            }
           }
         }
       }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HistoryEntry, getAttachmentName } from '../types';
+import { HistoryEntry, AttachmentEntry, getAttachmentName, getAttachmentMeta } from '../types';
 import Icon from './Icon';
 import ContactAvatar from './ContactAvatar';
 import { getContactInfo } from '../utils/helpers';
@@ -19,9 +19,10 @@ interface Props {
   allOrders?: OrderOption[];
   onReassign?: (entryId: string, newOrderId: string, note: string) => Promise<void>;
   onRemove?: (entryId: string, note: string) => Promise<void>;
+  onAttachmentClick?: (name: string, url: string) => void;
 }
 
-function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove }: Props) {
+function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove, onAttachmentClick }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showReassign, setShowReassign] = useState(false);
   const contact = getContactInfo(entry.from);
@@ -75,11 +76,24 @@ function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrder
             <div className="px-4 pb-4">
               <p className="text-xs text-gray-500 mb-2 font-medium">Attachments:</p>
               <div className="flex flex-wrap gap-2">
-                {entry.attachments.map((att, idx) => (
-                  <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-700 hover:bg-gray-200 cursor-pointer">
-                    <Icon name="Paperclip" size={12} /> {getAttachmentName(att)} <Icon name="ExternalLink" size={10} className="text-gray-400" />
-                  </span>
-                ))}
+                {entry.attachments.map((att, idx) => {
+                  const name = getAttachmentName(att);
+                  const meta = getAttachmentMeta(att);
+                  const url = meta?.pdfUrl;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={(e) => { e.stopPropagation(); if (url && onAttachmentClick) onAttachmentClick(name, url); }}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                        url ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer' : 'bg-gray-100 text-gray-700 cursor-default'
+                      }`}
+                    >
+                      <Icon name={name.toLowerCase().endsWith('.pdf') ? 'FileText' : 'Paperclip'} size={12} />
+                      {name}
+                      {url && <Icon name="ExternalLink" size={10} className="text-blue-400 ml-1" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

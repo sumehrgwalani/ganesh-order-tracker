@@ -16,6 +16,7 @@ interface HeaderProps {
   unreadCount: number;
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
+  onRemoveNotification: (id: string) => void;
   onAcceptInvitation: (notification: AppNotification) => void;
   onDeclineInvitation: (notification: AppNotification) => void;
 }
@@ -23,7 +24,7 @@ interface HeaderProps {
 function Header({
   searchTerm, setSearchTerm, lastSync, isSyncing, onSyncClick,
   userEmail, onSignOut,
-  notifications, unreadCount, onMarkAsRead, onMarkAllAsRead,
+  notifications, unreadCount, onMarkAsRead, onMarkAllAsRead, onRemoveNotification,
   onAcceptInvitation, onDeclineInvitation,
 }: HeaderProps) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -93,6 +94,7 @@ function Header({
             onClose={() => setShowNotifications(false)}
             onMarkAsRead={onMarkAsRead}
             onMarkAllAsRead={onMarkAllAsRead}
+            onRemoveNotification={onRemoveNotification}
             onAcceptInvitation={onAcceptInvitation}
             onDeclineInvitation={onDeclineInvitation}
           />

@@ -1,6 +1,7 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import Icon from './Icon'
 import type { AppNotification } from '../types'
+import NotificationActionModal from './NotificationActionModal'
 
 interface NotificationPanelProps {
   notifications: AppNotification[]
@@ -9,6 +10,7 @@ interface NotificationPanelProps {
   onClose: () => void
   onMarkAsRead: (id: string) => void
   onMarkAllAsRead: () => void
+  onRemoveNotification: (id: string) => void
   onAcceptInvitation: (notification: AppNotification) => void
   onDeclineInvitation: (notification: AppNotification) => void
 }
@@ -20,9 +22,11 @@ function NotificationPanel({
   onClose,
   onMarkAsRead,
   onMarkAllAsRead,
+  onRemoveNotification,
   onAcceptInvitation,
   onDeclineInvitation,
 }: NotificationPanelProps) {
+  const [actionNotif, setActionNotif] = useState<AppNotification | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Close when clicking outside
@@ -53,6 +57,7 @@ function NotificationPanel({
       case 'invitation': return 'Building'
       case 'order_update': return 'FileText'
       case 'inquiry': return 'Mail'
+      case 'unknown_contact': return 'UserPlus'
       default: return 'Bell'
     }
   }
@@ -62,6 +67,7 @@ function NotificationPanel({
       case 'invitation': return 'text-blue-600 bg-blue-50'
       case 'order_update': return 'text-green-600 bg-green-50'
       case 'inquiry': return 'text-purple-600 bg-purple-50'
+      case 'unknown_contact': return 'text-orange-600 bg-orange-50'
       default: return 'text-gray-600 bg-gray-50'
     }
   }
@@ -148,12 +154,44 @@ function NotificationPanel({
                       </button>
                     </div>
                   )}
+
+                  {/* Take Action button for unknown_contact notifications */}
+                  {notif.type === 'unknown_contact' && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setActionNotif(notif) }}
+                        className="px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1"
+                      >
+                        <Icon name="UserPlus" size={12} />
+                        Add Contact
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemoveNotification(notif.id) }}
+                        className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Action Modal for unknown_contact */}
+      {actionNotif && (
+        <NotificationActionModal
+          notification={actionNotif}
+          onClose={() => setActionNotif(null)}
+          onDone={() => {
+            onMarkAsRead(actionNotif.id)
+            onRemoveNotification(actionNotif.id)
+            setActionNotif(null)
+          }}
+        />
+      )}
     </div>
   )
 }

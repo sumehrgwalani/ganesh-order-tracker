@@ -69,6 +69,7 @@ function App() {
     unreadCount,
     markAsRead,
     markAllAsRead,
+    removeNotification,
     acceptInvitation,
     declineInvitation,
   } = useNotifications(user?.id || null);
@@ -221,6 +222,7 @@ function App() {
             unreadCount={unreadCount}
             onMarkAsRead={markAsRead}
             onMarkAllAsRead={markAllAsRead}
+            onRemoveNotification={removeNotification}
             onAcceptInvitation={handleAcceptInvitation}
             onDeclineInvitation={handleDeclineInvitation}
           />
