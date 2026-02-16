@@ -1002,7 +1002,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-buyers-list">
-                    {contacts && [...new Set(Object.values(contacts).filter(c => c.role === 'buyers' || c.role === 'buyer').map(c => c.company))].filter(Boolean).sort().map(name => (
+                    {contacts && [...new Set(Object.values(contacts).filter(c => /buyer/i.test(c.role)).map(c => c.company))].filter(Boolean).sort().map(name => (
                       <option key={name} value={name} />
                     ))}
                   </datalist>
@@ -1019,7 +1019,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-suppliers-list">
-                    {contacts && [...new Set(Object.values(contacts).filter(c => c.role === 'suppliers' || c.role === 'supplier').map(c => c.company))].filter(Boolean).sort().map(name => (
+                    {contacts && [...new Set(Object.values(contacts).filter(c => /supplier/i.test(c.role)).map(c => c.company))].filter(Boolean).sort().map(name => (
                       <option key={name} value={name} />
                     ))}
                   </datalist>

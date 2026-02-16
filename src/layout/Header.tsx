@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { WTTLogo } from '../components/Logos';
 import NotificationPanel from '../components/NotificationPanel';
@@ -27,6 +28,7 @@ function Header({
   notifications, unreadCount, onMarkAsRead, onMarkAllAsRead, onRemoveNotification,
   onAcceptInvitation, onDeclineInvitation,
 }: HeaderProps) {
+  const navigate = useNavigate();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -54,7 +56,7 @@ function Header({
 
   return (
     <div className="bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 cursor-pointer" onClick={() => navigate('/')}>
         <WTTLogo size={40} />
         <div>
           <span className="text-xl font-semibold text-gray-800">with<span className="text-blue-600">the</span>tide</span>
