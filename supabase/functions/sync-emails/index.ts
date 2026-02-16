@@ -8,6 +8,7 @@ const corsHeaders = {
 }
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_MAIL_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY')!
+console.log(`[INIT] ANTHROPIC_API_KEY available: ${!!ANTHROPIC_API_KEY}, length: ${(ANTHROPIC_API_KEY || '').length}`)
 
 // Helper: delay between API calls to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -150,7 +151,8 @@ async function extractPODataFromEmail(
 ): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
   try {
     const emailText = `Subject: ${email.subject || ''}\n\nBody:\n${(email.body_text || '').substring(0, 6000)}`
-    if (emailText.length < 30) return null // Too little text to extract anything
+    console.log(`[PO-EXTRACT] extractPODataFromEmail called, emailText length=${emailText.length}, apiKey=${!!ANTHROPIC_API_KEY}`)
+    if (emailText.length < 30) { console.log('[PO-EXTRACT] Email text too short, skipping'); return null }
 
     const prompt = `You are an expert seafood trading order parser for Ganesh International, a frozen foods trading company.
 Extract structured purchase order data from this email.
@@ -209,9 +211,14 @@ Rules:
       }),
     })
 
-    if (!res.ok) { console.error(`PO extraction AI error: ${res.status}`); return null }
+    if (!res.ok) {
+      const errBody = await res.text()
+      console.error(`[PO-EXTRACT] AI API error: ${res.status} - ${errBody.substring(0, 200)}`)
+      return null
+    }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
+    console.log(`[PO-EXTRACT] AI response (first 300): ${text.substring(0, 300)}`)
 
     // Parse JSON from response
     let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
