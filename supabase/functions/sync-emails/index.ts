@@ -884,6 +884,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                   await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
                 }
               }
+            }
           }
         }
       }
