@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
@@ -33,6 +33,24 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [amendModal, setAmendModal] = useState(false);
   const [amendItems, setAmendItems] = useState<any[]>([]);
   const [amendSaving, setAmendSaving] = useState(false);
+
+  // Compute dropdown options from contacts and products
+  const buyerOptions = useMemo(() => {
+    if (!contacts) return [];
+    return [...new Set(Object.values(contacts).filter(c => /buyer/i.test(c.role)).map(c => c.company))].filter(Boolean).sort();
+  }, [contacts]);
+  const supplierOptions = useMemo(() => {
+    if (!contacts) return [];
+    return [...new Set(Object.values(contacts).filter(c => /supplier/i.test(c.role)).map(c => c.company))].filter(Boolean).sort();
+  }, [contacts]);
+  const productOptions = useMemo(() => {
+    if (!products) return [];
+    return [...new Set(products.map(p => p.name))].filter(Boolean).sort();
+  }, [products]);
+  const brandOptions = useMemo(() => {
+    if (!contacts) return [];
+    return [...new Set(Object.values(contacts).map(c => c.default_brand))].filter(Boolean).sort();
+  }, [contacts]);
 
   const order = orders.find(o => o.id === orderId);
 
@@ -1002,7 +1020,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-buyers-list">
-                    {contacts && [...new Set(Object.values(contacts).filter(c => /buyer/i.test(c.role)).map(c => c.company))].filter(Boolean).sort().map(name => (
+                    {buyerOptions.map(name => (
                       <option key={name} value={name} />
                     ))}
                   </datalist>
@@ -1019,7 +1037,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-suppliers-list">
-                    {contacts && [...new Set(Object.values(contacts).filter(c => /supplier/i.test(c.role)).map(c => c.company))].filter(Boolean).sort().map(name => (
+                    {supplierOptions.map(name => (
                       <option key={name} value={name} />
                     ))}
                   </datalist>
@@ -1036,7 +1054,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-products-list">
-                    {products && [...new Set(products.map(p => p.name))].filter(Boolean).sort().map(name => (
+                    {productOptions.map(name => (
                       <option key={name} value={name} />
                     ))}
                   </datalist>
@@ -1053,7 +1071,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     placeholder="Select or type..."
                   />
                   <datalist id="edit-brands-list">
-                    {contacts && [...new Set(Object.values(contacts).map(c => c.default_brand))].filter(Boolean).sort().map(brand => (
+                    {brandOptions.map(brand => (
                       <option key={brand} value={brand} />
                     ))}
                   </datalist>
