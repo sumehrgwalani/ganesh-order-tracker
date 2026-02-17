@@ -125,10 +125,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         await supabase.storage.from('po-documents').upload(filename, blob, {
           contentType: 'application/pdf', upsert: true,
         });
-      } catch { /* PDF upload failed silently */ }
+      } catch { alert('PO PDF could not be regenerated, but the order was saved.'); }
 
       onClose();
-    } catch { /* error handled by parent */ }
+    } catch { alert('Failed to save amended order.'); }
     finally { setSaving(false); }
   };
 
