@@ -456,7 +456,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           ...prev,
           supplier: detectedSupplier || prev.supplier,
           supplierEmail: detectedSupplierEmail || prev.supplierEmail,
-          supplierAddress: matchedSupplier?.address || prev.supplierAddress,
+          supplierAddress: (matchedSupplier?.address && matchedSupplier.address !== 'EMPTY') ? matchedSupplier.address : prev.supplierAddress,
           supplierCountry: matchedSupplier?.country || prev.supplierCountry,
           buyer: detectedBuyer || prev.buyer,
         }));
@@ -592,11 +592,19 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
 
     const supplierCompany = supplier ? supplier.company : '';
+    // Get address: try selected contact first, then fallback to any other contact from same company
+    let supplierAddr = (supplier?.address && supplier.address !== 'EMPTY') ? supplier.address : '';
+    if (!supplierAddr && supplierCompany) {
+      const sameCompany = Object.values(contacts).find(c =>
+        c.company.toLowerCase() === supplierCompany.toLowerCase() && c.address && c.address !== 'EMPTY'
+      );
+      if (sameCompany) supplierAddr = sameCompany.address;
+    }
     setPOData({
       ...poData,
       supplierEmail: email,
       supplier: supplierCompany,
-      supplierAddress: supplier?.address || '',
+      supplierAddress: supplierAddr,
       supplierCountry: supplier?.country || '',
       payment: autoPayment || poData.payment,
     });
@@ -1740,6 +1748,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       </div>
                     ) : null;
                   })()}
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Address</label>
+                  <input type="text" value={poData.supplierAddress} onChange={(e) => setPOData({...poData, supplierAddress: e.target.value})} placeholder="Supplier full address (auto-fills from contacts)" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product Description</label>
