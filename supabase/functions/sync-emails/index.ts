@@ -175,11 +175,11 @@ Return this JSON structure:
       "packing": "string - packing format (e.g. '6 X 1 KG Bag', '10 KG Bulk') or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
-      "cases": "",
+      "cases": "number - number of cases/cartons, or 0 if not shown",
       "kilos": "number - total kg (if MT given, multiply by 1000)",
       "pricePerKg": "number - price per kg",
       "currency": "string - 'USD' or 'EUR'. Default 'USD'",
-      "total": ""
+      "total": "number - line total amount, or 0 if not shown"
     }
   ],
   "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
@@ -192,7 +192,8 @@ Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
 - "250c/s" or "250 c/s" means 250 cases
-- Leave "cases" and "total" as empty strings
+- "Cases" and "Cartons" and "ctns" mean the same thing - extract into "cases"
+- Extract the line total into "total" if shown
 - If you cannot find line item details, return empty lineItems array
 - The email may be in Spanish. Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp/Prawn, glaseo=Glaze, bolsa=Bag, granel=Bulk, caja=Case, contenedor=Container, oferta=Offer
 - Spanish size format "U/1" = "Under 1kg", "1/2" = "1-2kg", "2/4" = "2-4kg", "5/7" = "5-7kg", "20/40" = "20-40 pieces/kg"
@@ -288,11 +289,11 @@ Return this JSON structure:
       "packing": "string - packing format or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
-      "cases": "",
+      "cases": "number - number of cases/cartons, or 0 if not shown",
       "kilos": "number - total kg (if MT given, multiply by 1000)",
       "pricePerKg": "number - price per kg",
       "currency": "string - 'USD' or 'EUR'. Default 'USD'",
-      "total": ""
+      "total": "number - line total amount, or 0 if not shown"
     }
   ],
   "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
@@ -304,9 +305,11 @@ Return this JSON structure:
 Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
-- Leave "cases" and "total" as empty strings
+- "Cases" and "Cartons" mean the same thing - extract the number into "cases"
+- "c/s" or "ctns" are abbreviations for cases/cartons
+- Extract the line total into "total" if shown
 - If you cannot read the document clearly or find line item details, return empty lineItems array
-- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp`
+- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
