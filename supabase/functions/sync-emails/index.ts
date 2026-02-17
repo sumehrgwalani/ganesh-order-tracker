@@ -241,11 +241,11 @@ Rules:
       packing: String(item.packing || ''),
       brand: String(item.brand || ''),
       freezing: String(item.freezing || 'IQF'),
-      cases: '',
+      cases: typeof item.cases === 'number' ? item.cases : (parseInt(item.cases) || 0),
       kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || 0),
       pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || 0),
       currency: String(item.currency || 'USD'),
-      total: '',
+      total: typeof item.total === 'number' ? item.total : (parseFloat(item.total) || 0),
     })) : []
 
     const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
@@ -365,11 +365,11 @@ Rules:
       packing: String(item.packing || ''),
       brand: String(item.brand || ''),
       freezing: String(item.freezing || 'IQF'),
-      cases: '',
+      cases: typeof item.cases === 'number' ? item.cases : (parseInt(item.cases) || 0),
       kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || 0),
       pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || 0),
       currency: String(item.currency || 'USD'),
-      total: '',
+      total: typeof item.total === 'number' ? item.total : (parseFloat(item.total) || 0),
     })) : []
 
     const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
