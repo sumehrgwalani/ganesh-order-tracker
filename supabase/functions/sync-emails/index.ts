@@ -1358,35 +1358,49 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           // Step 2: If body extraction failed, try vision on Gmail attachment
           let visionDebug: any = { attempted: false }
           if ((!extractedData || extractedData.lineItems.length === 0) && gmailAccessToken) {
-            // Find an email with attachment (prefer stage 1 = PO)
-            const attachEmail = (emails || []).find((e: any) => e.has_attachment && e.detected_stage === 1)
-              || (emails || []).find((e: any) => e.has_attachment)
-            visionDebug.hasAttachEmail = !!attachEmail
-            visionDebug.attachGmailId = attachEmail?.gmail_id
-            if (attachEmail?.gmail_id) {
+            // Search across ALL emails for this order for image attachments
+            const allEmails = (emails || []).filter((e: any) => e.has_attachment)
+            visionDebug.emailsWithAttach = allEmails.length
+
+            // Try each email until we find an image attachment that works
+            for (const attachEmail of allEmails) {
+              if (extractedData && extractedData.lineItems.length > 0) break
+              visionDebug.attachGmailId = attachEmail.gmail_id
+              if (!attachEmail.gmail_id) continue
               try {
                 visionDebug.attempted = true
                 const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
                 visionDebug.partsCount = parts.length
                 visionDebug.partTypes = parts.map((p: any) => ({ name: p.filename, mime: p.mimeType, size: p.body?.size }))
-                const poPart = pickBestAttachment(parts, scorePOAttachment, attachEmail.subject || '')
-                visionDebug.bestPart = poPart ? { name: poPart.filename, mime: poPart.mimeType, hasId: !!poPart.attachmentId } : null
-                if (poPart && poPart.attachmentId) {
-                  const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, poPart.attachmentId)
+
+                // Prefer image attachments (scanned POs) — look for jpg/jpeg/png first, skip gifs/logos
+                const imagePart = parts.find((p: any) => {
+                  const mime = (p.mimeType || '').toLowerCase()
+                  const name = (p.filename || '').toLowerCase()
+                  return (mime === 'image/jpeg' || mime === 'image/png') && !name.includes('logo') && !name.includes('ean ')
+                })
+                // Fallback to PDF if no suitable image
+                const pdfPart = parts.find((p: any) => (p.mimeType || '').toLowerCase() === 'application/pdf' && (p.filename || '').toLowerCase().includes('scan'))
+                const chosenPart = imagePart || pdfPart
+                visionDebug.chosenPart = chosenPart ? { name: chosenPart.filename, mime: chosenPart.mimeType, hasId: !!chosenPart.attachmentId } : null
+
+                if (chosenPart && chosenPart.attachmentId && (chosenPart.mimeType || '').startsWith('image/')) {
+                  const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, chosenPart.attachmentId)
                   visionDebug.downloadedSize = fileData ? fileData.byteLength : 0
                   if (fileData) {
-                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileData)))
-                    const mimeType = poPart.mimeType || 'image/jpeg'
-                    visionDebug.mimeType = mimeType
-                    visionDebug.isImage = mimeType.startsWith('image/')
-                    if (mimeType.startsWith('image/')) {
-                      extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
-                      visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
-                    } else if (mimeType === 'application/pdf') {
-                      // For PDFs, convert first page to image via a different approach
-                      // For now, try sending as-is to see if Claude can handle it
-                      visionDebug.skippedPdf = true
+                    // Chunked base64 encoding to avoid stack overflow on large files
+                    const bytes = new Uint8Array(fileData)
+                    let binary = ''
+                    const chunkSize = 8192
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+                      for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
                     }
+                    const base64Data = btoa(binary)
+                    const mimeType = chosenPart.mimeType || 'image/jpeg'
+                    visionDebug.mimeType = mimeType
+                    extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
+                    visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
                   }
                 }
               } catch (attErr) {
