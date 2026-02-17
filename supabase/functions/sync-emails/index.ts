@@ -8,7 +8,6 @@ const corsHeaders = {
 }
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_MAIL_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY')!
-console.log(`[INIT] ANTHROPIC_API_KEY available: ${!!ANTHROPIC_API_KEY}, length: ${(ANTHROPIC_API_KEY || '').length}`)
 
 // Helper: delay between API calls to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -148,11 +147,10 @@ async function getAttachmentPartsForMessage(accessToken: string, messageId: stri
 // Extract structured PO data from email text using Claude AI
 async function extractPODataFromEmail(
   email: any, orderCompany: string, orderSupplier: string
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number, _debug?: any } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
   try {
     const emailText = `Subject: ${email.subject || ''}\n\nBody:\n${(email.body_text || '').substring(0, 6000)}`
-    console.log(`[PO-EXTRACT] extractPODataFromEmail called, emailText length=${emailText.length}, apiKey=${!!ANTHROPIC_API_KEY}`)
-    if (emailText.length < 30) { console.log('[PO-EXTRACT] Email text too short, skipping'); return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: 'too_short' } }
+    if (emailText.length < 30) return null
 
     const prompt = `You are an expert seafood trading order parser for Ganesh International, a frozen foods trading company.
 Extract structured purchase order data from this email.
@@ -214,11 +212,10 @@ Rules:
     if (!res.ok) {
       const errBody = await res.text()
       console.error(`[PO-EXTRACT] AI API error: ${res.status} - ${errBody.substring(0, 200)}`)
-      return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `api_error_${res.status}: ${errBody.substring(0, 150)}` }
+      return null
     }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
-    console.log(`[PO-EXTRACT] AI response (first 300): ${text.substring(0, 300)}`)
 
     // Parse JSON from response
     let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
@@ -256,7 +253,7 @@ Rules:
     }
   } catch (err) {
     console.error('PO data extraction error:', err)
-    return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `catch_error: ${String(err).substring(0, 150)}` }
+    return null
   }
 }
 
@@ -266,8 +263,6 @@ async function handlePOAttachment(
   matchedOrderId: string, orderUuid: string, organizationId: string
 ) {
   try {
-    console.log(`[PO-EXTRACT] START for ${matchedOrderId}`)
-
     // Step 1: Try to download and upload the attachment (may fail if Gmail token expired)
     let publicUrl: string | null = null
     let attachmentFilename = 'PO_document'
@@ -279,11 +274,10 @@ async function handlePOAttachment(
         if (fileData) {
           publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
           attachmentFilename = poPart.filename
-          console.log(`[PO-EXTRACT] Attachment uploaded: ${poPart.filename} -> ${publicUrl}`)
         }
       }
     } catch (attachErr) {
-      console.log(`[PO-EXTRACT] Attachment download/upload failed: ${attachErr}`)
+      console.log(`PO attachment download failed for ${matchedOrderId}: ${attachErr}`)
     }
 
     // Step 2: Extract PO data from email body text (works even without attachment)
@@ -302,9 +296,7 @@ async function handlePOAttachment(
     let extractedCount = 0
 
     if (!existingLineItems || existingLineItems === 0) {
-      console.log(`[PO-EXTRACT] Extracting from email body (${(email.body_text||'').length} chars)`)
       extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
-      console.log(`[PO-EXTRACT] Result: ${extractedData ? `${extractedData.lineItems.length} items` : 'null'}`)
 
       if (extractedData && extractedData.lineItems.length > 0) {
         extractedCount = extractedData.lineItems.length
@@ -327,12 +319,7 @@ async function handlePOAttachment(
           sort_order: idx,
         }))
         const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
-        if (insertErr) {
-          console.error(`[PO-EXTRACT] Insert error: ${insertErr.message}`)
-          extractedData._insertError = insertErr.message
-        } else {
-          console.log(`[PO-EXTRACT] Inserted ${lineItemRows.length} line items`)
-        }
+        if (insertErr) console.error(`Line items insert error for ${matchedOrderId}: ${insertErr.message}`)
 
         // Update order metadata
         const updates: any = {
@@ -347,10 +334,7 @@ async function handlePOAttachment(
         if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
         if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
         await supabase.from('orders').update(updates).eq('id', orderUuid)
-        console.log(`[PO-EXTRACT] Order metadata updated`)
       }
-    } else {
-      console.log(`[PO-EXTRACT] Order already has ${existingLineItems} line items — skip`)
     }
 
     // Step 3: Update history entry with attachment info
@@ -385,10 +369,10 @@ async function handlePOAttachment(
       }
     }
 
-    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount, emailBodyLen: (email.body_text||'').length, existingLineItems, extractedDataNull: extractedData === null, extractDebug: extractedData?._debug || 'none', insertError: extractedData?._insertError || 'none', orderUuid, apiKeyAvailable: !!ANTHROPIC_API_KEY }
+    return { hasAttachment: !!publicUrl, extracted: extractedCount }
   } catch (err) {
     console.error('PO attachment handling error:', err)
-    return { debug: 'error', error: String(err) }
+    return { hasAttachment: false, extracted: 0, error: String(err) }
   }
 }
 
