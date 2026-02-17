@@ -237,7 +237,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       payment: m?.payment || '',
       packing: '',
       deliveryDate: m?.deliveryDate || '',
-      loteNumber: m?.loteNumber || '',
+      loteNumber: m?.loteNumber || amendmentOrder.id || '',
       shippingMarks: m?.shippingMarks || '',
       buyerBank: m?.buyerBank || '',
       notes: '',
