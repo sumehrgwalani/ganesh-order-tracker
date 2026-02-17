@@ -256,9 +256,9 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         freezing: li.freezing || '',
         cases: li.cases || '',
         kilos: li.kilos || '',
-        pricePerKg: li.pricePerKg || '',
+        pricePerKg: li.pricePerKg ? Number(li.pricePerKg).toFixed(2) : '',
         currency: li.currency || 'USD',
-        total: li.total || 0,
+        total: li.total ? Number(li.total).toFixed(2) : 0,
       })));
     }
 
@@ -409,8 +409,11 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         return;
       }
 
-      // Post-process: recalculate cases and totals
-      const processedItems = recalculateAllLineItems(parsedItems);
+      // Post-process: recalculate cases and totals, format prices
+      const processedItems = recalculateAllLineItems(parsedItems).map((item: any) => ({
+        ...item,
+        pricePerKg: item.pricePerKg ? Number(item.pricePerKg).toFixed(2) : '',
+      }));
       setLineItems(processedItems);
 
       // Update PO data with detected supplier/buyer
@@ -1790,7 +1793,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                               <option value="EUR">€</option>
                               <option value="GBP">£</option>
                             </select>
-                            <input type="number" step="0.01" value={item.pricePerKg} onChange={(e) => updateLineItem(idx, 'pricePerKg', e.target.value)} placeholder="0.00" className="w-full min-w-0 px-1 py-2.5 bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-right" />
+                            <input type="number" step="0.01" value={item.pricePerKg} onChange={(e) => updateLineItem(idx, 'pricePerKg', e.target.value)} onBlur={(e) => { if (e.target.value) updateLineItem(idx, 'pricePerKg', Number(e.target.value).toFixed(2)); }} placeholder="0.00" className="w-full min-w-0 px-1 py-2.5 bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-right" />
                           </div>
                         </div>
                         <div>
