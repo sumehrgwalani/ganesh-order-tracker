@@ -1361,107 +1361,99 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
       for (const order of batch) {
         try {
-          // Step 1: Try email body extraction first — prioritize PO/PI emails
+          // Find emails with attachments for this order (PO scans)
           const { data: emails } = await supabase
             .from('synced_emails')
-            .select('id, gmail_id, subject, body_text, from_name, from_email, has_attachment, detected_stage')
+            .select('id, gmail_id, subject, has_attachment, detected_stage')
             .eq('matched_order_id', order.order_id)
             .eq('organization_id', organization_id)
-            .not('body_text', 'is', null)
+            .eq('has_attachment', true)
             .limit(20)
 
-          // Score emails: PO stage (1) = highest, PI stage (2) = high, subject keywords = medium, longest = fallback
+          let extractedData: any = null
+          let visionDebug: any = { attempted: false }
+
+          if (!gmailAccessToken) {
+            results.push({ order: order.order_id, status: 'skip', reason: 'no Gmail access', vision: visionDebug })
+            continue
+          }
+
+          // Score emails: PO stage (1) = highest, then PI (2), then by subject keywords
           const scored = (emails || []).map((e: any) => {
-            let score = (e.body_text || '').length / 10000 // base: length (0-0.5)
+            let score = 0
             const subj = (e.subject || '').toLowerCase()
-            if (e.detected_stage === 1) score += 100 // PO stage
-            if (e.detected_stage === 2) score += 80  // PI stage
-            if (subj.includes('purchase order') || subj.includes('new po') || subj.includes('oferta')) score += 50
-            if (subj.includes('proforma') || subj.includes(' pi ')) score += 40
-            if (subj.includes('payment') || subj.includes('invoice')) score -= 30 // deprioritize payment emails
-            if (subj.includes('artwork') || subj.includes('label')) score -= 20
+            if (e.detected_stage === 1) score += 100
+            if (e.detected_stage === 2) score += 80
+            if (subj.includes('purchase order') || subj.includes('new po')) score += 50
+            if (subj.includes('proforma')) score += 40
+            if (subj.includes('payment') || subj.includes('invoice')) score -= 30
+            if (subj.includes('artwork') || subj.includes('label') || subj.includes('inspection')) score -= 20
             return { email: e, score }
           }).sort((a: any, b: any) => b.score - a.score)
 
-          let extractedData: any = null
-          let maxLen = 0
+          visionDebug.emailsWithAttach = scored.length
 
-          // Try top 3 scored emails until we find line items
-          for (const { email: candidate } of scored.slice(0, 3)) {
-            const bodyLen = (candidate.body_text || '').length
-            if (bodyLen < 50) continue
-            if (bodyLen > maxLen) maxLen = bodyLen
-            extractedData = await extractPODataFromEmail(candidate, order.company || '', order.supplier || '')
+          // Try up to 5 emails, looking for PO scan attachments
+          for (const { email: attachEmail } of scored.slice(0, 5)) {
             if (extractedData && extractedData.lineItems.length > 0) break
-            extractedData = null
-          }
-
-          // Step 2: If body extraction failed, try vision on Gmail attachment
-          let visionDebug: any = { attempted: false }
-          if ((!extractedData || extractedData.lineItems.length === 0) && gmailAccessToken) {
-            // Search across ALL emails for this order for image attachments
-            const allEmails = (emails || []).filter((e: any) => e.has_attachment)
-            visionDebug.emailsWithAttach = allEmails.length
-
-            // Try up to 3 emails until we find a suitable PO scan image
-            for (const attachEmail of allEmails.slice(0, 3)) {
-              if (extractedData && extractedData.lineItems.length > 0) break
+            if (!attachEmail.gmail_id) continue
+            try {
+              visionDebug.attempted = true
               visionDebug.attachGmailId = attachEmail.gmail_id
-              if (!attachEmail.gmail_id) continue
-              try {
-                visionDebug.attempted = true
-                const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
-                visionDebug.partsCount = parts.length
-                visionDebug.partTypes = parts.map((p: any) => ({ name: p.filename, mime: p.mimeType, size: p.body?.size }))
+              const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
+              visionDebug.partsCount = parts.length
 
-                // Prefer scanned PO images: Scan_*.jpg first, then other JPGs, skip inspection photos/logos
-                const isImageType = (m: string) => m === 'image/jpeg' || m === 'image/png'
-                const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
-                // Best: Scan files (actual PO scans)
-                const scanPart = parts.find((p: any) => {
-                  const name = (p.filename || '').toLowerCase()
-                  return isImageType((p.mimeType || '').toLowerCase()) && (name.startsWith('scan') || name.includes('_scan'))
-                })
-                // Second: any JPEG/PNG that isn't inspection/logo
-                const otherImage = !scanPart && parts.find((p: any) => {
-                  const name = (p.filename || '').toLowerCase()
-                  return isImageType((p.mimeType || '').toLowerCase()) && !isSkipImage(name)
-                })
-                // Fallback: PDF with scan in name
-                const pdfPart = parts.find((p: any) => (p.mimeType || '').toLowerCase() === 'application/pdf' && (p.filename || '').toLowerCase().includes('scan'))
-                const chosenPart = scanPart || otherImage || pdfPart
-                visionDebug.chosenPart = chosenPart ? { name: chosenPart.filename, mime: chosenPart.mimeType, hasId: !!chosenPart.attachmentId } : null
+              // Pick best PO scan attachment: prefer Scan_*.jpg, skip inspection photos/logos
+              const isImageType = (m: string) => m === 'image/jpeg' || m === 'image/png'
+              const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
+              // Priority 1: Scan files
+              const scanPart = parts.find((p: any) => {
+                const name = (p.filename || '').toLowerCase()
+                return isImageType((p.mimeType || '').toLowerCase()) && (name.startsWith('scan') || name.includes('_scan'))
+              })
+              // Priority 2: other image that isn't inspection/logo
+              const otherImage = !scanPart && parts.find((p: any) => {
+                const name = (p.filename || '').toLowerCase()
+                return isImageType((p.mimeType || '').toLowerCase()) && !isSkipImage(name)
+              })
+              // Priority 3: PDF with PO/scan in name
+              const pdfPart = !scanPart && !otherImage && parts.find((p: any) => {
+                const name = (p.filename || '').toLowerCase()
+                const mime = (p.mimeType || '').toLowerCase()
+                return mime === 'application/pdf' && (name.includes('scan') || name.includes('po') || name.includes('purchase'))
+              })
+              const chosenPart = scanPart || otherImage || pdfPart
+              if (!chosenPart || !chosenPart.attachmentId) continue
+              visionDebug.chosenPart = { name: chosenPart.filename, mime: chosenPart.mimeType }
 
-                if (chosenPart && chosenPart.attachmentId && (chosenPart.mimeType || '').startsWith('image/')) {
-                  const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, chosenPart.attachmentId)
-                  visionDebug.downloadedSize = fileData ? fileData.byteLength : 0
-                  if (fileData) {
-                    // Chunked base64 encoding to avoid stack overflow on large files
-                    const bytes = new Uint8Array(fileData)
-                    let binary = ''
-                    const chunkSize = 8192
-                    for (let i = 0; i < bytes.length; i += chunkSize) {
-                      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
-                      for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
-                    }
-                    const base64Data = btoa(binary)
-                    const mimeType = chosenPart.mimeType || 'image/jpeg'
-                    visionDebug.mimeType = mimeType
-                    extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
-                    visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
-                    if (extractedData?._debug) visionDebug.aiDebug = extractedData._debug
+              if ((chosenPart.mimeType || '').startsWith('image/')) {
+                const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, chosenPart.attachmentId)
+                visionDebug.downloadedSize = fileData ? fileData.byteLength : 0
+                if (fileData) {
+                  // Chunked base64 encoding to avoid stack overflow
+                  const bytes = new Uint8Array(fileData)
+                  let binary = ''
+                  const chunkSize = 8192
+                  for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+                    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
                   }
+                  const base64Data = btoa(binary)
+                  const mimeType = chosenPart.mimeType || 'image/jpeg'
+                  visionDebug.mimeType = mimeType
+                  extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
+                  visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
                 }
-              } catch (attErr) {
-                visionDebug.error = String(attErr)
               }
+            } catch (attErr) {
+              visionDebug.error = String(attErr)
             }
           }
 
           if (!extractedData || extractedData.lineItems.length === 0) {
             // Mark order as extraction attempted so it doesn't get retried
             await supabase.from('orders').update({ metadata: { extraction_attempted: true } }).eq('id', order.id)
-            results.push({ order: order.order_id, status: 'skip', reason: 'no line items found', bodyLen: maxLen, hadGmail: !!gmailAccessToken, vision: visionDebug })
+            results.push({ order: order.order_id, status: 'skip', reason: 'no PO attachment found', vision: visionDebug })
             continue
           }
 
@@ -1483,11 +1475,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (extractedData.payment) updates.payment_terms = extractedData.payment
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
-          if (extractedData.lineItems.length > 0) updates.product = extractedData.lineItems.map((li: any) => li.product).filter(Boolean).join(', ')
+          // Don't overwrite the product field — it's set by the user
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: maxLen >= 100 ? 'email' : 'vision' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: 'attachment' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
