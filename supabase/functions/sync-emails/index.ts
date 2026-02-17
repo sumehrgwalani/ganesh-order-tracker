@@ -175,25 +175,26 @@ Return this JSON structure:
       "packing": "string - packing format (e.g. '6 X 1 KG Bag', '10 KG Bulk') or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
-      "cases": "number - number of cases/cartons, or 0 if not shown",
-      "kilos": "number - total kg (if MT given, multiply by 1000)",
-      "pricePerKg": "number - price per kg",
-      "currency": "string - 'USD' or 'EUR'. Default 'USD'",
-      "total": "number - line total amount, or 0 if not shown"
+      "cases": 2133,
+      "kilos": 12798,
+      "pricePerKg": 3.90,
+      "currency": "USD",
+      "total": 49912.20
     }
   ],
-  "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
+  "deliveryTerms": "CFR",
   "payment": "string - payment terms or empty string",
   "destination": "string - delivery destination or empty string",
   "commission": "string - commission details or empty string"
 }
 
+Field notes:
+- cases: number of cases/cartons. "250c/s" or "250 c/s" means 250 cases. Cases/Cartons/Ctns are the same thing
+- kilos: total weight in kg. "07 MT" or "7 MT" = 7000 kg
+- If amounts are in cases (c/s), also estimate kilos: cases * approximate_kg_per_case. If you cannot determine kilos, set kilos to 0
+
 Rules:
 - Always prefix product names with "Frozen" if not already
-- "07 MT" or "7 MT" = 7000 kg
-- "250c/s" or "250 c/s" means 250 cases
-- "Cases" and "Cartons" and "ctns" mean the same thing - extract into "cases"
-- Extract the line total into "total" if shown
 - If you cannot find line item details, return empty lineItems array
 - The email may be in Spanish. Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp/Prawn, glaseo=Glaze, bolsa=Bag, granel=Bulk, caja=Case, contenedor=Container, oferta=Offer
 - Spanish size format "U/1" = "Under 1kg", "1/2" = "1-2kg", "2/4" = "2-4kg", "5/7" = "5-7kg", "20/40" = "20-40 pieces/kg"
@@ -289,25 +290,33 @@ Return this JSON structure:
       "packing": "string - packing format or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
-      "cases": "number - number of cases/cartons, or 0 if not shown",
-      "kilos": "number - total kg (if MT given, multiply by 1000)",
-      "pricePerKg": "number - price per kg",
-      "currency": "string - 'USD' or 'EUR'. Default 'USD'",
-      "total": "number - line total amount, or 0 if not shown"
+      "cases": 2133,
+      "kilos": 12798,
+      "pricePerKg": 3.90,
+      "currency": "USD",
+      "total": 49912.20
     }
   ],
-  "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
+  "deliveryTerms": "CFR",
   "payment": "string - payment terms or empty string",
   "destination": "string - delivery destination or empty string",
   "commission": "string - commission details or empty string"
 }
 
+Field notes:
+- product: full product name, always start with "Frozen"
+- cases: the number from the Cases/Cartons column. IMPORTANT: Read the actual number from the document, do NOT default to 0
+- kilos: total weight in kg. If MT given, multiply by 1000
+- pricePerKg: price per kg
+- total: the line total dollar/euro amount from the document
+- "Cases" and "Cartons" and "Ctns" and "c/s" all mean the same thing
+- freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
+- currency: 'USD' or 'EUR'. Default 'USD'
+
 Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
-- "Cases" and "Cartons" mean the same thing - extract the number into "cases"
-- "c/s" or "ctns" are abbreviations for cases/cartons
-- Extract the line total into "total" if shown
+- CRITICAL: Extract the Cases/Cartons number from the table. Look for a column labeled Cases, Cartons, Ctns, or similar
 - If you cannot read the document clearly or find line item details, return empty lineItems array
 - Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons`
 
