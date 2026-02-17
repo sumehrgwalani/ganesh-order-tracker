@@ -627,8 +627,9 @@ Deno.serve(async (req) => {
       throw new Error('Authentication failed. Please log in again.')
     }
 
-    const { organization_id, user_id, mode, batch_size } = await req.json()
-    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync, 'reprocess' = re-download PI/PO attachments
+    const reqBody = await req.json()
+    const { organization_id, user_id, mode, batch_size } = reqBody
+    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync, 'reprocess' = re-download PI/PO attachments, 'bulk-extract' = extract PO line items
     const syncMode = mode || 'full'
     if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
@@ -1180,7 +1181,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
     if (syncMode === 'bulk-extract') {
       // Accepts order_po (e.g. "GI/PO/25-26/3044") to extract one order
       // Or no order_po to process all orders missing line items (batched)
-      const targetPO = body.order_po as string | undefined
+      const targetPO = reqBody.order_po as string | undefined
 
       let ordersToProcess: any[] = []
 
