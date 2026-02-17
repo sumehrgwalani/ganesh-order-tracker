@@ -937,19 +937,18 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                   );
                 })}
               </tbody>
-              <tfoot>
-                <tr className="bg-blue-600 text-white">
-                  <td colSpan={1 + (lineItems.some(li => li.brand) ? 1 : 0) + (lineItems.some(li => li.size) ? 1 : 0) + (lineItems.some(li => li.glaze) ? 1 : 0) + (lineItems.some(li => li.packing) ? 1 : 0) + 1} className="py-2.5 px-3 font-semibold">
-                    Total
-                  </td>
-                  <td className="py-2.5 px-3 text-right font-semibold">{lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0), 0).toLocaleString()} kg</td>
-                  <td className="py-2.5 px-3"></td>
-                  <td className="py-2.5 px-3 text-right font-semibold">
-                    ${lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              </tfoot>
             </table>
+          </div>
+          {/* Totals bar */}
+          <div className="mt-4 p-4 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl text-white flex items-center justify-between">
+            <div className="flex gap-6">
+              <div><span className="text-blue-200 text-xs uppercase">Cases</span><p className="font-semibold">{lineItems.reduce((s: number, li: any) => s + (parseInt(li.cases) || 0), 0).toLocaleString()}</p></div>
+              <div><span className="text-blue-200 text-xs uppercase">Kilos</span><p className="font-semibold">{lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0), 0).toLocaleString()}</p></div>
+            </div>
+            <div className="text-right">
+              <span className="text-blue-200 text-xs uppercase">Grand Total</span>
+              <p className="text-xl font-bold">${lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
           </div>
         </div>
       )}
