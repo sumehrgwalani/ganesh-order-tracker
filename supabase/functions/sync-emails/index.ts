@@ -1460,8 +1460,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
           visionDebug.emailsWithAttach = scored.length
 
-          // Try up to 5 emails, looking for PO scan attachments (with AI classification)
-          for (const { email: attachEmail } of scored.slice(0, 5)) {
+          // Try up to 3 emails, looking for PO scan attachments (with AI classification)
+          for (const { email: attachEmail } of scored.slice(0, 3)) {
             if (extractedData && extractedData.lineItems.length > 0) break
             if (!attachEmail.gmail_id) continue
             try {
@@ -1473,12 +1473,28 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               // Score all valid attachments by filename, then try each with AI classification
               const isValidType = (m: string) => m.includes('pdf') || m === 'image/jpeg' || m === 'image/png'
               const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
+              // Skip filenames that are clearly NOT purchase orders — saves CPU time on classification
+              const isObviouslyNotPO = (n: string) => {
+                const lower = n.toLowerCase()
+                return /\b(bl|bill of lading|packing list|container loading|boxes declaration|beneficiary|code list|ingredients|health cert|hc \d|plastic declaration|test \d|certificate|coa |fumigation|phyto|weight list|tally sheet|shipping|draft|debit note|credit note|commercial invoice|ci |insurance|manifest|mate.?s receipt|dock receipt|customs|export permit|quota|license)\b/i.test(lower)
+              }
               const candidates = parts
-                .filter((p: any) => isValidType((p.mimeType || '').toLowerCase()) && !isSkipImage((p.filename || '').toLowerCase()))
+                .filter((p: any) => {
+                  const fn = (p.filename || '').toLowerCase()
+                  const mt = (p.mimeType || '').toLowerCase()
+                  if (!isValidType(mt)) return false
+                  if (isSkipImage(fn)) return false
+                  if (isObviouslyNotPO(fn)) {
+                    console.log(`[BULK] Filename-skip: ${p.filename} (obviously not a PO)`)
+                    return false
+                  }
+                  return true
+                })
                 .map((p: any) => ({ part: p, score: scorePOAttachment(p.filename, attachEmail.subject || '') }))
                 .sort((a: any, b: any) => b.score - a.score)
 
-              for (const { part: chosenPart } of candidates) {
+              // Limit to top 3 candidates per email to conserve CPU time
+              for (const { part: chosenPart } of candidates.slice(0, 3)) {
                 if (!chosenPart.attachmentId) continue
                 visionDebug.chosenPart = { name: chosenPart.filename, mime: chosenPart.mimeType }
 
