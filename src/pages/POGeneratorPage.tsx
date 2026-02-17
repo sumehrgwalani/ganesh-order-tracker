@@ -1520,62 +1520,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         <div className="grid grid-cols-3 gap-6">
           {/* Left Column - Basic Details */}
           <div className="col-span-2 space-y-6">
-            {/* Natural Language Parser */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl shadow-sm border border-blue-200 overflow-hidden">
-              <button
-                onClick={() => setShowParser(!showParser)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-blue-100/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-                    <Icon name="Mail" size={20} className="text-white" />
-                  </div>
-                  <div className="text-left">
-                    <h3 className="font-semibold text-blue-800">Quick Fill from Email/Message</h3>
-                    <p className="text-sm text-blue-600">Paste inquiry text to auto-extract product details</p>
-                  </div>
-                </div>
-                <Icon name="ChevronDown" size={20} className={`text-blue-600 transition-transform ${showParser ? 'rotate-180' : ''}`} />
-              </button>
-              {showParser && (
-                <div className="px-6 pb-6 space-y-4">
-                  <textarea
-                    value={rawInput}
-                    onChange={(e) => setRawInput(e.target.value)}
-                    placeholder="Paste email or message here...
-
-Example:
-'We need Product A U/3 - 2900 Kgs @ 7.9 USD and 3/6 - 2160 Kgs @ 7.2 USD CFR Destination. Packing 6x1 kg.'
-
-The parser will extract: products, sizes, quantities, prices, buyer, supplier, destination, and packing information."
-                    className="w-full h-36 px-4 py-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm resize-none bg-white"
-                  />
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => parseNaturalLanguage(rawInput)}
-                      disabled={isParsingAI}
-                      className={`px-5 py-2.5 text-white rounded-xl flex items-center gap-2 font-medium ${isParsingAI ? 'bg-blue-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}
-                    >
-                      {isParsingAI ? (
-                        <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Parsing with AI...</>
-                      ) : (
-                        <><Icon name="Sparkles" size={16} /> AI Parse & Fill</>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setRawInput('')}
-                      className="px-4 py-2.5 bg-white text-gray-600 rounded-xl hover:bg-gray-100 border border-gray-200"
-                    >
-                      Clear
-                    </button>
-                    <span className="text-xs text-blue-600 ml-2">
-                      Extracts: products, sizes (U/3, 20/40), quantities (kg/tons), prices ($USD), buyers, suppliers, packing
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Order Info Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1868,6 +1812,56 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
 
           {/* Right Column - Summary & Actions */}
           <div className="space-y-6">
+            {/* Quick Fill Card */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <button
+                onClick={() => setShowParser(!showParser)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
+                    <Icon name="Mail" size={18} className="text-white" />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-semibold text-gray-800 text-sm">Quick Fill from Email</h3>
+                    <p className="text-xs text-gray-500">Paste text to auto-extract details</p>
+                  </div>
+                </div>
+                <Icon name="ChevronDown" size={18} className={`text-gray-400 transition-transform ${showParser ? 'rotate-180' : ''}`} />
+              </button>
+              {showParser && (
+                <div className="px-6 pb-5 space-y-3 border-t border-gray-100">
+                  <textarea
+                    value={rawInput}
+                    onChange={(e) => setRawInput(e.target.value)}
+                    placeholder="Paste email or message here...
+
+Example: 'We need Product A U/3 - 2900 Kgs @ 7.9 USD and 3/6 - 2160 Kgs @ 7.2 USD CFR Destination. Packing 6x1 kg.'"
+                    className="w-full h-28 px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm resize-none mt-3"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => parseNaturalLanguage(rawInput)}
+                      disabled={isParsingAI}
+                      className={`px-4 py-2 text-white rounded-lg flex items-center gap-2 text-sm font-medium ${isParsingAI ? 'bg-blue-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    >
+                      {isParsingAI ? (
+                        <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Parsing...</>
+                      ) : (
+                        <><Icon name="Sparkles" size={14} /> AI Parse & Fill</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setRawInput('')}
+                      className="px-3 py-2 bg-white text-gray-600 rounded-lg hover:bg-gray-50 border border-gray-200 text-sm"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Summary Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Order Summary</h3>
