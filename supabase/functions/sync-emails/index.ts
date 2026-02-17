@@ -446,263 +446,223 @@ async function downloadAndClassify(
   return { fileData, base64, classification }
 }
 
-// Handle PO attachment: download from Gmail, upload to storage, extract data, update order
-async function handlePOAttachment(
-  supabase: any, accessToken: string, email: any,
-  matchedOrderId: string, orderUuid: string, organizationId: string
-) {
-  try {
-    // Step 1: Try to download, classify, and upload the attachment
-    let publicUrl: string | null = null
-    let attachmentFilename = 'PO_document'
-    try {
-      const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-      // Score all valid attachments, then try each one with AI classification
-      const validParts = parts.filter((p: any) =>
-        p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
-      )
-      const scored = validParts.map((p: any) => ({ part: p, score: scorePOAttachment(p.filename, email.subject || '') }))
-        .sort((a: any, b: any) => b.score - a.score)
-
-      for (const { part: candidate } of scored) {
-        console.log(`[PO] Trying attachment: ${candidate.filename} (score: ${scorePOAttachment(candidate.filename, email.subject || '')})`)
-        const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
-        if (!result) continue
-        // Only accept documents classified as PO or ambiguous (other) — reject everything else
-        if (result.classification !== 'po' && result.classification !== 'other') {
-          console.log(`[PO] Skipping ${candidate.filename} — AI classified as "${result.classification}" (not a PO)`)
-          continue
-        }
-        console.log(`[PO] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
-        publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, candidate.filename, result.fileData, candidate.mimeType)
-        attachmentFilename = candidate.filename
-        break
-      }
-    } catch (attachErr) {
-      console.log(`PO attachment download failed for ${matchedOrderId}: ${attachErr}`)
-    }
-
-    // Step 2: Extract PO data from email body text (works even without attachment)
-    const { count: existingLineItems } = await supabase
-      .from('order_line_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('order_id', orderUuid)
-
-    const { data: orderRow } = await supabase
-      .from('orders')
-      .select('company, supplier, metadata')
-      .eq('id', orderUuid)
-      .single()
-
-    let extractedData: any = null
-    let extractedCount = 0
-
-    if (!existingLineItems || existingLineItems === 0) {
-      extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
-
-      if (extractedData && extractedData.lineItems.length > 0) {
-        extractedCount = extractedData.lineItems.length
-
-        // Insert line items
-        const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
-          order_id: orderUuid,
-          product: item.product,
-          brand: item.brand || '',
-          size: item.size || '',
-          glaze: item.glaze || '',
-          glaze_marked: item.glazeMarked || '',
-          packing: item.packing || '',
-          freezing: item.freezing || 'IQF',
-          cases: 0,
-          kilos: item.kilos || 0,
-          price_per_kg: item.pricePerKg || 0,
-          currency: item.currency || 'USD',
-          total: (item.kilos || 0) * (item.pricePerKg || 0),
-          sort_order: idx,
-        }))
-        const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
-        if (insertErr) console.error(`Line items insert error for ${matchedOrderId}: ${insertErr.message}`)
-
-        // Update order metadata
-        const updates: any = {
-          metadata: {
-            ...(orderRow?.metadata || {}),
-            extractedFromEmail: true,
-            ...(publicUrl ? { pdfUrl: publicUrl } : {}),
-          },
-        }
-        if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
-        if (extractedData.payment) updates.payment_terms = extractedData.payment
-        if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
-        if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
-        await supabase.from('orders').update(updates).eq('id', orderUuid)
-      }
-    }
-
-    // Step 3: Update history entry with attachment info
-    const { data: historyRows } = await supabase
-      .from('order_history')
-      .select('id')
-      .eq('order_id', orderUuid)
-      .eq('stage', 1)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-
-    if (historyRows && historyRows.length > 0) {
-      const richMeta: any = publicUrl
-        ? {
-            pdfUrl: publicUrl,
-            supplier: orderRow?.supplier || '',
-            buyer: orderRow?.company || '',
-            ...(extractedData ? {
-              deliveryTerms: extractedData.deliveryTerms || '',
-              payment: extractedData.payment || '',
-              totalKilos: extractedData.totalKilos,
-              grandTotal: extractedData.totalValue,
-              extractedFromEmail: true,
-              lineItems: extractedData.lineItems,
-            } : {}),
-          }
-        : (extractedData ? { extractedFromEmail: true, lineItems: extractedData.lineItems } : {})
-
-      if (publicUrl || extractedData) {
-        const attachmentEntry = JSON.stringify({ name: attachmentFilename, meta: richMeta })
-        await supabase.from('order_history').update({ attachments: [attachmentEntry] }).eq('id', historyRows[0].id)
-      }
-    }
-
-    return { hasAttachment: !!publicUrl, extracted: extractedCount }
-  } catch (err) {
-    console.error('PO attachment handling error:', err)
-    return { hasAttachment: false, extracted: 0, error: String(err) }
+// Map AI document classification to order stage number
+function classificationToStage(classification: string): number | null {
+  switch (classification) {
+    case 'po': return 1
+    case 'pi': return 2
+    case 'artwork': return 3
+    case 'certificate': return 4
+    case 'shipping': return 5
+    default: return null  // 'other' — don't store
   }
 }
 
-// Handle PI attachment: download from Gmail, upload to storage, update order
-async function handlePIAttachment(
+// Store an attachment in the correct stage's order_history entry
+async function storeAttachmentInHistory(
+  supabase: any, orderUuid: string, stage: number, filename: string, publicUrl: string, extraMeta?: any
+) {
+  // Find existing history entry for this stage, or we'll need one
+  const { data: historyRows } = await supabase
+    .from('order_history')
+    .select('id, attachments')
+    .eq('order_id', orderUuid)
+    .eq('stage', stage)
+    .order('timestamp', { ascending: false })
+    .limit(1)
+
+  const meta: any = { pdfUrl: publicUrl, ...(extraMeta || {}) }
+  const attachmentEntry = JSON.stringify({ name: filename, meta })
+
+  if (historyRows && historyRows.length > 0) {
+    // Update existing entry — append or replace attachments
+    await supabase.from('order_history').update({
+      attachments: [attachmentEntry],
+      has_attachment: true,
+    }).eq('id', historyRows[0].id)
+    console.log(`[STORE] Saved ${filename} to stage ${stage} history (updated existing)`)
+  } else {
+    // No history entry for this stage yet — create one
+    const { data: orderData } = await supabase.from('orders').select('organization_id').eq('id', orderUuid).single()
+    await supabase.from('order_history').insert({
+      organization_id: orderData?.organization_id,
+      order_id: orderUuid,
+      stage,
+      from_address: 'System',
+      subject: `Document auto-filed from email attachment`,
+      body: `AI classified ${filename} as stage ${stage} document`,
+      timestamp: new Date().toISOString(),
+      has_attachment: true,
+      attachments: [attachmentEntry],
+    })
+    console.log(`[STORE] Saved ${filename} to stage ${stage} history (created new entry)`)
+  }
+}
+
+// Unified attachment processor: classify ALL attachments and store each in the correct stage
+async function processEmailAttachments(
   supabase: any, accessToken: string, email: any,
   matchedOrderId: string, orderUuid: string, organizationId: string, userId: string
 ) {
   try {
-    // 1. Get attachment parts and try each with AI classification
+    // 1. Get all attachment parts from the email
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
     const validParts = parts.filter((p: any) =>
       p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
     )
-    const scored = validParts.map((p: any) => ({ part: p, score: scorePIAttachment(p.filename, email.subject || '') }))
-      .sort((a: any, b: any) => b.score - a.score)
+    if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return }
+    console.log(`[PROCESS] Found ${validParts.length} valid attachments for ${matchedOrderId}`)
 
-    let publicUrl: string | null = null
-    let chosenFilename = ''
-    for (const { part: candidate } of scored) {
-      console.log(`[PI] Trying attachment: ${candidate.filename} (score: ${scorePIAttachment(candidate.filename, email.subject || '')})`)
-      const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
-      if (!result) continue
-      // Only accept documents classified as PI or ambiguous (other) — reject everything else
-      if (result.classification !== 'pi' && result.classification !== 'other') {
-        console.log(`[PI] Skipping ${candidate.filename} — AI classified as "${result.classification}" (not a PI)`)
-        continue
+    // Track what we found
+    let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
+    let foundPI = false
+
+    // 2. For each attachment: download, classify, upload to correct stage
+    for (const part of validParts) {
+      try {
+        const result = await downloadAndClassify(accessToken, email.gmail_id, part)
+        if (!result) continue
+
+        const stage = classificationToStage(result.classification)
+        if (!stage) {
+          console.log(`[PROCESS] Skipping ${part.filename} — classified as "${result.classification}" (no stage mapping)`)
+          continue
+        }
+
+        console.log(`[PROCESS] ${part.filename} → classified as "${result.classification}" → stage ${stage}`)
+
+        // Upload to storage
+        const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, part.filename, result.fileData, part.mimeType)
+        if (!publicUrl) continue
+
+        // Store in the correct stage's history entry
+        await storeAttachmentInHistory(supabase, orderUuid, stage, part.filename, publicUrl)
+
+        // Track PO attachment for later data extraction
+        if (result.classification === 'po') {
+          poAttachment = { url: publicUrl, filename: part.filename, base64: result.base64, mimeType: part.mimeType }
+        }
+        if (result.classification === 'pi') {
+          foundPI = true
+        }
+      } catch (partErr) {
+        console.log(`[PROCESS] Error processing ${part.filename}: ${partErr}`)
       }
-      console.log(`[PI] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
-      publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, candidate.filename, result.fileData, candidate.mimeType)
-      chosenFilename = candidate.filename
-      break
     }
 
-    if (!publicUrl) { console.log('No valid PI attachment found after AI classification'); return }
-    console.log(`PI attachment uploaded: ${publicUrl}`)
+    // 3. PO post-processing: extract line items if we found a PO document
+    if (poAttachment) {
+      const { count: existingLineItems } = await supabase
+        .from('order_line_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('order_id', orderUuid)
 
-    // 4. Update the order_history entry with the attachment URL
-    // Find the most recent history entry for this order at stage 2
-    const { data: historyRows } = await supabase
-      .from('order_history')
-      .select('id')
-      .eq('order_id', orderUuid)
-      .eq('stage', 2)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-
-    if (historyRows && historyRows.length > 0) {
-      const attachmentEntry = JSON.stringify({ name: chosenFilename, meta: { pdfUrl: publicUrl } })
-      await supabase
-        .from('order_history')
-        .update({ attachments: [attachmentEntry] })
-        .eq('id', historyRows[0].id)
-    }
-
-    // 5. Extract PI number and update the order
-    const piNumber = extractPINumber(email.subject)
-    if (piNumber) {
-      await supabase
+      const { data: orderRow } = await supabase
         .from('orders')
-        .update({ pi_number: piNumber })
-        .eq('order_id', matchedOrderId)
-        .eq('organization_id', organizationId)
-      console.log(`Updated PI number: ${piNumber} for order ${matchedOrderId}`)
-    }
+        .select('company, supplier, metadata')
+        .eq('id', orderUuid)
+        .single()
 
-    // 6. Check if sender is a known contact
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('id, notes')
-      .eq('email', email.from_email)
-      .eq('organization_id', organizationId)
-      .maybeSingle()
+      if (!existingLineItems || existingLineItems === 0) {
+        // Try extracting from the PO image
+        let extractedData: any = null
+        if (poAttachment.mimeType.startsWith('image/')) {
+          extractedData = await extractPODataFromImage(poAttachment.base64, poAttachment.mimeType, orderRow?.company || '', orderRow?.supplier || '')
+        }
+        // Fallback: try extracting from email body
+        if (!extractedData || extractedData.lineItems.length === 0) {
+          extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
+        }
 
-    if (contact) {
-      // Known contact — track PI format in notes
-      if (piNumber) {
-        const formatPrefix = piNumber.split(/[\/\-]/g).slice(0, 2).join('/')
-        const currentNotes = contact.notes || ''
-        if (!currentNotes.includes(`PI Format: ${formatPrefix}`)) {
-          const newNotes = currentNotes
-            ? `${currentNotes}\nPI Format: ${formatPrefix}`
-            : `PI Format: ${formatPrefix}`
-          await supabase
-            .from('contacts')
-            .update({ notes: newNotes })
-            .eq('id', contact.id)
+        if (extractedData && extractedData.lineItems.length > 0) {
+          const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
+            order_id: orderUuid, product: item.product, brand: item.brand || '',
+            size: item.size || '', glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
+            packing: item.packing || '', freezing: item.freezing || 'IQF', cases: 0,
+            kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
+            currency: item.currency || 'USD', total: (item.kilos || 0) * (item.pricePerKg || 0), sort_order: idx,
+          }))
+          const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
+          if (insertErr) console.error(`Line items insert error: ${insertErr.message}`)
+
+          // Update order metadata
+          const updates: any = {
+            metadata: { ...(orderRow?.metadata || {}), extractedFromEmail: true, pdfUrl: poAttachment.url },
+          }
+          if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
+          if (extractedData.payment) updates.payment_terms = extractedData.payment
+          if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
+          if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
+          await supabase.from('orders').update(updates).eq('id', orderUuid)
+
+          // Also update the stage 1 history entry with rich metadata (line items etc.)
+          const richMeta = {
+            pdfUrl: poAttachment.url, supplier: orderRow?.supplier || '', buyer: orderRow?.company || '',
+            deliveryTerms: extractedData.deliveryTerms || '', payment: extractedData.payment || '',
+            totalKilos: extractedData.totalKilos, grandTotal: extractedData.totalValue,
+            extractedFromEmail: true, lineItems: extractedData.lineItems,
+          }
+          const { data: stage1History } = await supabase.from('order_history').select('id')
+            .eq('order_id', orderUuid).eq('stage', 1).order('timestamp', { ascending: false }).limit(1)
+          if (stage1History?.[0]) {
+            const entry = JSON.stringify({ name: poAttachment.filename, meta: richMeta })
+            await supabase.from('order_history').update({ attachments: [entry] }).eq('id', stage1History[0].id)
+          }
+          console.log(`[PROCESS] Extracted ${extractedData.lineItems.length} line items from PO`)
         }
       }
-    } else {
-      // Check if sender is an org member (e.g. your own company email) before flagging as unknown
-      const { data: orgMembers } = await supabase
-        .from('organization_members')
-        .select('email, gmail_email')
-        .eq('organization_id', organizationId)
+    }
 
-      const orgEmails = (orgMembers || []).flatMap((m: any) => [m.email?.toLowerCase(), m.gmail_email?.toLowerCase()]).filter(Boolean)
-      const isOrgEmail = orgEmails.includes(email.from_email?.toLowerCase())
+    // 4. PI post-processing: extract PI number and manage contacts
+    if (foundPI) {
+      const piNumber = extractPINumber(email.subject)
+      if (piNumber) {
+        await supabase.from('orders').update({ pi_number: piNumber })
+          .eq('order_id', matchedOrderId).eq('organization_id', organizationId)
+        console.log(`[PROCESS] Updated PI number: ${piNumber}`)
+      }
 
-      if (isOrgEmail) {
-        // Auto-add org member as contact
-        const initials = email.from_name.split(' ').map((w: string) => w[0]?.toUpperCase()).join('').slice(0, 2)
-        await supabase.from('contacts').upsert({
-          organization_id: organizationId,
-          email: email.from_email,
-          name: email.from_name,
-          company: email.from_name,
-          role: 'Internal',
-          initials,
-          color: '#3B82F6',
-        }, { onConflict: 'email,organization_id' })
-        console.log(`Auto-added org member as contact: ${email.from_email}`)
+      // Contact management for PI senders
+      const { data: contact } = await supabase.from('contacts').select('id, notes')
+        .eq('email', email.from_email).eq('organization_id', organizationId).maybeSingle()
+
+      if (contact) {
+        if (piNumber) {
+          const formatPrefix = piNumber.split(/[\/\-]/g).slice(0, 2).join('/')
+          const currentNotes = contact.notes || ''
+          if (!currentNotes.includes(`PI Format: ${formatPrefix}`)) {
+            await supabase.from('contacts').update({
+              notes: currentNotes ? `${currentNotes}\nPI Format: ${formatPrefix}` : `PI Format: ${formatPrefix}`
+            }).eq('id', contact.id)
+          }
+        }
       } else {
-        // Unknown external contact — create notification
-        await supabase.from('notifications').insert({
-          user_id: userId,
-          organization_id: organizationId,
-          type: 'unknown_contact',
-          title: 'PI from Unknown Contact',
-          message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
-          data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
-          read: false,
-        })
-        console.log(`Notification created for unknown contact: ${email.from_email}`)
+        const { data: orgMembers } = await supabase.from('organization_members')
+          .select('email, gmail_email').eq('organization_id', organizationId)
+        const orgEmails = (orgMembers || []).flatMap((m: any) => [m.email?.toLowerCase(), m.gmail_email?.toLowerCase()]).filter(Boolean)
+        const isOrgEmail = orgEmails.includes(email.from_email?.toLowerCase())
+
+        if (isOrgEmail) {
+          const initials = email.from_name.split(' ').map((w: string) => w[0]?.toUpperCase()).join('').slice(0, 2)
+          await supabase.from('contacts').upsert({
+            organization_id: organizationId, email: email.from_email, name: email.from_name,
+            company: email.from_name, role: 'Internal', initials, color: '#3B82F6',
+          }, { onConflict: 'email,organization_id' })
+        } else {
+          await supabase.from('notifications').insert({
+            user_id: userId, organization_id: organizationId, type: 'unknown_contact',
+            title: 'PI from Unknown Contact',
+            message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
+            data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
+            read: false,
+          })
+        }
       }
     }
+
+    console.log(`[PROCESS] Done processing attachments for ${matchedOrderId}`)
   } catch (err) {
-    console.error('PI attachment handling error:', err)
+    console.error('[PROCESS] Attachment processing error:', err)
   }
 }
 
@@ -1300,7 +1260,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               await supabase.from('synced_emails').update({ auto_advanced: true }).eq('id', email.id)
 
               // Handle attachment download for Stage 1 (PO) or Stage 2 (PI)
-              if ((detectedStage === 1 || detectedStage === 2) && email.has_attachment) {
+              if (email.has_attachment) {
                 if (!gmailAccessToken && member.gmail_refresh_token) {
                   const { data: settings } = await supabase
                     .from('organization_settings')
@@ -1313,11 +1273,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                   }
                 }
                 if (gmailAccessToken) {
-                  if (detectedStage === 1) {
-                    await handlePOAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id)
-                  } else {
-                    await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
-                  }
+                  await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
                 }
               }
             }
@@ -1334,8 +1290,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               has_attachment: email.has_attachment || false,
             })
 
-            // Handle attachment for Stage 1 or 2 even if order already past that stage
-            if ((detectedStage === 1 || detectedStage === 2) && email.has_attachment) {
+            // Handle attachments — AI classifies each and stores in the correct stage
+            if (email.has_attachment) {
               if (!gmailAccessToken && member.gmail_refresh_token) {
                 const { data: settings } = await supabase
                   .from('organization_settings')
@@ -1348,11 +1304,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                 }
               }
               if (gmailAccessToken) {
-                if (detectedStage === 1) {
-                  await handlePOAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id)
-                } else {
-                  await handlePIAttachment(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
-                }
+                await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
               }
             }
           }
@@ -1629,16 +1581,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         const orderUuid = orderMap.get(email.matched_order_id)
         if (!orderUuid) continue
         try {
-          let debugInfo: any = null
-          if (email.detected_stage === 1) {
-            debugInfo = await handlePOAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id)
-            poCount++
-          } else {
-            await handlePIAttachment(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id)
-            piCount++
-          }
+          await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id)
+          if (email.detected_stage === 1) poCount++
+          else piCount++
           processed++
-          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok', debugInfo })
+          results.push({ order: email.matched_order_id, stage: email.detected_stage, status: 'ok' })
           // Mark as processed so we don't re-download next batch
           await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
         } catch (err) {
