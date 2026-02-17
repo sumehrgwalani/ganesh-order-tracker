@@ -900,6 +900,60 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         </div>
       </div>
 
+      {/* Line Items Table */}
+      {lineItems.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Line Items</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">#</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Product</th>
+                  {lineItems.some(li => li.brand) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Brand</th>}
+                  {lineItems.some(li => li.size) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Size</th>}
+                  {lineItems.some(li => li.glaze) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Glaze</th>}
+                  {lineItems.some(li => li.packing) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Packing</th>}
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Kilos</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Price/Kg</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineItems.map((li: any, idx: number) => {
+                  const total = (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0);
+                  return (
+                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2.5 px-3 text-gray-400">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-medium text-gray-800">{li.product}</td>
+                      {lineItems.some(l => l.brand) && <td className="py-2.5 px-3 text-gray-600">{li.brand || '—'}</td>}
+                      {lineItems.some(l => l.size) && <td className="py-2.5 px-3 text-gray-600">{li.size || '—'}</td>}
+                      {lineItems.some(l => l.glaze) && <td className="py-2.5 px-3 text-gray-600">{li.glaze || '—'}</td>}
+                      {lineItems.some(l => l.packing) && <td className="py-2.5 px-3 text-gray-600">{li.packing || '—'}</td>}
+                      <td className="py-2.5 px-3 text-right text-gray-800">{Number(li.kilos).toLocaleString()}</td>
+                      <td className="py-2.5 px-3 text-right text-gray-800">${Number(li.pricePerKg).toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right font-medium text-gray-800">${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-blue-600 text-white">
+                  <td colSpan={1 + (lineItems.some(li => li.brand) ? 1 : 0) + (lineItems.some(li => li.size) ? 1 : 0) + (lineItems.some(li => li.glaze) ? 1 : 0) + (lineItems.some(li => li.packing) ? 1 : 0) + 1} className="py-2.5 px-3 font-semibold">
+                    Total
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-semibold">{lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0), 0).toLocaleString()} kg</td>
+                  <td className="py-2.5 px-3"></td>
+                  <td className="py-2.5 px-3 text-right font-semibold">
+                    ${lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Documents Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Documents</h2>
