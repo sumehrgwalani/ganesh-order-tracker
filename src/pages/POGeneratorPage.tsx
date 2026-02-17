@@ -1289,7 +1289,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       {hasCases && <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
                       <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
                       <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
-                      <td className="border border-gray-300 px-1.5 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${item.total}` : '-'}</td>
+                      <td className="border border-gray-300 px-1.5 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.total).toFixed(2)}` : '-'}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
@@ -1796,7 +1796,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Line Total</label>
                           <div className="w-full px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg text-sm text-right font-bold text-green-700">
-                            {(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}{item.total || '0.00'}
+                            {(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}{Number(item.total || 0).toFixed(2)}
                           </div>
                         </div>
                       </div>

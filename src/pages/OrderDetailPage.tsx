@@ -188,7 +188,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             {order.totalValue && (
               <div className="bg-indigo-50 rounded-lg p-3 flex items-center justify-between">
                 <span className="text-sm text-indigo-700 font-medium">Invoice Value</span>
-                <span className="font-bold text-indigo-800">USD {order.totalValue}</span>
+                <span className="font-bold text-indigo-800">USD {Number(order.totalValue).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
               </div>
             )}
             <div className="flex items-stretch gap-2">
@@ -780,7 +780,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           {order.totalValue && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Value</p>
-              <p className="font-semibold text-gray-800">USD {order.totalValue}</p>
+              <p className="font-semibold text-gray-800">USD {Number(order.totalValue).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
             </div>
           )}
           {order.totalKilos && (
