@@ -370,24 +370,113 @@ Rules:
   }
 }
 
+// Classify a document using vision AI — returns 'po', 'pi', 'artwork', 'shipping', 'certificate', or 'other'
+async function classifyDocumentWithVision(
+  base64Data: string, mimeType: string
+): Promise<string> {
+  try {
+    const isImage = mimeType.startsWith('image/')
+    const isPdf = mimeType.includes('pdf')
+    if (!isImage && !isPdf) return 'other'
+
+    const contentBlock = isImage
+      ? { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Data } }
+      : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } }
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 30,
+        messages: [{
+          role: 'user',
+          content: [
+            contentBlock,
+            { type: 'text', text: `What type of trade document is this? Reply with ONLY one word:
+- "po" if it is a Purchase Order (business document with order items, quantities, prices)
+- "pi" if it is a Proforma Invoice (business document with invoice/proforma details)
+- "artwork" if it is product packaging artwork, label designs, branding materials, box designs
+- "shipping" if it is a shipping document, bill of lading, packing list
+- "certificate" if it is a certificate of analysis, quality certificate, health certificate
+- "other" if none of the above
+Reply with ONLY the single word classification.` }
+          ]
+        }],
+      }),
+    })
+
+    if (!res.ok) {
+      console.log(`[CLASSIFY] Vision API error: ${res.status}`)
+      return 'other'
+    }
+    const data = await res.json()
+    const raw = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '')
+    const valid = ['po', 'pi', 'artwork', 'shipping', 'certificate', 'other']
+    const classification = valid.includes(raw) ? raw : 'other'
+    console.log(`[CLASSIFY] Document classified as: ${classification}`)
+    return classification
+  } catch (err) {
+    console.error('[CLASSIFY] Error:', err)
+    return 'other'
+  }
+}
+
+// Helper: download attachment and return base64 + classification
+async function downloadAndClassify(
+  accessToken: string, gmailId: string, part: { filename: string; mimeType: string; attachmentId: string; size: number }
+): Promise<{ fileData: ArrayBuffer; base64: string; classification: string } | null> {
+  const fileData = await downloadAttachment(accessToken, gmailId, part.attachmentId)
+  if (!fileData) return null
+
+  // Convert to base64 for vision
+  const bytes = new Uint8Array(fileData)
+  let binary = ''
+  const chunkSize = 8192
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
+  }
+  const base64 = btoa(binary)
+  const classification = await classifyDocumentWithVision(base64, part.mimeType || 'application/pdf')
+  return { fileData, base64, classification }
+}
+
 // Handle PO attachment: download from Gmail, upload to storage, extract data, update order
 async function handlePOAttachment(
   supabase: any, accessToken: string, email: any,
   matchedOrderId: string, orderUuid: string, organizationId: string
 ) {
   try {
-    // Step 1: Try to download and upload the attachment (may fail if Gmail token expired)
+    // Step 1: Try to download, classify, and upload the attachment
     let publicUrl: string | null = null
     let attachmentFilename = 'PO_document'
     try {
       const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-      const poPart = pickBestAttachment(parts, scorePOAttachment, email.subject || '')
-      if (poPart) {
-        const fileData = await downloadAttachment(accessToken, email.gmail_id, poPart.attachmentId)
-        if (fileData) {
-          publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, poPart.filename, fileData, poPart.mimeType)
-          attachmentFilename = poPart.filename
+      // Score all valid attachments, then try each one with AI classification
+      const validParts = parts.filter((p: any) =>
+        p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
+      )
+      const scored = validParts.map((p: any) => ({ part: p, score: scorePOAttachment(p.filename, email.subject || '') }))
+        .sort((a: any, b: any) => b.score - a.score)
+
+      for (const { part: candidate } of scored) {
+        console.log(`[PO] Trying attachment: ${candidate.filename} (score: ${scorePOAttachment(candidate.filename, email.subject || '')})`)
+        const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
+        if (!result) continue
+        // Accept if classified as PO, PI (close enough for a PO email), or other (ambiguous) — reject artwork/shipping/certificate
+        if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
+          console.log(`[PO] Skipping ${candidate.filename} — AI classified as "${result.classification}"`)
+          continue
         }
+        console.log(`[PO] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
+        publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, candidate.filename, result.fileData, candidate.mimeType)
+        attachmentFilename = candidate.filename
+        break
       }
     } catch (attachErr) {
       console.log(`PO attachment download failed for ${matchedOrderId}: ${attachErr}`)
@@ -495,18 +584,32 @@ async function handlePIAttachment(
   matchedOrderId: string, orderUuid: string, organizationId: string, userId: string
 ) {
   try {
-    // 1. Get attachment parts and pick the most likely PI document
+    // 1. Get attachment parts and try each with AI classification
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
-    const piPart = pickBestAttachment(parts, scorePIAttachment, email.subject || '')
-    if (!piPart) { console.log('No PDF/image attachment found for PI email'); return }
+    const validParts = parts.filter((p: any) =>
+      p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
+    )
+    const scored = validParts.map((p: any) => ({ part: p, score: scorePIAttachment(p.filename, email.subject || '') }))
+      .sort((a: any, b: any) => b.score - a.score)
 
-    // 2. Download the attachment binary
-    const fileData = await downloadAttachment(accessToken, email.gmail_id, piPart.attachmentId)
-    if (!fileData) { console.log('Failed to download PI attachment'); return }
+    let publicUrl: string | null = null
+    let chosenFilename = ''
+    for (const { part: candidate } of scored) {
+      console.log(`[PI] Trying attachment: ${candidate.filename} (score: ${scorePIAttachment(candidate.filename, email.subject || '')})`)
+      const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
+      if (!result) continue
+      // Accept if classified as PI, PO (close enough for business doc), or other — reject artwork/shipping/certificate
+      if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
+        console.log(`[PI] Skipping ${candidate.filename} — AI classified as "${result.classification}"`)
+        continue
+      }
+      console.log(`[PI] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
+      publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, candidate.filename, result.fileData, candidate.mimeType)
+      chosenFilename = candidate.filename
+      break
+    }
 
-    // 3. Upload to Supabase Storage
-    const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, piPart.filename, fileData, piPart.mimeType)
-    if (!publicUrl) { console.log('Failed to upload PI attachment'); return }
+    if (!publicUrl) { console.log('No valid PI attachment found after AI classification'); return }
     console.log(`PI attachment uploaded: ${publicUrl}`)
 
     // 4. Update the order_history entry with the attachment URL
@@ -520,7 +623,7 @@ async function handlePIAttachment(
       .limit(1)
 
     if (historyRows && historyRows.length > 0) {
-      const attachmentEntry = JSON.stringify({ name: piPart.filename, meta: { pdfUrl: publicUrl } })
+      const attachmentEntry = JSON.stringify({ name: chosenFilename, meta: { pdfUrl: publicUrl } })
       await supabase
         .from('order_history')
         .update({ attachments: [attachmentEntry] })
@@ -1393,7 +1496,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
           visionDebug.emailsWithAttach = scored.length
 
-          // Try up to 5 emails, looking for PO scan attachments
+          // Try up to 5 emails, looking for PO scan attachments (with AI classification)
           for (const { email: attachEmail } of scored.slice(0, 5)) {
             if (extractedData && extractedData.lineItems.length > 0) break
             if (!attachEmail.gmail_id) continue
@@ -1403,47 +1506,37 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
               visionDebug.partsCount = parts.length
 
-              // Pick best PO scan attachment: prefer Scan_*.jpg, skip inspection photos/logos
-              const isImageType = (m: string) => m === 'image/jpeg' || m === 'image/png'
+              // Score all valid attachments by filename, then try each with AI classification
+              const isValidType = (m: string) => m.includes('pdf') || m === 'image/jpeg' || m === 'image/png'
               const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
-              // Priority 1: Scan files
-              const scanPart = parts.find((p: any) => {
-                const name = (p.filename || '').toLowerCase()
-                return isImageType((p.mimeType || '').toLowerCase()) && (name.startsWith('scan') || name.includes('_scan'))
-              })
-              // Priority 2: other image that isn't inspection/logo
-              const otherImage = !scanPart && parts.find((p: any) => {
-                const name = (p.filename || '').toLowerCase()
-                return isImageType((p.mimeType || '').toLowerCase()) && !isSkipImage(name)
-              })
-              // Priority 3: PDF with PO/scan in name
-              const pdfPart = !scanPart && !otherImage && parts.find((p: any) => {
-                const name = (p.filename || '').toLowerCase()
-                const mime = (p.mimeType || '').toLowerCase()
-                return mime === 'application/pdf' && (name.includes('scan') || name.includes('po') || name.includes('purchase'))
-              })
-              const chosenPart = scanPart || otherImage || pdfPart
-              if (!chosenPart || !chosenPart.attachmentId) continue
-              visionDebug.chosenPart = { name: chosenPart.filename, mime: chosenPart.mimeType }
+              const candidates = parts
+                .filter((p: any) => isValidType((p.mimeType || '').toLowerCase()) && !isSkipImage((p.filename || '').toLowerCase()))
+                .map((p: any) => ({ part: p, score: scorePOAttachment(p.filename, attachEmail.subject || '') }))
+                .sort((a: any, b: any) => b.score - a.score)
 
-              if ((chosenPart.mimeType || '').startsWith('image/')) {
-                const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, chosenPart.attachmentId)
-                visionDebug.downloadedSize = fileData ? fileData.byteLength : 0
-                if (fileData) {
-                  // Chunked base64 encoding to avoid stack overflow
-                  const bytes = new Uint8Array(fileData)
-                  let binary = ''
-                  const chunkSize = 8192
-                  for (let i = 0; i < bytes.length; i += chunkSize) {
-                    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
-                    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
-                  }
-                  const base64Data = btoa(binary)
+              for (const { part: chosenPart } of candidates) {
+                if (!chosenPart.attachmentId) continue
+                visionDebug.chosenPart = { name: chosenPart.filename, mime: chosenPart.mimeType }
+
+                const result = await downloadAndClassify(gmailAccessToken, attachEmail.gmail_id, chosenPart)
+                if (!result) continue
+                visionDebug.downloadedSize = result.fileData.byteLength
+                visionDebug.classification = result.classification
+
+                // Skip artwork, shipping docs, certificates
+                if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
+                  console.log(`[BULK] Skipping ${chosenPart.filename} — AI classified as "${result.classification}"`)
+                  continue
+                }
+
+                // Now extract PO data from the classified document
+                if ((chosenPart.mimeType || '').startsWith('image/')) {
                   const mimeType = chosenPart.mimeType || 'image/jpeg'
                   visionDebug.mimeType = mimeType
-                  extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
+                  extractedData = await extractPODataFromImage(result.base64, mimeType, order.company || '', order.supplier || '')
                   visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
                 }
+                if (extractedData && extractedData.lineItems.length > 0) break
               }
             } catch (attErr) {
               visionDebug.error = String(attErr)
