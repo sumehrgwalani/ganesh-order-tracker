@@ -1460,8 +1460,10 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
           visionDebug.emailsWithAttach = scored.length
 
-          // Try up to 3 emails, looking for PO scan attachments (with AI classification)
-          for (const { email: attachEmail } of scored.slice(0, 3)) {
+          const skipClassify = body.skip_classify === true
+
+          // Try up to 2 emails, looking for PO scan attachments
+          for (const { email: attachEmail } of scored.slice(0, 2)) {
             if (extractedData && extractedData.lineItems.length > 0) break
             if (!attachEmail.gmail_id) continue
             try {
@@ -1470,10 +1472,10 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
               visionDebug.partsCount = parts.length
 
-              // Score all valid attachments by filename, then try each with AI classification
+              // Score all valid attachments by filename, then try each
               const isValidType = (m: string) => m.includes('pdf') || m === 'image/jpeg' || m === 'image/png'
               const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
-              // Skip filenames that are clearly NOT purchase orders — saves CPU time on classification
+              // Skip filenames that are clearly NOT purchase orders — saves CPU time
               const isObviouslyNotPO = (n: string) => {
                 const lower = n.toLowerCase()
                 return /\b(bl|bill of lading|packing list|container loading|boxes declaration|beneficiary|code list|ingredients|health cert|hc \d|plastic declaration|test \d|certificate|coa |fumigation|phyto|weight list|tally sheet|shipping|draft|debit note|credit note|commercial invoice|ci |insurance|manifest|mate.?s receipt|dock receipt|customs|export permit|quota|license)\b/i.test(lower)
@@ -1493,25 +1495,42 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                 .map((p: any) => ({ part: p, score: scorePOAttachment(p.filename, attachEmail.subject || '') }))
                 .sort((a: any, b: any) => b.score - a.score)
 
-              // Limit to top 3 candidates per email to conserve CPU time
-              for (const { part: chosenPart } of candidates.slice(0, 3)) {
+              // Only try top 1 candidate to minimize CPU usage
+              for (const { part: chosenPart } of candidates.slice(0, 1)) {
                 if (!chosenPart.attachmentId) continue
                 visionDebug.chosenPart = { name: chosenPart.filename, mime: chosenPart.mimeType }
 
-                const result = await downloadAndClassify(gmailAccessToken, attachEmail.gmail_id, chosenPart)
-                if (!result) continue
-                visionDebug.downloadedSize = result.fileData.byteLength
-                visionDebug.classification = result.classification
+                if (skipClassify) {
+                  // Skip classification — download and go straight to extraction
+                  console.log(`[BULK] Direct extract (skip classify): ${chosenPart.filename}`)
+                  const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, chosenPart.attachmentId)
+                  if (!fileData) continue
+                  const bytes = new Uint8Array(fileData)
+                  let binary = ''
+                  const chunkSize = 8192
+                  for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+                    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
+                  }
+                  const base64 = btoa(binary)
+                  visionDebug.downloadedSize = fileData.byteLength
+                  const mimeType = chosenPart.mimeType || 'application/pdf'
+                  visionDebug.mimeType = mimeType
+                  extractedData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '')
+                  visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
+                } else {
+                  // Normal flow: classify first, then extract
+                  const result = await downloadAndClassify(gmailAccessToken, attachEmail.gmail_id, chosenPart)
+                  if (!result) continue
+                  visionDebug.downloadedSize = result.fileData.byteLength
+                  visionDebug.classification = result.classification
 
-                // Only accept PO documents or ambiguous — reject everything else
-                if (result.classification !== 'po' && result.classification !== 'other') {
-                  console.log(`[BULK] Skipping ${chosenPart.filename} — AI classified as "${result.classification}" (not a PO)`)
-                  continue
-                }
+                  if (result.classification !== 'po' && result.classification !== 'other') {
+                    console.log(`[BULK] Skipping ${chosenPart.filename} — AI classified as "${result.classification}" (not a PO)`)
+                    continue
+                  }
 
-                // Now extract PO data from the classified document
-                if ((chosenPart.mimeType || '').startsWith('image/')) {
-                  const mimeType = chosenPart.mimeType || 'image/jpeg'
+                  const mimeType = chosenPart.mimeType || 'application/pdf'
                   visionDebug.mimeType = mimeType
                   extractedData = await extractPODataFromImage(result.base64, mimeType, order.company || '', order.supplier || '')
                   visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
