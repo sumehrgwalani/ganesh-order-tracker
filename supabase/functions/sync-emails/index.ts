@@ -1303,12 +1303,15 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           .single()
         if (order) ordersToProcess = [order]
       } else {
-        // Batch mode: find orders with 0 line items via left join
+        // Batch mode: find orders with 0 line items via left join, skip already-attempted
         const { data } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, order_line_items(id)')
+          .select('id, order_id, company, supplier, metadata, order_line_items(id)')
           .eq('organization_id', organization_id)
-        ordersToProcess = (data || []).filter((o: any) => !o.order_line_items || o.order_line_items.length === 0)
+        ordersToProcess = (data || []).filter((o: any) =>
+          (!o.order_line_items || o.order_line_items.length === 0) &&
+          !(o.metadata?.extraction_attempted)
+        )
       }
 
       if (ordersToProcess.length === 0) {
@@ -1413,6 +1416,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           }
 
           if (!extractedData || extractedData.lineItems.length === 0) {
+            // Mark order as extraction attempted so it doesn't get retried
+            await supabase.from('orders').update({ metadata: { extraction_attempted: true } }).eq('id', order.id)
             results.push({ order: order.order_id, status: 'skip', reason: 'no line items found', bodyLen: maxLen, hadGmail: !!gmailAccessToken, vision: visionDebug })
             continue
           }
