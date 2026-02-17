@@ -1205,7 +1205,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       const reprocessLimit = batch_size || 10
       const { data: emails, error: fetchErr } = await supabase
         .from('synced_emails')
-        .select('id, gmail_id, subject, from_name, from_email, date, has_attachment, matched_order_id, detected_stage')
+        .select('id, gmail_id, subject, from_name, from_email, date, has_attachment, matched_order_id, detected_stage, body_text')
         .eq('organization_id', organization_id)
         .not('matched_order_id', 'is', null)
         .eq('has_attachment', true)
