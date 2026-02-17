@@ -312,7 +312,6 @@ async function handlePOAttachment(
         // Insert line items
         const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
           order_id: orderUuid,
-          organization_id: organizationId,
           product: item.product,
           brand: item.brand || '',
           size: item.size || '',
