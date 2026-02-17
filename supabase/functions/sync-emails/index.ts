@@ -581,9 +581,9 @@ async function processEmailAttachments(
           const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
             order_id: orderUuid, product: item.product, brand: item.brand || '',
             size: item.size || '', glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
-            packing: item.packing || '', freezing: item.freezing || 'IQF', cases: 0,
+            packing: item.packing || '', freezing: item.freezing || 'IQF', cases: parseInt(item.cases) || 0,
             kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
-            currency: item.currency || 'USD', total: (item.kilos || 0) * (item.pricePerKg || 0), sort_order: idx,
+            currency: item.currency || 'USD', total: Number(item.total) || ((item.kilos || 0) * (item.pricePerKg || 0)), sort_order: idx,
           }))
           const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
           if (insertErr) console.error(`Line items insert error: ${insertErr.message}`)
@@ -1510,9 +1510,9 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
             product: item.product, brand: item.brand || '', size: item.size || '',
             glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
             packing: item.packing || '', freezing: item.freezing || 'IQF',
-            cases: 0, kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
+            cases: parseInt(item.cases) || 0, kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
             currency: item.currency || 'USD',
-            total: (item.kilos || 0) * (item.pricePerKg || 0), sort_order: idx,
+            total: Number(item.total) || ((item.kilos || 0) * (item.pricePerKg || 0)), sort_order: idx,
           }))
 
           const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
