@@ -565,10 +565,10 @@ async function handlePIAttachment(
       // Check if sender is an org member (e.g. your own company email) before flagging as unknown
       const { data: orgMembers } = await supabase
         .from('organization_members')
-        .select('gmail_email')
+        .select('email, gmail_email')
         .eq('organization_id', organizationId)
 
-      const orgEmails = (orgMembers || []).map((m: any) => m.gmail_email?.toLowerCase()).filter(Boolean)
+      const orgEmails = (orgMembers || []).flatMap((m: any) => [m.email?.toLowerCase(), m.gmail_email?.toLowerCase()]).filter(Boolean)
       const isOrgEmail = orgEmails.includes(email.from_email?.toLowerCase())
 
       if (isOrgEmail) {
