@@ -257,6 +257,112 @@ Rules:
   }
 }
 
+// Extract PO data from an image (scanned PO) using Claude vision
+async function extractPODataFromImage(
+  imageBase64: string, mimeType: string, orderCompany: string, orderSupplier: string
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
+  try {
+    const mediaType = mimeType.startsWith('image/') ? mimeType : 'image/jpeg'
+    const prompt = `You are an expert seafood trading order parser for Ganesh International.
+Extract structured purchase order data from this scanned PO document image.
+
+CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences.
+
+Known context:
+- Buyer: ${orderCompany || 'Unknown'}
+- Supplier: ${orderSupplier || 'Unknown'}
+
+Return this JSON structure:
+{
+  "lineItems": [
+    {
+      "product": "string - full product name, start with 'Frozen'",
+      "size": "string - size range or empty string",
+      "glaze": "string - glaze percentage or empty string",
+      "glazeMarked": "string - marked/declared glaze if different, or empty string",
+      "packing": "string - packing format or empty string",
+      "brand": "string - brand name or empty string",
+      "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
+      "cases": "",
+      "kilos": "number - total kg (if MT given, multiply by 1000)",
+      "pricePerKg": "number - price per kg",
+      "currency": "string - 'USD' or 'EUR'. Default 'USD'",
+      "total": ""
+    }
+  ],
+  "deliveryTerms": "string - e.g. 'CFR', 'CIF', 'FOB' or empty string",
+  "payment": "string - payment terms or empty string",
+  "destination": "string - delivery destination or empty string",
+  "commission": "string - commission details or empty string"
+}
+
+Rules:
+- Always prefix product names with "Frozen" if not already
+- "07 MT" or "7 MT" = 7000 kg
+- Leave "cases" and "total" as empty strings
+- If you cannot read the document clearly or find line item details, return empty lineItems array
+- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp`
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+            { type: 'text', text: prompt }
+          ]
+        }],
+      }),
+    })
+
+    if (!res.ok) {
+      console.error(`[PO-VISION] AI API error: ${res.status}`)
+      return null
+    }
+    const aiData = await res.json()
+    const text = aiData.content?.[0]?.text || ''
+
+    let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    if (!jsonStr.startsWith('{')) {
+      const first = jsonStr.indexOf('{')
+      const last = jsonStr.lastIndexOf('}')
+      if (first !== -1 && last > first) jsonStr = jsonStr.substring(first, last + 1)
+    }
+    const parsed = JSON.parse(jsonStr)
+
+    const lineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: any) => ({
+      product: String(item.product || ''),
+      size: String(item.size || ''),
+      glaze: String(item.glaze || ''),
+      glazeMarked: String(item.glazeMarked || ''),
+      packing: String(item.packing || ''),
+      brand: String(item.brand || ''),
+      freezing: String(item.freezing || 'IQF'),
+      cases: '',
+      kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || 0),
+      pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || 0),
+      currency: String(item.currency || 'USD'),
+      total: '',
+    })) : []
+
+    const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+    const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
+
+    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
+  } catch (err) {
+    console.error('PO vision extraction error:', err)
+    return null
+  }
+}
+
 // Handle PO attachment: download from Gmail, upload to storage, extract data, update order
 async function handlePOAttachment(
   supabase: any, accessToken: string, email: any,
@@ -1207,6 +1313,18 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         return new Response(JSON.stringify({ mode: 'bulk-extract', message: targetPO ? 'Order not found' : 'All orders already have line items' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
+      // Set up Gmail access for attachment downloads
+      let gmailAccessToken: string | null = null
+      try {
+        if (member.gmail_refresh_token) {
+          const { data: settings } = await supabase.from('organization_settings').select('gmail_client_id').eq('organization_id', organization_id).single()
+          const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+          if (settings?.gmail_client_id && clientSecret) {
+            gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+          }
+        }
+      } catch { /* Gmail setup failed, will skip attachment extraction */ }
+
       const batchLimit = batch_size || 3
       const batch = ordersToProcess.slice(0, batchLimit)
       const results: any[] = []
@@ -1214,10 +1332,10 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
       for (const order of batch) {
         try {
-          // Find emails matched to this order, pick longest body
+          // Step 1: Try email body extraction first
           const { data: emails } = await supabase
             .from('synced_emails')
-            .select('id, subject, body_text, from_name, from_email')
+            .select('id, gmail_id, subject, body_text, from_name, from_email, has_attachment, detected_stage')
             .eq('matched_order_id', order.order_id)
             .eq('organization_id', organization_id)
             .not('body_text', 'is', null)
@@ -1230,14 +1348,41 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
             if (len > maxLen) { maxLen = len; bestEmail = e }
           }
 
-          if (!bestEmail || maxLen < 100) {
-            results.push({ order: order.order_id, status: 'skip', reason: 'no email with enough body text', maxLen })
-            continue
+          let extractedData: any = null
+
+          // Try email body extraction
+          if (bestEmail && maxLen >= 100) {
+            extractedData = await extractPODataFromEmail(bestEmail, order.company || '', order.supplier || '')
           }
 
-          const extractedData = await extractPODataFromEmail(bestEmail, order.company || '', order.supplier || '')
+          // Step 2: If body extraction failed, try vision on Gmail attachment
+          if ((!extractedData || extractedData.lineItems.length === 0) && gmailAccessToken) {
+            // Find an email with attachment (prefer stage 1 = PO)
+            const attachEmail = (emails || []).find((e: any) => e.has_attachment && e.detected_stage === 1)
+              || (emails || []).find((e: any) => e.has_attachment)
+            if (attachEmail?.gmail_id) {
+              try {
+                const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
+                const poPart = pickBestAttachment(parts, scorePOAttachment, attachEmail.subject || '')
+                if (poPart && poPart.attachmentId) {
+                  const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, poPart.attachmentId)
+                  if (fileData) {
+                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileData)))
+                    const mimeType = poPart.mimeType || 'image/jpeg'
+                    // Only use vision for images, not PDFs (vision doesn't support PDF)
+                    if (mimeType.startsWith('image/')) {
+                      extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
+                    }
+                  }
+                }
+              } catch (attErr) {
+                console.log(`Attachment vision failed for ${order.order_id}: ${attErr}`)
+              }
+            }
+          }
+
           if (!extractedData || extractedData.lineItems.length === 0) {
-            results.push({ order: order.order_id, status: 'skip', reason: 'no line items extracted', bodyLen: maxLen })
+            results.push({ order: order.order_id, status: 'skip', reason: 'no line items found', bodyLen: maxLen, hadGmail: !!gmailAccessToken })
             continue
           }
 
@@ -1263,7 +1408,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: bestEmail && maxLen >= 100 ? 'email' : 'vision' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
