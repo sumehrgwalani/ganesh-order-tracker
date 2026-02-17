@@ -13,6 +13,7 @@ interface Props {
   orders?: Order[];
   setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
+  orgId?: string | null;
 }
 
 interface SupplierInfo {
@@ -79,7 +80,7 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated }: Props) {
+function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated, orgId }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
@@ -783,6 +784,41 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     ? getCurrentBulkPONumber(bulkPreviewIndex)
     : poData.poNumber;
 
+  // Convert Blob to base64 for email attachment
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  // Actually send the PO email via the send-email Edge Function
+  const sendEmailWithPdf = async (recipient: string, cc: string, subject: string, body: string, pdfBlob: Blob | null, filename: string) => {
+    if (!orgId) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const recipients = [recipient];
+      if (cc) cc.split(',').map(e => e.trim()).filter(e => e).forEach(e => recipients.push(e));
+
+      const attachments: Array<{ filename: string; data: string; mimeType: string }> = [];
+      if (pdfBlob) {
+        attachments.push({ filename, data: await blobToBase64(pdfBlob), mimeType: 'application/pdf' });
+      }
+
+      const { data, error: fnError } = await supabase.functions.invoke('send-email', {
+        body: { organization_id: orgId, user_id: user.id, recipients, subject, body, attachments },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+    } catch (err: any) {
+      console.error('Email send failed:', err);
+      alert('Order saved but email failed to send: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   // Send PO to supplier (supports bulk creation and amendments)
   const sendPO = async () => {
     // Step 1: Capture PDF blob from the live preview BEFORE any state changes
@@ -878,8 +914,19 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             upsert: true,
           });
         } catch {
-          // PDF storage upload failed silently
+          alert('PDF upload failed, but order was saved.');
         }
+      }
+
+      // Send amendment email to supplier
+      const amendRecipient = sendTo || poData.supplierEmail;
+      if (amendRecipient) {
+        await sendEmailWithPdf(
+          amendRecipient, ccEmails,
+          `AMENDED PO ${poData.poNumber}`,
+          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Amended Purchase Order.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+          pdfBlob, primaryFilename
+        );
       }
       return;
     }
@@ -992,7 +1039,22 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           upsert: true,
         });
       } catch {
-        // PDF storage upload failed silently
+        alert('PDF upload failed, but order was saved.');
+      }
+    }
+
+    // Step 5: Send email to supplier
+    const recipient = sendTo || poData.supplierEmail;
+    if (recipient) {
+      for (const order of newOrders) {
+        const poNum = order.id;
+        const filename = `${poNum.replace(/\//g, '_')}.pdf`;
+        await sendEmailWithPdf(
+          recipient, ccEmails,
+          `NEW PO ${poNum}`,
+          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poNum}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+          pdfBlob, filename
+        );
       }
     }
   };
