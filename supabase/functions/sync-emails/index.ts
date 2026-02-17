@@ -328,8 +328,12 @@ async function handlePOAttachment(
           sort_order: idx,
         }))
         const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
-        if (insertErr) console.error(`[PO-EXTRACT] Insert error: ${insertErr.message}`)
-        else console.log(`[PO-EXTRACT] Inserted ${lineItemRows.length} line items`)
+        if (insertErr) {
+          console.error(`[PO-EXTRACT] Insert error: ${insertErr.message}`)
+          extractedData._insertError = insertErr.message
+        } else {
+          console.log(`[PO-EXTRACT] Inserted ${lineItemRows.length} line items`)
+        }
 
         // Update order metadata
         const updates: any = {
@@ -382,7 +386,7 @@ async function handlePOAttachment(
       }
     }
 
-    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount, emailBodyLen: (email.body_text||'').length, existingLineItems, extractedDataNull: extractedData === null, extractDebug: extractedData?._debug || 'none', apiKeyAvailable: !!ANTHROPIC_API_KEY }
+    return { debug: 'ok', hasAttachment: !!publicUrl, extracted: extractedCount, emailBodyLen: (email.body_text||'').length, existingLineItems, extractedDataNull: extractedData === null, extractDebug: extractedData?._debug || 'none', insertError: extractedData?._insertError || 'none', orderUuid, apiKeyAvailable: !!ANTHROPIC_API_KEY }
   } catch (err) {
     console.error('PO attachment handling error:', err)
     return { debug: 'error', error: String(err) }
