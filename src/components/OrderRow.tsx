@@ -24,6 +24,7 @@ function OrderRow({ order, onClick, onDelete }: Props) {
     } catch {
       setDeleting(false);
       setShowDeleteConfirm(false);
+      alert('Failed to delete order. Please try again.');
     }
   };
 

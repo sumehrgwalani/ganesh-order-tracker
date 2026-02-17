@@ -36,7 +36,7 @@ function CompletedPage({ orders }: Props) {
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <p className="text-gray-500 text-sm">This Month</p>
-          <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => new Date(o.history[o.history.length-1]?.timestamp) > new Date(Date.now() - 30*24*60*60*1000)).length}</p>
+          <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => o.history.length > 0 && new Date(o.history[o.history.length-1]?.timestamp) > new Date(Date.now() - 30*24*60*60*1000)).length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <p className="text-gray-500 text-sm">With DHL</p>

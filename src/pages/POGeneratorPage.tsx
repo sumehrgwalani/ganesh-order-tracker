@@ -1104,17 +1104,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <StatusBadge status={status} />
-          {!showPreview && status === 'draft' && (
-            <button onClick={() => { setShowPreview(true); setBulkPreviewIndex(0); }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
-              <Icon name="Eye" size={16} /> Preview
-            </button>
-          )}
-          {showPreview && status === 'draft' && (
-            <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
-              <Icon name="Edit" size={16} /> Edit
-            </button>
-          )}
         </div>
       </div>
 
@@ -1986,37 +1975,12 @@ The parser will extract: products, sizes, quantities, prices, buyer, supplier, d
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
               <h3 className="text-lg font-semibold text-blue-800 mb-4">Actions</h3>
               <div className="space-y-3">
-                <button onClick={() => { setShowPreview(true); setBulkPreviewIndex(0); }} className="w-full px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 border border-blue-200 flex items-center justify-center gap-2">
+                <button onClick={() => { setShowPreview(true); setBulkPreviewIndex(0); }} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
                   <Icon name="Eye" size={16} /> Preview PO
-                </button>
-                <button onClick={submitForApproval} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
-                  <Icon name="CheckCircle" size={16} /> Submit for Sign-off
                 </button>
               </div>
             </div>
 
-            {/* Quick Info */}
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Workflow</h4>
-              <ol className="text-xs text-gray-600 space-y-1">
-                <li className={`flex items-center gap-2 ${status === 'draft' ? 'text-blue-600 font-medium' : ''}`}>
-                  <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">1</span>
-                  Fill in details
-                </li>
-                <li className={`flex items-center gap-2 ${status === 'pending_approval' ? 'text-blue-600 font-medium' : ''}`}>
-                  <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">2</span>
-                  Review & sign-off
-                </li>
-                <li className={`flex items-center gap-2 ${status === 'approved' ? 'text-blue-600 font-medium' : ''}`}>
-                  <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">3</span>
-                  Approve
-                </li>
-                <li className={`flex items-center gap-2 ${status === 'sent' ? 'text-blue-600 font-medium' : ''}`}>
-                  <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">4</span>
-                  Send to supplier
-                </li>
-              </ol>
-            </div>
           </div>
         </div>
       )}

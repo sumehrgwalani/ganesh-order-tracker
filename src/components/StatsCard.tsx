@@ -17,6 +17,7 @@ function StatsCard({ icon, title, value, color, highlight, trend, onClick }: Pro
         <div>
           <p className={`text-sm font-medium ${color === 'primary' ? 'text-blue-100' : 'text-gray-500'}`}>{title}</p>
           <p className="text-3xl font-bold mt-2">{value}</p>
+          {trend && <p className={`text-xs mt-1 ${color === 'primary' ? 'text-blue-200' : 'text-green-600'}`}>{trend}</p>}
         </div>
         {color === 'primary' && <button className="bg-white/20 p-2 rounded-xl hover:bg-white/30"><Icon name="Plus" size={18} /></button>}
       </div>

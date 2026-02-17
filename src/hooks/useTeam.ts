@@ -197,6 +197,7 @@ export function useTeam(orgId: string | null) {
   }
 
   const updateMemberRole = async (memberId: string, role: string) => {
+    if (!orgId) return { error: 'No organization' }
     const { error } = await supabase
       .from('organization_members')
       .update({ role })

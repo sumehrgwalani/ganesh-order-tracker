@@ -113,22 +113,22 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         })();
         return (
           <div className="space-y-3">
-            {poUrl && (
-              <button
-                onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `PO - ${order.id}`, loading: false })}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                <Icon name="FileText" size={16} />
-                View PO Document
-              </button>
-            )}
-            <div className="flex items-center gap-3">
+            <div className="flex items-stretch gap-2">
+              {poUrl && (
+                <button
+                  onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `PO - ${order.id}`, loading: false })}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                >
+                  <Icon name="FileText" size={15} />
+                  View PO
+                </button>
+              )}
               <button
                 onClick={previewPOasPDF}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
               >
-                <Icon name="FileText" size={16} />
-                {poUrl ? 'View Generated PO' : 'View Purchase Order as PDF'}
+                <Icon name="FileText" size={15} />
+                {poUrl ? 'Generated PO' : 'View as PDF'}
               </button>
               <button
                 onClick={() => {
@@ -143,9 +143,9 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                   })));
                   setAmendModal(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
               >
-                <Icon name="Edit" size={16} />
+                <Icon name="Edit" size={15} />
                 Amend PO
               </button>
             </div>
@@ -192,23 +192,23 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 <span className="font-bold text-indigo-800">USD {order.totalValue}</span>
               </div>
             )}
-            <div className="flex items-center gap-3">
+            <div className="flex items-stretch gap-2">
               {piUrl && (
                 <button
                   onClick={() => setPdfModal({ open: true, url: piUrl.url, title: `PI - ${order.piNumber || order.id}`, loading: false })}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
                 >
-                  <Icon name="FileText" size={16} />
-                  View PI Document
+                  <Icon name="FileText" size={15} />
+                  View PI
                 </button>
               )}
               {lineItems.length > 0 && (
                 <button
                   onClick={previewPIasPDF}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium shadow-sm"
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
                 >
-                  <Icon name="FilePlus" size={16} />
-                  Generate Proforma Invoice
+                  <Icon name="FilePlus" size={15} />
+                  Generate PI
                 </button>
               )}
             </div>
@@ -497,7 +497,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         hasCases ? `<td style="${tdStyleR}">${item.cases || '-'}</td>` : '',
         `<td style="${tdStyleR}">${item.kilos || '-'}</td>`,
         `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>`,
-        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
+        `<td style="${tdStyleR};font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
       ].filter(Boolean).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
@@ -691,7 +691,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         hasCases ? `<td style="${tdStyleR}">${item.cases || '-'}</td>` : '',
         `<td style="${tdStyleR}">${item.kilos || '-'}</td>`,
         `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>`,
-        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
+        `<td style="${tdStyleR};font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
       ].filter(Boolean).join('');
       return `<tr>${cells}</tr>`;
     }).join('');

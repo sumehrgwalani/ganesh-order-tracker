@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Order, HistoryEntry, LineItem } from '../types'
+import type { Order, HistoryEntry, OrderLineItem } from '../types'
 import { ORDER_STAGES } from '../data/constants'
 
 // DB row shapes returned by Supabase queries
@@ -299,7 +299,7 @@ export function useOrders(orgId: string | null) {
           .eq('order_id', orderRow.id)
 
         // Insert new line items
-        const lineItemRows = updates.lineItems.map((item: LineItem, idx: number) => ({
+        const lineItemRows = updates.lineItems.map((item: OrderLineItem, idx: number) => ({
           order_id: orderRow.id,
           product: String(item.product || ''),
           brand: String(item.brand || ''),

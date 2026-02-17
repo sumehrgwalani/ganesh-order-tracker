@@ -67,6 +67,21 @@ export const getAttachmentMeta = (att: AttachmentEntry): Record<string, any> | u
   return typeof normalized === 'object' ? normalized.meta : undefined;
 };
 
+export interface OrderLineItem {
+  product: string;
+  brand: string;
+  freezing: string;
+  size: string;
+  glaze: string;
+  glazeMarked: string;
+  packing: string;
+  cases: number;
+  kilos: number;
+  pricePerKg: number;
+  currency: string;
+  total: number;
+}
+
 export interface Order {
   id: string;
   poNumber: string;
@@ -84,7 +99,7 @@ export interface Order {
   awbNumber?: string | null;
   totalValue?: string;
   totalKilos?: number;
-  lineItems?: Record<string, string | number | boolean>[];
+  lineItems?: OrderLineItem[];
   metadata?: Record<string, any>;
   history: HistoryEntry[];
 }

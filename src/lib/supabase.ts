@@ -4,7 +4,11 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing Supabase credentials — running in offline mode')
+  const msg = 'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables. Database features will not work.'
+  console.error(msg)
+  if (typeof document !== 'undefined') {
+    document.title = '⚠️ Supabase not configured'
+  }
 }
 
 export const supabase = createClient(
