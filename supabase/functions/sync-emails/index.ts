@@ -1487,7 +1487,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: bestEmail && maxLen >= 100 ? 'email' : 'vision' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: maxLen >= 100 ? 'email' : 'vision' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
