@@ -191,9 +191,14 @@ Return this JSON structure:
 Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
+- "250c/s" or "250 c/s" means 250 cases
 - Leave "cases" and "total" as empty strings
 - If you cannot find line item details, return empty lineItems array
-- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, glaseo=Glaze, bolsa=Bag, granel=Bulk`
+- The email may be in Spanish. Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp/Prawn, glaseo=Glaze, bolsa=Bag, granel=Bulk, caja=Case, contenedor=Container, oferta=Offer
+- Spanish size format "U/1" = "Under 1kg", "1/2" = "1-2kg", "2/4" = "2-4kg", "5/7" = "5-7kg", "20/40" = "20-40 pieces/kg"
+- Price format "7.30$/kg" or "7.30 USD/kg" — extract as pricePerKg
+- If the email is a price negotiation, offer, or counter-offer with product sizes and prices, extract those as line items
+- If amounts are in cases (c/s), convert: cases * approximate_kg_per_case. If you cannot determine kilos, set kilos to 0`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1289,11 +1294,30 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
     if (syncMode === 'bulk-extract') {
       // Accepts order_po (e.g. "GI/PO/25-26/3044") to extract one order
       // Or no order_po to process all orders missing line items (batched)
+      // retry=true to retry previously failed orders
       const targetPO = reqBody.order_po as string | undefined
+      const retryFailed = reqBody.retry === true
 
       let ordersToProcess: any[] = []
 
-      if (targetPO) {
+      if (retryFailed) {
+        // Retry mode: clear extraction_attempted flag and re-process
+        const { data } = await supabase
+          .from('orders')
+          .select('id, order_id, company, supplier, metadata, order_line_items(id)')
+          .eq('organization_id', organization_id)
+        ordersToProcess = (data || []).filter((o: any) =>
+          (!o.order_line_items || o.order_line_items.length === 0)
+        )
+        // Clear the flag so they get processed fresh
+        for (const o of ordersToProcess) {
+          if (o.metadata?.extraction_attempted) {
+            const newMeta = { ...o.metadata }
+            delete newMeta.extraction_attempted
+            await supabase.from('orders').update({ metadata: newMeta }).eq('id', o.id)
+          }
+        }
+      } else if (targetPO) {
         // Single order mode
         const { data: order } = await supabase
           .from('orders')
@@ -1337,27 +1361,39 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
       for (const order of batch) {
         try {
-          // Step 1: Try email body extraction first
+          // Step 1: Try email body extraction first — prioritize PO/PI emails
           const { data: emails } = await supabase
             .from('synced_emails')
             .select('id, gmail_id, subject, body_text, from_name, from_email, has_attachment, detected_stage')
             .eq('matched_order_id', order.order_id)
             .eq('organization_id', organization_id)
             .not('body_text', 'is', null)
-            .limit(10)
+            .limit(20)
 
-          let bestEmail = null
-          let maxLen = 0
-          for (const e of (emails || [])) {
-            const len = (e.body_text || '').length
-            if (len > maxLen) { maxLen = len; bestEmail = e }
-          }
+          // Score emails: PO stage (1) = highest, PI stage (2) = high, subject keywords = medium, longest = fallback
+          const scored = (emails || []).map((e: any) => {
+            let score = (e.body_text || '').length / 10000 // base: length (0-0.5)
+            const subj = (e.subject || '').toLowerCase()
+            if (e.detected_stage === 1) score += 100 // PO stage
+            if (e.detected_stage === 2) score += 80  // PI stage
+            if (subj.includes('purchase order') || subj.includes('new po') || subj.includes('oferta')) score += 50
+            if (subj.includes('proforma') || subj.includes(' pi ')) score += 40
+            if (subj.includes('payment') || subj.includes('invoice')) score -= 30 // deprioritize payment emails
+            if (subj.includes('artwork') || subj.includes('label')) score -= 20
+            return { email: e, score }
+          }).sort((a: any, b: any) => b.score - a.score)
 
           let extractedData: any = null
+          let maxLen = 0
 
-          // Try email body extraction
-          if (bestEmail && maxLen >= 100) {
-            extractedData = await extractPODataFromEmail(bestEmail, order.company || '', order.supplier || '')
+          // Try top 3 scored emails until we find line items
+          for (const { email: candidate } of scored.slice(0, 3)) {
+            const bodyLen = (candidate.body_text || '').length
+            if (bodyLen < 50) continue
+            if (bodyLen > maxLen) maxLen = bodyLen
+            extractedData = await extractPODataFromEmail(candidate, order.company || '', order.supplier || '')
+            if (extractedData && extractedData.lineItems.length > 0) break
+            extractedData = null
           }
 
           // Step 2: If body extraction failed, try vision on Gmail attachment
