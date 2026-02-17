@@ -324,11 +324,13 @@ Rules:
     })
 
     if (!res.ok) {
-      console.error(`[PO-VISION] AI API error: ${res.status}`)
-      return null
+      const errText = await res.text()
+      console.error(`[PO-VISION] AI API error: ${res.status} ${errText.substring(0, 200)}`)
+      return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `API ${res.status}: ${errText.substring(0, 100)}` }
     }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
+    console.log(`[PO-VISION] Raw response (first 300): ${text.substring(0, 300)}`)
 
     let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     if (!jsonStr.startsWith('{')) {
@@ -1401,6 +1403,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                     visionDebug.mimeType = mimeType
                     extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
                     visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
+                    if (extractedData?._debug) visionDebug.aiDebug = extractedData._debug
                   }
                 }
               } catch (attErr) {
