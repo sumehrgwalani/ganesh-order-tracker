@@ -6,6 +6,7 @@ import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
 import { GILogo } from '../components/Logos';
 import { supabase } from '../lib/supabase';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
+import { parsePackingKg, calculateLineItem, recalculateAllLineItems, calcGrandTotal, calcTotalKilos, calcTotalCases } from '../utils/lineItemCalcs';
 
 interface Props {
   contacts?: ContactsMap;
@@ -483,51 +484,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     .map(([email, c]) => ({ email, ...c }));
 
   // Parse packing to extract kg per carton (e.g., "6x1 kg" = 6, "10 kg Bulk" = 10)
-  const parsePackingKg = (packing: string) => {
-    if (!packing) return null;
-    const packingLower = packing.toLowerCase();
-
-    // Pattern: 6x1 kg, 6X1 kg, 6x1kg, 10x1 = multiplied (6*1=6, 10*1=10)
-    const multiplyMatch = packing.match(/(\d+)\s*[xX]\s*(\d+)\s*(?:kg|kilo)?/i);
-    if (multiplyMatch) {
-      return parseInt(multiplyMatch[1]) * parseInt(multiplyMatch[2]);
-    }
-
-    // Pattern: 10 kg Bulk, 6 kilo = direct kg
-    const directMatch = packing.match(/(\d+)\s*(?:kg|kilo)/i);
-    if (directMatch) {
-      return parseInt(directMatch[1]);
-    }
-
-    return null;
-  };
-
-  // Calculate cases, adjusted kilos, and total
-  const calculateLineItem = (item: any) => {
-    const inputKilos = parseFloat(item.kilos) || 0;
-    const price = parseFloat(item.pricePerKg) || 0;
-    const kgPerCarton = parsePackingKg(item.packing);
-
-    let cases = item.cases ? parseInt(item.cases as string) : 0;
-    let adjustedKilos = inputKilos;
-
-    // If we have packing info and kilos, calculate cases and adjust kilos
-    if (kgPerCarton && inputKilos > 0) {
-      // Calculate cases (round up to ensure we have enough)
-      cases = Math.ceil(inputKilos / kgPerCarton);
-      // Adjust kilos to match whole cartons
-      adjustedKilos = cases * kgPerCarton;
-    }
-
-    // Calculate total (rounded to 2 decimal places)
-    const total = (adjustedKilos * price).toFixed(2);
-
-    return {
-      cases: cases || '',
-      adjustedKilos: adjustedKilos,
-      total: total
-    };
-  };
+  // parsePackingKg, calculateLineItem, recalculateAllLineItems imported from utils/lineItemCalcs
 
   // Update line item with smart calculations
   const updateLineItem = (index: number, field: string, value: string | number) => {
@@ -559,19 +516,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setLineItems(updated);
   };
 
-  // Recalculate all line items (used after parsing)
-  const recalculateAllLineItems = (items: any[]) => {
-    return items.map(item => {
-      const calculated = calculateLineItem(item);
-      const kgPerCarton = parsePackingKg(item.packing);
-      return {
-        ...item,
-        cases: calculated.cases,
-        kilos: kgPerCarton ? calculated.adjustedKilos : item.kilos,
-        total: calculated.total
-      };
-    });
-  };
+  // recalculateAllLineItems imported from utils/lineItemCalcs
 
   // Add line item
   const addLineItem = () => {
@@ -589,9 +534,9 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   };
 
   // Calculate grand totals
-  const grandTotal = lineItems.reduce((sum, item) => sum + parseFloat((item.total as string) || '0'), 0).toFixed(2);
-  const totalKilos = lineItems.reduce((sum, item) => sum + (parseFloat((item.kilos as string) || '0') || 0), 0);
-  const totalCases = lineItems.reduce((sum, item) => sum + (parseInt((item.cases as string) || '0') || 0), 0);
+  const grandTotal = calcGrandTotal(lineItems);
+  const totalKilos = calcTotalKilos(lineItems);
+  const totalCases = calcTotalCases(lineItems);
 
   // Handle supplier selection - auto-fill payment from previous orders
   const handleSupplierChange = (email: string) => {
