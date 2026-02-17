@@ -144,7 +144,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     payment: '',
     packing: '',
     deliveryDate: '',
-    loteNumber: '',
+    loteNumber: getNextPONumber(),
     shippingMarks: '',
     buyerBank: '',
     notes: '',
@@ -634,6 +634,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       buyerCode: buyerCode,
       buyerBank: buyer?.country || '',
       poNumber: newPONumber,
+      loteNumber: newPONumber,
       destination: autoDestination || poData.destination,
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',
@@ -1594,7 +1595,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
-                  <input type="text" value={poData.poNumber} onChange={(e) => setPOData({...poData, poNumber: e.target.value})} readOnly={isAmendment} className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isAmendment ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
+                  <input type="text" value={poData.poNumber} onChange={(e) => setPOData({...poData, poNumber: e.target.value, loteNumber: e.target.value})} readOnly={isAmendment} className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isAmendment ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
