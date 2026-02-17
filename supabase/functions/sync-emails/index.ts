@@ -1175,6 +1175,121 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
     }
 
     // ============================================================
+    // MODE: BULK-EXTRACT — Extract PO line items for all orders missing them
+    // ============================================================
+    if (syncMode === 'bulk-extract') {
+      // Find all orders with 0 line items
+      const { data: allOrders } = await supabase
+        .from('orders')
+        .select('id, order_id, company, supplier')
+        .eq('organization_id', organization_id)
+
+      if (!allOrders || allOrders.length === 0) {
+        return new Response(JSON.stringify({ mode: 'bulk-extract', message: 'No orders found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // Check which orders have 0 line items
+      const ordersToProcess: any[] = []
+      for (const order of allOrders) {
+        const { count } = await supabase
+          .from('order_line_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', order.id)
+        if ((count || 0) === 0) ordersToProcess.push(order)
+      }
+
+      if (ordersToProcess.length === 0) {
+        return new Response(JSON.stringify({ mode: 'bulk-extract', message: 'All orders already have line items' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const results: any[] = []
+      let extracted = 0
+
+      for (const order of ordersToProcess) {
+        try {
+          // Find the email with the longest body_text matched to this order
+          const { data: emails } = await supabase
+            .from('synced_emails')
+            .select('id, subject, body_text, from_name, from_email')
+            .eq('matched_order_id', order.order_id)
+            .eq('organization_id', organization_id)
+            .not('body_text', 'is', null)
+            .order('body_text', { ascending: false })
+            .limit(5)
+
+          // Pick the email with the longest body
+          let bestEmail = null
+          let maxLen = 0
+          for (const e of (emails || [])) {
+            const len = (e.body_text || '').length
+            if (len > maxLen) { maxLen = len; bestEmail = e }
+          }
+
+          if (!bestEmail || maxLen < 100) {
+            results.push({ order: order.order_id, status: 'skip', reason: 'no email with enough body text', maxLen })
+            continue
+          }
+
+          // Extract PO data
+          const extractedData = await extractPODataFromEmail(bestEmail, order.company || '', order.supplier || '')
+
+          if (!extractedData || extractedData.lineItems.length === 0) {
+            results.push({ order: order.order_id, status: 'skip', reason: 'no line items extracted', bodyLen: maxLen })
+            continue
+          }
+
+          // Insert line items
+          const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
+            order_id: order.id,
+            product: item.product,
+            brand: item.brand || '',
+            size: item.size || '',
+            glaze: item.glaze || '',
+            glaze_marked: item.glazeMarked || '',
+            packing: item.packing || '',
+            freezing: item.freezing || 'IQF',
+            cases: 0,
+            kilos: item.kilos || 0,
+            price_per_kg: item.pricePerKg || 0,
+            currency: item.currency || 'USD',
+            total: (item.kilos || 0) * (item.pricePerKg || 0),
+            sort_order: idx,
+          }))
+
+          const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
+          if (insertErr) {
+            results.push({ order: order.order_id, status: 'error', reason: String(insertErr.message) })
+            continue
+          }
+
+          // Update order metadata
+          const updates: any = {}
+          if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
+          if (extractedData.payment) updates.payment_terms = extractedData.payment
+          if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
+          if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
+          if (extractedData.lineItems.length > 0) {
+            updates.product = extractedData.lineItems.map((li: any) => li.product).filter(Boolean).join(', ')
+          }
+          if (Object.keys(updates).length > 0) {
+            await supabase.from('orders').update(updates).eq('id', order.id)
+          }
+
+          extracted++
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue })
+        } catch (err) {
+          results.push({ order: order.order_id, status: 'error', reason: String(err) })
+        }
+        // Rate limit AI calls
+        await delay(500)
+      }
+
+      return new Response(JSON.stringify({
+        mode: 'bulk-extract', totalOrders: allOrders.length, ordersWithoutLineItems: ordersToProcess.length, extracted, results
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ============================================================
     // MODE: REPROCESS — Re-download PI/PO attachments for matched emails
     // ============================================================
     if (syncMode === 'reprocess') {
