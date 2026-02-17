@@ -1356,33 +1356,47 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           }
 
           // Step 2: If body extraction failed, try vision on Gmail attachment
+          let visionDebug: any = { attempted: false }
           if ((!extractedData || extractedData.lineItems.length === 0) && gmailAccessToken) {
             // Find an email with attachment (prefer stage 1 = PO)
             const attachEmail = (emails || []).find((e: any) => e.has_attachment && e.detected_stage === 1)
               || (emails || []).find((e: any) => e.has_attachment)
+            visionDebug.hasAttachEmail = !!attachEmail
+            visionDebug.attachGmailId = attachEmail?.gmail_id
             if (attachEmail?.gmail_id) {
               try {
+                visionDebug.attempted = true
                 const parts = await getAttachmentPartsForMessage(gmailAccessToken, attachEmail.gmail_id)
+                visionDebug.partsCount = parts.length
+                visionDebug.partTypes = parts.map((p: any) => ({ name: p.filename, mime: p.mimeType, size: p.body?.size }))
                 const poPart = pickBestAttachment(parts, scorePOAttachment, attachEmail.subject || '')
+                visionDebug.bestPart = poPart ? { name: poPart.filename, mime: poPart.mimeType, hasId: !!poPart.attachmentId } : null
                 if (poPart && poPart.attachmentId) {
                   const fileData = await downloadAttachment(gmailAccessToken, attachEmail.gmail_id, poPart.attachmentId)
+                  visionDebug.downloadedSize = fileData ? fileData.byteLength : 0
                   if (fileData) {
                     const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileData)))
                     const mimeType = poPart.mimeType || 'image/jpeg'
-                    // Only use vision for images, not PDFs (vision doesn't support PDF)
+                    visionDebug.mimeType = mimeType
+                    visionDebug.isImage = mimeType.startsWith('image/')
                     if (mimeType.startsWith('image/')) {
                       extractedData = await extractPODataFromImage(base64Data, mimeType, order.company || '', order.supplier || '')
+                      visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
+                    } else if (mimeType === 'application/pdf') {
+                      // For PDFs, convert first page to image via a different approach
+                      // For now, try sending as-is to see if Claude can handle it
+                      visionDebug.skippedPdf = true
                     }
                   }
                 }
               } catch (attErr) {
-                console.log(`Attachment vision failed for ${order.order_id}: ${attErr}`)
+                visionDebug.error = String(attErr)
               }
             }
           }
 
           if (!extractedData || extractedData.lineItems.length === 0) {
-            results.push({ order: order.order_id, status: 'skip', reason: 'no line items found', bodyLen: maxLen, hadGmail: !!gmailAccessToken })
+            results.push({ order: order.order_id, status: 'skip', reason: 'no line items found', bodyLen: maxLen, hadGmail: !!gmailAccessToken, vision: visionDebug })
             continue
           }
 
