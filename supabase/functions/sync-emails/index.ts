@@ -1178,34 +1178,40 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
     // MODE: BULK-EXTRACT — Extract PO line items for all orders missing them
     // ============================================================
     if (syncMode === 'bulk-extract') {
-      // Find all orders with 0 line items
-      const { data: allOrders } = await supabase
-        .from('orders')
-        .select('id, order_id, company, supplier')
-        .eq('organization_id', organization_id)
+      const batchLimit = batch_size || 5
+      // Find all orders with 0 line items using a single query
+      const { data: ordersToProcess } = await supabase
+        .rpc('get_orders_without_line_items', { org_id: organization_id })
 
-      if (!allOrders || allOrders.length === 0) {
-        return new Response(JSON.stringify({ mode: 'bulk-extract', message: 'No orders found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      // Fallback: if RPC doesn't exist, use manual approach
+      let finalOrders = ordersToProcess
+      if (!ordersToProcess) {
+        const { data: allOrders } = await supabase
+          .from('orders')
+          .select('id, order_id, company, supplier')
+          .eq('organization_id', organization_id)
+        if (!allOrders) {
+          return new Response(JSON.stringify({ mode: 'bulk-extract', message: 'No orders found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const missing: any[] = []
+        for (const order of allOrders) {
+          const { count } = await supabase.from('order_line_items').select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+          if ((count || 0) === 0) missing.push(order)
+        }
+        finalOrders = missing
       }
 
-      // Check which orders have 0 line items
-      const ordersToProcess: any[] = []
-      for (const order of allOrders) {
-        const { count } = await supabase
-          .from('order_line_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('order_id', order.id)
-        if ((count || 0) === 0) ordersToProcess.push(order)
-      }
-
-      if (ordersToProcess.length === 0) {
+      if (!finalOrders || finalOrders.length === 0) {
         return new Response(JSON.stringify({ mode: 'bulk-extract', message: 'All orders already have line items' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
+
+      // Only process up to batchLimit orders per call
+      const batch = finalOrders.slice(0, batchLimit)
 
       const results: any[] = []
       let extracted = 0
 
-      for (const order of ordersToProcess) {
+      for (const order of batch) {
         try {
           // Find the email with the longest body_text matched to this order
           const { data: emails } = await supabase
@@ -1285,7 +1291,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       }
 
       return new Response(JSON.stringify({
-        mode: 'bulk-extract', totalOrders: allOrders.length, ordersWithoutLineItems: ordersToProcess.length, extracted, results
+        mode: 'bulk-extract', ordersWithoutLineItems: finalOrders.length, batchProcessed: batch.length, extracted, remaining: finalOrders.length - batch.length, results
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
