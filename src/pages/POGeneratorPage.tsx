@@ -1813,24 +1813,24 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           {/* Right Column - Summary & Actions */}
           <div className="space-y-6">
             {/* Quick Fill Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl shadow-sm border border-blue-200 overflow-hidden">
               <button
                 onClick={() => setShowParser(!showParser)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-blue-100/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
                     <Icon name="Mail" size={18} className="text-white" />
                   </div>
                   <div className="text-left">
-                    <h3 className="font-semibold text-gray-800 text-sm">Quick Fill from Email</h3>
-                    <p className="text-xs text-gray-500">Paste text to auto-extract details</p>
+                    <h3 className="font-semibold text-blue-800 text-sm">Quick Fill from Email</h3>
+                    <p className="text-xs text-blue-600">Paste text to auto-extract details</p>
                   </div>
                 </div>
-                <Icon name="ChevronDown" size={18} className={`text-gray-400 transition-transform ${showParser ? 'rotate-180' : ''}`} />
+                <Icon name="ChevronDown" size={18} className={`text-blue-600 transition-transform ${showParser ? 'rotate-180' : ''}`} />
               </button>
               {showParser && (
-                <div className="px-6 pb-5 space-y-3 border-t border-gray-100">
+                <div className="px-6 pb-5 space-y-3 border-t border-blue-200">
                   <textarea
                     value={rawInput}
                     onChange={(e) => setRawInput(e.target.value)}
