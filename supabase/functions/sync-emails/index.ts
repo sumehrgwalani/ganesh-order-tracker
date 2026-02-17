@@ -1403,8 +1403,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
             const allEmails = (emails || []).filter((e: any) => e.has_attachment)
             visionDebug.emailsWithAttach = allEmails.length
 
-            // Try each email until we find an image attachment that works
-            for (const attachEmail of allEmails) {
+            // Try up to 3 emails until we find a suitable PO scan image
+            for (const attachEmail of allEmails.slice(0, 3)) {
               if (extractedData && extractedData.lineItems.length > 0) break
               visionDebug.attachGmailId = attachEmail.gmail_id
               if (!attachEmail.gmail_id) continue
@@ -1414,15 +1414,22 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                 visionDebug.partsCount = parts.length
                 visionDebug.partTypes = parts.map((p: any) => ({ name: p.filename, mime: p.mimeType, size: p.body?.size }))
 
-                // Prefer image attachments (scanned POs) — look for jpg/jpeg/png first, skip gifs/logos
-                const imagePart = parts.find((p: any) => {
-                  const mime = (p.mimeType || '').toLowerCase()
+                // Prefer scanned PO images: Scan_*.jpg first, then other JPGs, skip inspection photos/logos
+                const isImageType = (m: string) => m === 'image/jpeg' || m === 'image/png'
+                const isSkipImage = (n: string) => n.includes('logo') || n.includes('ean ') || n.startsWith('img (') || n.startsWith('img(') || n.includes('inspection') || n.includes('report')
+                // Best: Scan files (actual PO scans)
+                const scanPart = parts.find((p: any) => {
                   const name = (p.filename || '').toLowerCase()
-                  return (mime === 'image/jpeg' || mime === 'image/png') && !name.includes('logo') && !name.includes('ean ')
+                  return isImageType((p.mimeType || '').toLowerCase()) && (name.startsWith('scan') || name.includes('_scan'))
                 })
-                // Fallback to PDF if no suitable image
+                // Second: any JPEG/PNG that isn't inspection/logo
+                const otherImage = !scanPart && parts.find((p: any) => {
+                  const name = (p.filename || '').toLowerCase()
+                  return isImageType((p.mimeType || '').toLowerCase()) && !isSkipImage(name)
+                })
+                // Fallback: PDF with scan in name
                 const pdfPart = parts.find((p: any) => (p.mimeType || '').toLowerCase() === 'application/pdf' && (p.filename || '').toLowerCase().includes('scan'))
-                const chosenPart = imagePart || pdfPart
+                const chosenPart = scanPart || otherImage || pdfPart
                 visionDebug.chosenPart = chosenPart ? { name: chosenPart.filename, mime: chosenPart.mimeType, hasId: !!chosenPart.attachmentId } : null
 
                 if (chosenPart && chosenPart.attachmentId && (chosenPart.mimeType || '').startsWith('image/')) {
