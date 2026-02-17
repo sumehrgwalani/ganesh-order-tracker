@@ -192,15 +192,26 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 <span className="font-bold text-indigo-800">USD {order.totalValue}</span>
               </div>
             )}
-            {piUrl && (
-              <button
-                onClick={() => setPdfModal({ open: true, url: piUrl.url, title: `PI - ${order.piNumber || order.id}`, loading: false })}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
-              >
-                <Icon name="FileText" size={16} />
-                View PI Document
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {piUrl && (
+                <button
+                  onClick={() => setPdfModal({ open: true, url: piUrl.url, title: `PI - ${order.piNumber || order.id}`, loading: false })}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
+                >
+                  <Icon name="FileText" size={16} />
+                  View PI Document
+                </button>
+              )}
+              {lineItems.length > 0 && (
+                <button
+                  onClick={previewPIasPDF}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium shadow-sm"
+                >
+                  <Icon name="FilePlus" size={16} />
+                  Generate Proforma Invoice
+                </button>
+              )}
+            </div>
             {renderAttachments(2)}
           </div>
         );
@@ -602,6 +613,205 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         </div>
       </div>
     `;
+  };
+
+  // Build Proforma Invoice HTML — adapts the PO template for PI format
+  const buildPIHtml = (): string => {
+    const meta = getPOMeta();
+    const items: any[] = meta?.lineItems || lineItems;
+    const hasBrand = items.some((i: any) => i.brand);
+    const hasFreezing = items.some((i: any) => i.freezing);
+    const hasSize = items.some((i: any) => i.size);
+    const hasGlaze = items.some((i: any) => i.glaze);
+    const hasPacking = items.some((i: any) => i.packing);
+    const hasCases = items.some((i: any) => i.cases);
+
+    const supplierName = meta?.supplier || order.supplier;
+    const supplierAddress = meta?.supplierAddress || '';
+    const supplierCountry = (meta?.supplierCountry || order.from || 'India').toUpperCase();
+    const buyerName = meta?.buyer || order.company;
+    const destination = meta?.destination || order.to || '';
+    const deliveryTerms = meta?.deliveryTerms || '';
+    const deliveryDate = meta?.deliveryDate || '';
+    const payment = meta?.payment || '';
+    const grandTotal = meta?.grandTotal || order.totalValue || '';
+    const metaTotalKilos = meta?.totalKilos || order.totalKilos || 0;
+    const metaTotalCases = meta?.totalCases || 0;
+    const piNumber = order.piNumber || 'PENDING';
+    const piDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    // Build product description
+    const seen = new Set<string>();
+    const productDescParts: string[] = [];
+    for (const item of items.filter((i: any) => i.product)) {
+      const key = `${item.product}|${item.freezing || ''}|${item.glaze || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        let desc = String(item.product);
+        if (item.freezing && !desc.toLowerCase().includes(String(item.freezing).toLowerCase())) desc += ` ${item.freezing}`;
+        if (item.glaze && item.glazeMarked) desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
+        else if (item.glaze) desc += ` ${item.glaze}`;
+        productDescParts.push(desc);
+      }
+    }
+    const productDesc = productDescParts.join(', ') || order.product;
+
+    // Table styles
+    const thStyle = 'border:1px solid #d1d5db;padding:4px 6px;text-align:left;font-size:10px;white-space:nowrap;background:#f3f4f6;';
+    const thStyleWrap = 'border:1px solid #d1d5db;padding:4px 6px;text-align:left;font-size:10px;background:#f3f4f6;';
+    const thStyleR = 'border:1px solid #d1d5db;padding:4px 6px;text-align:right;font-size:10px;white-space:nowrap;background:#f3f4f6;';
+    const tdStyle = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;white-space:nowrap;';
+    const tdStyleWrap = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;';
+    const tdStyleR = 'border:1px solid #d1d5db;padding:4px 6px;font-size:10px;text-align:right;white-space:nowrap;';
+
+    const headerCells = [
+      `<th style="${thStyle}">Product</th>`,
+      hasBrand ? `<th style="${thStyle}">Brand</th>` : '',
+      hasFreezing ? `<th style="${thStyle}">Freezing</th>` : '',
+      hasSize ? `<th style="${thStyle}">Size</th>` : '',
+      hasGlaze ? `<th style="${thStyleWrap}">Glaze</th>` : '',
+      hasPacking ? `<th style="${thStyle}">Packing</th>` : '',
+      hasCases ? `<th style="${thStyleR}">Cases</th>` : '',
+      `<th style="${thStyleR}">Kilos</th>`,
+      `<th style="${thStyleR}">Price/Kg<br><span style="font-size:8px;font-weight:normal;">${deliveryTerms} ${destination || '___'}</span></th>`,
+      `<th style="${thStyleR}">${items.some((i: any) => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}</th>`,
+    ].filter(Boolean).join('');
+
+    const totalColSpan = 1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0);
+
+    const bodyRows = items.filter((i: any) => i.product).map((item: any) => {
+      const cur = (!item.currency || item.currency === 'USD') ? '$' : item.currency + ' ';
+      const cells = [
+        `<td style="${tdStyle}">${item.product || '-'}</td>`,
+        hasBrand ? `<td style="${tdStyle}">${item.brand || '-'}</td>` : '',
+        hasFreezing ? `<td style="${tdStyle}">${item.freezing || '-'}</td>` : '',
+        hasSize ? `<td style="${tdStyle}">${item.size || '-'}</td>` : '',
+        hasGlaze ? `<td style="${tdStyleWrap}">${item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>` : '',
+        hasPacking ? `<td style="${tdStyle}">${item.packing || '-'}</td>` : '',
+        hasCases ? `<td style="${tdStyleR}">${item.cases || '-'}</td>` : '',
+        `<td style="${tdStyleR}">${item.kilos || '-'}</td>`,
+        `<td style="${tdStyleR}">${item.pricePerKg ? `${cur}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>`,
+        `<td style="${tdStyleR}font-weight:600;">${Number(item.total) > 0 ? `${cur}${Number(item.total).toFixed(2)}` : '-'}</td>`,
+      ].filter(Boolean).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const totalRow = `<tr style="background:#f9fafb;font-weight:700;">
+      <td style="${tdStyle}" colspan="${totalColSpan}">Total</td>
+      ${hasCases ? `<td style="${tdStyleR}">${metaTotalCases}</td>` : ''}
+      <td style="${tdStyleR}">${metaTotalKilos}</td>
+      <td style="${tdStyleR}"></td>
+      <td style="${tdStyleR}">U.S. $${Number(grandTotal).toFixed(2)}</td>
+    </tr>`;
+
+    // Signature
+    let signatureImg = '';
+    try {
+      const sig = localStorage.getItem('gi_signature');
+      if (sig) signatureImg = `<div style="margin-bottom:8px;"><img src="${sig}" style="height:60px;max-width:200px;object-fit:contain;" /></div>`;
+    } catch { /* ignore */ }
+
+    return `
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">
+          <div>
+            <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
+            <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
+            <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+          </div>
+          <img src="${GI_LOGO_URL}" alt="Ganesh International" style="width:60px;height:60px;object-fit:contain;" crossorigin="anonymous" />
+        </div>
+
+        <!-- Title -->
+        <div style="text-align:center;margin-bottom:10px;">
+          <h3 style="font-size:14px;font-weight:700;color:#1f2937;margin:0;text-decoration:underline;">PROFORMA INVOICE</h3>
+        </div>
+
+        <!-- PI Number, Date, Against PO -->
+        <table style="width:100%;margin-bottom:8px;"><tr>
+          <td><strong>Proforma Invoice No:</strong> <span style="font-weight:700;">${piNumber}</span></td>
+          <td style="text-align:right;"><strong>Date:</strong> ${piDate}</td>
+        </tr><tr>
+          <td><strong>Against Purchase Order:</strong> ${order.id}</td>
+          <td></td>
+        </tr></table>
+
+        <!-- Supplier (Exporter) -->
+        <div style="margin-bottom:6px;line-height:1.3;">
+          <p style="color:#6b7280;margin:0;">Exporter:</p>
+          <p style="font-weight:700;margin:1px 0;">${supplierName || '[EXPORTER NAME]'}</p>
+          ${supplierAddress ? `<p style="margin:0;color:#4b5563;">${supplierAddress}</p>` : ''}
+          <p style="font-weight:500;margin:0;color:#4b5563;">${supplierCountry}</p>
+        </div>
+
+        <!-- Buyer (Importer) -->
+        <div style="margin-bottom:8px;line-height:1.3;">
+          <p style="color:#6b7280;margin:0;">Importer:</p>
+          <p style="font-weight:700;margin:1px 0;">M/s. ${buyerName}</p>
+          ${destination ? `<p style="margin:0;color:#4b5563;">${destination.toUpperCase()}</p>` : ''}
+        </div>
+
+        <!-- Greeting -->
+        <div style="margin-bottom:8px;line-height:1.35;">
+          <p style="margin:0;">Dear Sirs,</p>
+          <p style="margin:2px 0 0;">We are pleased to issue our Proforma Invoice for the shipment of <strong>${productDesc}</strong> as per the following terms &amp; conditions.</p>
+        </div>
+
+        <!-- Product Table -->
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10px;">
+          <thead><tr style="background:#f3f4f6;">${headerCells}</tr></thead>
+          <tbody>${bodyRows}${totalRow}</tbody>
+        </table>
+
+        <!-- Terms -->
+        <div style="line-height:1.35;margin-bottom:8px;">
+          <p style="margin:0;"><strong>Total Value:</strong> U.S. $${Number(grandTotal).toFixed(2)}</p>
+          ${deliveryTerms || destination ? `<p style="margin:0;"><strong>Delivery Terms:</strong> ${deliveryTerms} ${destination}</p>` : ''}
+          ${deliveryDate ? `<p style="margin:0;"><strong>Shipment Date:</strong> ${deliveryDate}</p>` : ''}
+          ${payment ? `<p style="margin:0;"><strong>Payment:</strong> ${payment}</p>` : ''}
+          <p style="margin:0;"><strong>Variation:</strong> +/- 5% in Quantity &amp; Value</p>
+        </div>
+
+        <!-- Closing -->
+        <div style="color:#374151;margin-bottom:4px;font-size:10.5px;line-height:1.3;">
+          <p style="margin:0;">Hope you find the above in order.</p>
+          <p style="margin:4px 0 0;">Thanking You,</p>
+        </div>
+
+        <!-- Signature -->
+        <div style="margin-top:6px;page-break-inside:avoid;">
+          ${signatureImg}
+          <p style="font-weight:700;margin:0;color:#1f2937;font-size:11px;">Sumehr Rajnish Gwalani</p>
+          <p style="color:#4b5563;margin:1px 0 0;font-size:11px;">GANESH INTERNATIONAL</p>
+          <div style="margin-top:2px;display:inline-block;padding:2px 6px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:9px;">&#10003; Digitally Signed &amp; Approved</div>
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top:8px;padding-top:4px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;">
+          <p style="margin:0;">This is a computer generated Proforma Invoice.</p>
+        </div>
+      </div>
+    `;
+  };
+
+  // Generate PI PDF and show in modal
+  const previewPIasPDF = async () => {
+    setPdfModal({ open: true, url: '', title: `Proforma Invoice - ${order.piNumber || order.id}`, loading: true });
+    try {
+      const html = buildPIHtml();
+      const blob = await (html2pdf() as any).set({
+        margin: [4, 5, 4, 5],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      }).from(html, 'string').output('blob');
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      setPdfModal(prev => ({ ...prev, url, loading: false }));
+    } catch {
+      setPdfModal(prev => ({ ...prev, loading: false }));
+    }
   };
 
   // Show stored PDF in modal — loads directly from Supabase Storage
