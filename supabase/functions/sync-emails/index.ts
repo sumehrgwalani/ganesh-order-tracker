@@ -1460,7 +1460,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
 
           visionDebug.emailsWithAttach = scored.length
 
-          const skipClassify = body.skip_classify === true
+          const skipClassify = reqBody.skip_classify === true
 
           // Try up to 2 emails, looking for PO scan attachments
           for (const { email: attachEmail } of scored.slice(0, 2)) {
