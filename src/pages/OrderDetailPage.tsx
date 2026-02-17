@@ -836,12 +836,9 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       {/* Order Summary Card */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Order Summary</h2>
-        <div className="grid grid-cols-4 gap-6">
-          <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Product</p>
-            <p className="font-medium text-gray-800">{order.product}</p>
-            <p className="text-sm text-gray-500">{order.specs}</p>
-          </div>
+
+        {/* Parties & Route Row */}
+        <div className="grid grid-cols-3 gap-6 mb-6">
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</p>
             <p className="font-medium text-gray-800">{order.company}</p>
@@ -858,6 +855,69 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             <p className="text-sm text-gray-500">{order.date}</p>
           </div>
         </div>
+
+        {/* Line Items Table */}
+        {lineItems.length > 0 ? (
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Product</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Glaze</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Packing</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Cases</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Kilos</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Price/Kg</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lineItems.map((item: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-800">{item.product || '-'}</p>
+                      {(item.brand || item.freezing) && (
+                        <div className="flex gap-1.5 mt-1">
+                          {item.brand && <span className="text-xs px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">{item.brand}</span>}
+                          {item.freezing && <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{item.freezing}</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{item.size || '-'}</td>
+                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      {item.glaze || '-'}
+                      {item.glazeMarked && item.glazeMarked !== item.glaze && (
+                        <span className="block text-xs text-orange-500">Marked: {item.glazeMarked}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{item.packing || '-'}</td>
+                    <td className="px-3 py-3 text-gray-700 text-right font-medium whitespace-nowrap">{item.cases || '-'}</td>
+                    <td className="px-3 py-3 text-gray-700 text-right font-medium whitespace-nowrap">{item.kilos ? Number(item.kilos).toLocaleString() : '-'}</td>
+                    <td className="px-3 py-3 text-gray-700 text-right whitespace-nowrap">{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
+                    <td className="px-4 py-3 text-gray-800 text-right font-semibold whitespace-nowrap">{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.total).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {lineItems.length > 1 && (
+                <tfoot>
+                  <tr className="bg-gray-50 border-t border-gray-200">
+                    <td colSpan={4} className="px-4 py-2.5 text-sm font-semibold text-gray-700">Total</td>
+                    <td className="px-3 py-2.5 text-sm font-semibold text-gray-700 text-right">{lineItems.reduce((sum: number, i: any) => sum + (Number(i.cases) || 0), 0) || '-'}</td>
+                    <td className="px-3 py-2.5 text-sm font-semibold text-gray-700 text-right">{lineItems.reduce((sum: number, i: any) => sum + (Number(i.kilos) || 0), 0).toLocaleString()}</td>
+                    <td className="px-3 py-2.5"></td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-blue-600 text-right">${lineItems.reduce((sum: number, i: any) => sum + (Number(i.total) || 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        ) : (
+          <div className="bg-gray-50 rounded-xl p-4">
+            <p className="font-medium text-gray-800">{order.product}</p>
+            <p className="text-sm text-gray-500 mt-1">{order.specs}</p>
+          </div>
+        )}
 
         {/* Progress Bar */}
         <div className="mt-6 pt-6 border-t border-gray-100">
@@ -899,59 +959,6 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           )}
         </div>
       </div>
-
-      {/* Line Items Table */}
-      {lineItems.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Line Items</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">#</th>
-                  <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Product</th>
-                  {lineItems.some(li => li.brand) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Brand</th>}
-                  {lineItems.some(li => li.size) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Size</th>}
-                  {lineItems.some(li => li.glaze) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Glaze</th>}
-                  {lineItems.some(li => li.packing) && <th className="text-left py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Packing</th>}
-                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Kilos</th>
-                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Price/Kg</th>
-                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lineItems.map((li: any, idx: number) => {
-                  const total = (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0);
-                  return (
-                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2.5 px-3 text-gray-400">{idx + 1}</td>
-                      <td className="py-2.5 px-3 font-medium text-gray-800">{li.product}</td>
-                      {lineItems.some(l => l.brand) && <td className="py-2.5 px-3 text-gray-600">{li.brand || '—'}</td>}
-                      {lineItems.some(l => l.size) && <td className="py-2.5 px-3 text-gray-600">{li.size || '—'}</td>}
-                      {lineItems.some(l => l.glaze) && <td className="py-2.5 px-3 text-gray-600">{li.glaze || '—'}</td>}
-                      {lineItems.some(l => l.packing) && <td className="py-2.5 px-3 text-gray-600">{li.packing || '—'}</td>}
-                      <td className="py-2.5 px-3 text-right text-gray-800">{Number(li.kilos).toLocaleString()}</td>
-                      <td className="py-2.5 px-3 text-right text-gray-800">${Number(li.pricePerKg).toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-right font-medium text-gray-800">${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {/* Totals bar */}
-          <div className="mt-4 p-4 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl text-white flex items-center justify-between">
-            <div className="flex gap-6">
-              <div><span className="text-blue-200 text-xs uppercase">Cases</span><p className="font-semibold">{lineItems.reduce((s: number, li: any) => s + (parseInt(li.cases) || 0), 0).toLocaleString()}</p></div>
-              <div><span className="text-blue-200 text-xs uppercase">Kilos</span><p className="font-semibold">{lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0), 0).toLocaleString()}</p></div>
-            </div>
-            <div className="text-right">
-              <span className="text-blue-200 text-xs uppercase">Grand Total</span>
-              <p className="text-xl font-bold">${lineItems.reduce((s: number, li: any) => s + (Number(li.kilos) || 0) * (Number(li.pricePerKg) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Documents Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
