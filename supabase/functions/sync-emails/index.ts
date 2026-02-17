@@ -468,9 +468,9 @@ async function handlePOAttachment(
         console.log(`[PO] Trying attachment: ${candidate.filename} (score: ${scorePOAttachment(candidate.filename, email.subject || '')})`)
         const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
         if (!result) continue
-        // Accept if classified as PO, PI (close enough for a PO email), or other (ambiguous) — reject artwork/shipping/certificate
-        if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
-          console.log(`[PO] Skipping ${candidate.filename} — AI classified as "${result.classification}"`)
+        // Only accept documents classified as PO or ambiguous (other) — reject everything else
+        if (result.classification !== 'po' && result.classification !== 'other') {
+          console.log(`[PO] Skipping ${candidate.filename} — AI classified as "${result.classification}" (not a PO)`)
           continue
         }
         console.log(`[PO] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
@@ -598,9 +598,9 @@ async function handlePIAttachment(
       console.log(`[PI] Trying attachment: ${candidate.filename} (score: ${scorePIAttachment(candidate.filename, email.subject || '')})`)
       const result = await downloadAndClassify(accessToken, email.gmail_id, candidate)
       if (!result) continue
-      // Accept if classified as PI, PO (close enough for business doc), or other — reject artwork/shipping/certificate
-      if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
-        console.log(`[PI] Skipping ${candidate.filename} — AI classified as "${result.classification}"`)
+      // Only accept documents classified as PI or ambiguous (other) — reject everything else
+      if (result.classification !== 'pi' && result.classification !== 'other') {
+        console.log(`[PI] Skipping ${candidate.filename} — AI classified as "${result.classification}" (not a PI)`)
         continue
       }
       console.log(`[PI] Accepted ${candidate.filename} — AI classified as "${result.classification}"`)
@@ -1523,9 +1523,9 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
                 visionDebug.downloadedSize = result.fileData.byteLength
                 visionDebug.classification = result.classification
 
-                // Skip artwork, shipping docs, certificates
-                if (result.classification === 'artwork' || result.classification === 'shipping' || result.classification === 'certificate') {
-                  console.log(`[BULK] Skipping ${chosenPart.filename} — AI classified as "${result.classification}"`)
+                // Only accept PO documents or ambiguous — reject everything else
+                if (result.classification !== 'po' && result.classification !== 'other') {
+                  console.log(`[BULK] Skipping ${chosenPart.filename} — AI classified as "${result.classification}" (not a PO)`)
                   continue
                 }
 
