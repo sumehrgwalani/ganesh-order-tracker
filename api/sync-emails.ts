@@ -405,10 +405,47 @@ Rules:
     const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
     const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
 
-    // Log all non-lineItems fields from parsed response for debugging
-    const { lineItems: _li, ...otherFields } = parsed
-    console.log(`[PO-VISION] Non-lineItem fields: ${JSON.stringify(otherFields)}`)
-    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), commission: String(parsed.commission || ''), destination: String(parsed.destination || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100, _parsedFields: otherFields }
+    let commission = String(parsed.commission || '')
+    const deliveryTerms = String(parsed.deliveryTerms || '')
+    const payment = String(parsed.payment || '')
+    const destination = String(parsed.destination || '')
+
+    // If commission is empty, do a focused second-pass extraction
+    if (!commission) {
+      try {
+        console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
+        const commissionPrompt = `Look at this document image carefully. Find the field labeled "Commission" or "Commission:" and tell me EXACTLY what text appears next to it. Return ONLY the commission text value, nothing else. If you cannot find a Commission field, return the word NONE.`
+        const commRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 200,
+            messages: [{
+              role: 'user',
+              content: [contentBlock, { type: 'text', text: commissionPrompt }]
+            }],
+          }),
+        })
+        if (commRes.ok) {
+          const commData = await commRes.json()
+          const commText = (commData.content?.[0]?.text || '').trim()
+          console.log(`[PO-VISION] Second-pass commission result: "${commText}"`)
+          if (commText && commText !== 'NONE' && commText.length < 200) {
+            commission = commText
+          }
+        }
+      } catch (err2) {
+        console.error('[PO-VISION] Second-pass commission extraction failed:', err2)
+      }
+    }
+
+    console.log(`[PO-VISION] Final fields: commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
+    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -1790,7 +1827,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment', _parsedFields: extractedData._parsedFields || {} })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
