@@ -667,12 +667,6 @@ async function processEmailAttachments(
       // Now attempt line item extraction (separate from PDF linking)
       // skipExtraction=true used by reprocess mode to stay under worker limit
       if (!skipExtraction) {
-      // Always extract from PO — if line items already exist, replace them (handles revised POs)
-      const { count: existingLineItems } = await supabase
-        .from('order_line_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('order_id', orderUuid)
-
       {
         let extractedData: any = null
         if (poAttachment.mimeType.startsWith('image/')) {
@@ -683,11 +677,8 @@ async function processEmailAttachments(
         }
 
         if (extractedData && extractedData.lineItems.length > 0) {
-          // If line items already exist, delete old ones first (revised PO replaces original)
-          if (existingLineItems && existingLineItems > 0) {
-            console.log(`[PROCESS] Replacing ${existingLineItems} existing line items with revised PO data`)
-            await supabase.from('order_line_items').delete().eq('order_id', orderUuid)
-          }
+          // Always delete existing line items first to prevent duplicates
+          await supabase.from('order_line_items').delete().eq('order_id', orderUuid)
 
           const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
             order_id: orderUuid, product: item.product, brand: item.brand || '',
@@ -723,7 +714,7 @@ async function processEmailAttachments(
             const entry = JSON.stringify({ name: poAttachment.filename, meta: richMeta })
             await supabase.from('order_history').update({ attachments: [entry] }).eq('id', stage1History[0].id)
           }
-          console.log(`[PROCESS] Extracted ${extractedData.lineItems.length} line items from PO${existingLineItems && existingLineItems > 0 ? ' (replaced existing)' : ''}`)
+          console.log(`[PROCESS] Extracted ${extractedData.lineItems.length} line items from PO (replaced any existing)`)
         }
       }
       } else {

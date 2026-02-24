@@ -118,10 +118,10 @@ export function useOrders(orgId: string | null) {
             currency: li.currency || 'USD',
             total: li.total || 0,
           }))
-        // Deduplicate line items (same product+size+glaze+packing = duplicate)
+        // Deduplicate line items (same numeric values = duplicate from multiple extractions)
         const seen = new Set<string>()
         return sorted.filter(li => {
-          const key = `${li.product}|${li.size}|${li.glaze}|${li.packing}|${li.kilos}|${li.pricePerKg}`
+          const key = `${li.cases}|${li.kilos}|${li.pricePerKg}|${li.total}`
           if (seen.has(key)) return false
           seen.add(key)
           return true
