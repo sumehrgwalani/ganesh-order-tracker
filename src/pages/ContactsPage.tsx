@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import ContactModal from '../components/ContactModal';
@@ -54,7 +54,8 @@ const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
 function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'company' | 'list'>('company');

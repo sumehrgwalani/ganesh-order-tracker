@@ -651,12 +651,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         <div className="grid grid-cols-3 gap-6 mb-6">
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</p>
-            <p className="font-medium text-gray-800">{order.company}</p>
+            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => navigate(`/contacts?search=${encodeURIComponent(order.company)}`)}>{order.company}</p>
             {order.brand && <span className="inline-block text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded mt-1">{order.brand}</span>}
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier</p>
-            <p className="font-medium text-gray-800">{order.supplier}</p>
+            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => navigate(`/contacts?search=${encodeURIComponent(order.supplier)}`)}>{order.supplier}</p>
             <p className="text-sm text-gray-500">{order.from}</p>
           </div>
           <div>
