@@ -405,7 +405,8 @@ Rules:
     const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
     const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
 
-    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), commission: String(parsed.commission || ''), destination: String(parsed.destination || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
+    console.log(`[PO-VISION] Parsed fields: commission="${parsed.commission}", delivery="${parsed.deliveryTerms}", payment="${parsed.payment}", dest="${parsed.destination}"`)
+    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), commission: String(parsed.commission || ''), destination: String(parsed.destination || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100, _rawResponse: text.substring(0, 500) }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -1787,7 +1788,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment', _rawAI: extractedData._rawResponse || '' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
