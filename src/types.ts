@@ -11,6 +11,7 @@ export interface Contact {
   notes: string;
   country: string;
   default_brand: string;
+  default_packing: string;
 }
 
 export interface ContactFormData {
@@ -99,6 +100,9 @@ export interface Order {
   awbNumber?: string | null;
   totalValue?: string;
   totalKilos?: number;
+  delivery_terms?: string;
+  payment_terms?: string;
+  commission?: string;
   lineItems?: OrderLineItem[];
   metadata?: Record<string, any>;
   history: HistoryEntry[];

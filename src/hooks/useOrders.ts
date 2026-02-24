@@ -22,6 +22,7 @@ interface DbOrderRow {
   from_location?: string; to_location?: string; order_date?: string;
   current_stage: number; supplier: string; artwork_status?: string;
   awb_number?: string; total_value?: string; total_kilos?: number;
+  delivery_terms?: string; payment_terms?: string; commission?: string;
   metadata?: Record<string, unknown>; order_line_items?: DbLineItem[];
   order_history?: DbHistoryRow[];
 }
@@ -96,6 +97,9 @@ export function useOrders(orgId: string | null) {
       awbNumber: row.awb_number || undefined,
       totalValue: row.total_value || undefined,
       totalKilos: row.total_kilos ? Number(row.total_kilos) : undefined,
+      delivery_terms: row.delivery_terms || '',
+      payment_terms: row.payment_terms || '',
+      commission: row.commission || '',
       metadata: row.metadata || undefined,
       lineItems: (row.order_line_items || [])
         .sort((a: DbLineItem, b: DbLineItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -351,35 +355,21 @@ export function useOrders(orgId: string | null) {
 
   // ── Soft Delete (archive) ─────────────────────────────────────────────
   const deleteOrder = async (orderId: string) => {
-    if (!orgId) return
-    try {
-      // Try soft delete first (set deleted_at)
-      const { error: softDeleteError } = await supabase
-        .from('orders')
-        .update({ deleted_at: new Date().toISOString(), status: 'archived' })
-        .eq('organization_id', orgId)
-        .eq('order_id', orderId)
+    if (!orgId) throw new Error('No organization selected')
+    const { error: deleteError } = await supabase
+      .from('orders')
+      .delete()
+      .eq('organization_id', orgId)
+      .eq('order_id', orderId)
 
-      if (softDeleteError) {
-        // If deleted_at column doesn't exist yet, fall back to hard delete
-        if (softDeleteError.message?.includes('deleted_at')) {
-          const { error: hardDeleteError } = await supabase
-            .from('orders')
-            .delete()
-            .eq('organization_id', orgId)
-            .eq('order_id', orderId)
-          if (hardDeleteError) throw hardDeleteError
-        } else {
-          throw softDeleteError
-        }
-      }
-
-      // Remove from local state immediately for responsive UI
-      setOrders(prev => prev.filter(o => o.id !== orderId))
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      throw err
+    if (deleteError) {
+      const msg = deleteError.message || JSON.stringify(deleteError)
+      setError(msg)
+      throw new Error(msg)
     }
+
+    // Remove from local state immediately for responsive UI
+    setOrders(prev => prev.filter(o => o.id !== orderId))
   }
 
   // ── Restore Order (undo soft delete) ──────────────────────────────────
