@@ -297,6 +297,13 @@ Extract structured purchase order data from this scanned PO document image.
 
 CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences.
 
+IMPORTANT - BEFORE extracting line items, first scan the ENTIRE document for these fields that typically appear OUTSIDE the product table:
+1. Commission - usually labeled "Commission:" near Delivery/Payment section. Examples: "10 Cents per Kg + GST", "2%", "$0.10/kg", "USD 0.05 per kg"
+2. Delivery Terms - e.g. "CFR Valencia", "CIF Rotterdam", "FOB Kochi"
+3. Payment Terms - e.g. "LC at 75 Days", "Sight DP", "TT Payment"
+4. Destination - the port/city name from delivery terms or a separate field
+5. Delivery/Shipment date - e.g. "Before 10/03/2026"
+
 Known context:
 - Buyer: ${orderCompany || 'Unknown'}
 - Supplier: ${orderSupplier || 'Unknown'}
@@ -319,10 +326,10 @@ Return this JSON structure:
       "total": 49912.20
     }
   ],
-  "deliveryTerms": "CFR",
-  "payment": "string - payment terms or empty string",
-  "destination": "string - delivery destination or empty string",
-  "commission": "string - commission details or empty string"
+  "deliveryTerms": "CFR Valencia",
+  "payment": "LC at 75 Days",
+  "destination": "Valencia",
+  "commission": "10 Cents per Kg + GST"
 }
 
 Field notes:
@@ -334,9 +341,6 @@ Field notes:
 - "Cases" and "Cartons" and "Ctns" and "c/s" all mean the same thing
 - freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
 - currency: 'USD' or 'EUR'. Default 'USD'
-- commission: IMPORTANT - Look for a "Commission" field outside the line items table, often near Delivery/Payment fields. Examples: "10 Cents per Kg + GST", "2%", "$0.10/kg". Extract the FULL commission text exactly as written.
-- destination: Look for the delivery destination/port. It may appear after CFR/CIF/FOB in delivery terms (e.g. "CFR Valencia" means destination is "Valencia"), or in a separate Destination field.
-- deliveryTerms: Extract the FULL delivery terms including the destination if present (e.g. "CFR Valencia", not just "CFR")
 
 Rules:
 - Always prefix product names with "Frozen" if not already
@@ -344,7 +348,7 @@ Rules:
 - CRITICAL: Extract the Cases/Cartons number from the table. Look for a column labeled Cases, Cartons, Ctns, or similar
 - If you cannot read the document clearly or find line item details, return empty lineItems array
 - Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons
-- CRITICAL: Carefully scan the ENTIRE document for commission, payment, delivery terms, and destination. These fields are often in a separate section from the line items table.`
+- CRITICAL: Do NOT return empty string for commission if a Commission field exists in the document. Read the exact text next to "Commission:" or "Commission :" label.`
 
     const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
