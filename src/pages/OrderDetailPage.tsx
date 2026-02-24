@@ -1009,8 +1009,11 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             </div>
             <div className="p-4 overflow-y-auto flex-1">
               {(() => {
+                // Normalize: strip dots, collapse spaces, lowercase for fuzzy company matching
+                const norm = (s: string) => s.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+                const target = norm(contactModal);
                 const companyContacts = Object.entries(contacts)
-                  .filter(([, c]) => c.company === contactModal)
+                  .filter(([, c]) => norm(c.company) === target || c.company === contactModal)
                   .map(([email, c]) => ({ email, ...c }));
                 if (companyContacts.length === 0) {
                   return <p className="text-sm text-gray-500 text-center py-4">No contacts found for this company</p>;
