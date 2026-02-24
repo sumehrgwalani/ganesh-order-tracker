@@ -3,12 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 
 
 function setCors(res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Origin', 'https://ganesh-order-tracker.vercel.app')
   res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
 }
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_MAIL_API_KEY! || process.env.ANTHROPIC_API_KEY!!
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_MAIL_API_KEY! || process.env.ANTHROPIC_API_KEY!
 
 // Helper: delay between API calls to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -907,8 +907,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error('Missing or invalid authorization header')
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL!!
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!!
+    const supabaseUrl = process.env.SUPABASE_URL!
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
     const supabaseAnon = process.env.SUPABASE_ANON_KEY! || supabaseKey
 
     const userClient = createClient(supabaseUrl, supabaseAnon, {

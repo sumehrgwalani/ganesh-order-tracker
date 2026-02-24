@@ -4,7 +4,7 @@ import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
 import SignaturePad from '../components/SignaturePad';
 import PODocumentPreview from '../components/PODocumentPreview';
-import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
+import { ORDER_STAGES, BUYER_CODES } from '../data/constants';
 import { supabase } from '../lib/supabase';
 import { apiCall } from '../utils/api';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
