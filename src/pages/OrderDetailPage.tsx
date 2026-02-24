@@ -131,15 +131,6 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               </button>
               <button
                 onClick={() => {
-                  const meta = getPOMeta();
-                  const items = meta?.lineItems || order.lineItems || [];
-                  setAmendItems(items.map((li: any) => ({
-                    product: li.product || '', brand: li.brand || '', freezing: li.freezing || '',
-                    size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
-                    packing: li.packing || '', cases: li.cases || '', kilos: li.kilos || '',
-                    pricePerKg: li.pricePerKg || '', currency: li.currency || 'USD',
-                    total: Number(li.total) || 0,
-                  })));
                   setAmendModal(true);
                 }}
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
@@ -632,19 +623,6 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           {onUpdateOrder && (
             <button
               onClick={() => {
-                setEditForm({
-                  company: order.company || '',
-                  supplier: order.supplier || '',
-                  product: order.product || '',
-                  specs: order.specs || '',
-                  from: order.from || '',
-                  to: order.to || '',
-                  brand: order.brand || '',
-                  piNumber: order.piNumber || '',
-                  awbNumber: order.awbNumber || '',
-                  totalValue: order.totalValue || '',
-                  totalKilos: order.totalKilos ? String(order.totalKilos) : '',
-                });
                 setEditModal(true);
               }}
               className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
