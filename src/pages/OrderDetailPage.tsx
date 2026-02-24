@@ -32,6 +32,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   });
   const [editModal, setEditModal] = useState(false);
   const [amendModal, setAmendModal] = useState(false);
+  const [contactModal, setContactModal] = useState<string | null>(null);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -651,12 +652,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         <div className="grid grid-cols-3 gap-6 mb-6">
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buyer</p>
-            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => navigate(`/contacts?search=${encodeURIComponent(order.company)}`)}>{order.company}</p>
+            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => setContactModal(order.company)}>{order.company}</p>
             {order.brand && <span className="inline-block text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded mt-1">{order.brand}</span>}
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier</p>
-            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => navigate(`/contacts?search=${encodeURIComponent(order.supplier)}`)}>{order.supplier}</p>
+            <p className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => setContactModal(order.supplier)}>{order.supplier}</p>
             <p className="text-sm text-gray-500">{order.from}</p>
           </div>
           <div>
@@ -975,6 +976,80 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Details Modal */}
+      {contactModal && contacts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setContactModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[70vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                  {contactModal.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">{contactModal}</h3>
+                  <p className="text-xs text-gray-500">Contact Details</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setContactModal(null); navigate(`/contacts?search=${encodeURIComponent(contactModal)}`); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  View all
+                </button>
+                <button onClick={() => setContactModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <Icon name="X" size={18} className="text-gray-400" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {(() => {
+                const companyContacts = Object.entries(contacts)
+                  .filter(([, c]) => c.company === contactModal)
+                  .map(([email, c]) => ({ email, ...c }));
+                if (companyContacts.length === 0) {
+                  return <p className="text-sm text-gray-500 text-center py-4">No contacts found for this company</p>;
+                }
+                return (
+                  <div className="space-y-3">
+                    {companyContacts.map((c: any) => (
+                      <div key={c.email} className="p-3 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className={`w-9 h-9 ${c.color || 'bg-blue-500'} rounded-full flex items-center justify-center text-white font-medium text-xs`}>
+                            {c.initials || c.name?.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-800 text-sm">{c.name}</p>
+                            <p className="text-xs text-gray-500">{c.role}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1 ml-12">
+                          {c.email && !c.email.endsWith('@placeholder.local') && (
+                            <a href={`mailto:${c.email}`} className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1.5">
+                              <Icon name="Mail" size={11} /> {c.email}
+                            </a>
+                          )}
+                          {c.phone && (
+                            <a href={`tel:${c.phone}`} className="text-xs text-gray-600 flex items-center gap-1.5">
+                              <Icon name="Phone" size={11} /> {c.phone}
+                            </a>
+                          )}
+                          {c.address && (
+                            <p className="text-xs text-gray-500 flex items-start gap-1.5">
+                              <Icon name="MapPin" size={11} className="mt-0.5 flex-shrink-0" /> {c.address}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

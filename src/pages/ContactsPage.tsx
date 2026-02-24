@@ -20,6 +20,8 @@ interface Contact {
   color?: string;
   initials?: string;
   notes?: string;
+  default_brand?: string;
+  default_packing?: string;
 }
 
 interface Props {
@@ -52,6 +54,39 @@ function mapToContacts(source: Record<string, any>): Contact[] {
 const isPlaceholderEmail = (email: string) => email.endsWith('@placeholder.local');
 const displayEmail = (email: string) => isPlaceholderEmail(email) ? '-' : email;
 
+// Levenshtein distance for duplicate detection
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
+function isSimilarCompany(a: string, b: string): boolean {
+  const la = a.toLowerCase().trim();
+  const lb = b.toLowerCase().trim();
+  if (la === lb) return true;
+  // Substring match for names >= 4 chars
+  if (la.length >= 4 && lb.length >= 4 && (la.includes(lb) || lb.includes(la))) return true;
+  // First words must be close
+  const firstA = la.split(' ')[0] || '';
+  const firstB = lb.split(' ')[0] || '';
+  if (levenshtein(firstA, firstB) > 1) return false;
+  // Full string distance check
+  const maxLen = Math.max(la.length, lb.length);
+  if (maxLen < 4) return false;
+  return levenshtein(la, lb) <= Math.max(2, Math.floor(maxLen * 0.15));
+}
+
+interface DuplicateGroup {
+  companies: string[];
+  contacts: Contact[];
+}
+
 function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteContact, onBulkImport, onBulkDelete, onRefresh }: Props) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -66,6 +101,14 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
   // Batch delete state
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  // Duplicate scanner state
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
+  // Edit company modal state
+  const [editingCompany, setEditingCompany] = useState<string | null>(null);
+  const [companyForm, setCompanyForm] = useState({ name: '', address: '', brand: '', packing: '' });
+  const [isSavingCompany, setIsSavingCompany] = useState(false);
 
   // Use a stable key (number of contacts) to detect when DB data actually changes
   const dbContactsCount = dbContacts !== undefined ? Object.keys(dbContacts).length : -1;
@@ -130,6 +173,94 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
     { id: 'all', label: 'All Locations', flag: '🌍' },
     ...countries.map(c => ({ id: c ?? '', label: c ?? 'Unknown', flag: (c && countryFlags[c]) || '🏳️' }))
   ];
+
+  // ── Duplicate Scanner ──────────────────────────────────────
+  const scanForDuplicates = () => {
+    const groups: DuplicateGroup[] = [];
+    const used = new Set<string>();
+    for (let i = 0; i < companies.length; i++) {
+      if (used.has(companies[i])) continue;
+      const similar = [companies[i]];
+      for (let j = i + 1; j < companies.length; j++) {
+        if (used.has(companies[j])) continue;
+        if (isSimilarCompany(companies[i], companies[j])) {
+          similar.push(companies[j]);
+          used.add(companies[j]);
+        }
+      }
+      if (similar.length > 1) {
+        used.add(companies[i]);
+        const allContacts = similar.flatMap(c => contactsByCompany[c] || []);
+        groups.push({ companies: similar, contacts: allContacts });
+      }
+    }
+    setDuplicateGroups(groups);
+    setShowDuplicateModal(true);
+  };
+
+  const handleMergeCompanies = async (group: DuplicateGroup, targetCompany: string) => {
+    if (!onUpdateContact) return;
+    setIsMerging(true);
+    try {
+      for (const contact of group.contacts) {
+        if (contact.company !== targetCompany) {
+          await onUpdateContact(contact.email, { company: targetCompany });
+        }
+      }
+      // Update local state
+      setContacts(prev => prev.map(c =>
+        group.companies.includes(c.company) ? { ...c, company: targetCompany } : c
+      ));
+      // Remove this group from the list
+      setDuplicateGroups(prev => prev.filter(g => g !== group));
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  // ── Edit Company Modal ─────────────────────────────────────
+  const openEditCompany = (company: string) => {
+    const companyContacts = contactsByCompany[company] || [];
+    const first = companyContacts[0];
+    setCompanyForm({
+      name: company,
+      address: (first as any)?.address || '',
+      brand: (first as any)?.default_brand || '',
+      packing: (first as any)?.default_packing || '',
+    });
+    setEditingCompany(company);
+  };
+
+  const handleSaveCompany = async () => {
+    if (!editingCompany || !onUpdateContact) return;
+    setIsSavingCompany(true);
+    try {
+      const companyContacts = contactsByCompany[editingCompany] || [];
+      for (const contact of companyContacts) {
+        const updates: Record<string, string> = {};
+        if (companyForm.name && companyForm.name !== editingCompany) updates.company = companyForm.name;
+        if (companyForm.address !== ((contact as any).address || '')) updates.address = companyForm.address;
+        if (companyForm.brand !== ((contact as any).default_brand || '')) updates.default_brand = companyForm.brand;
+        if (companyForm.packing !== ((contact as any).default_packing || '')) updates.default_packing = companyForm.packing;
+        if (Object.keys(updates).length > 0) {
+          await onUpdateContact(contact.email, updates);
+        }
+      }
+      // Update local state
+      setContacts(prev => prev.map(c =>
+        c.company === editingCompany ? {
+          ...c,
+          company: companyForm.name || editingCompany,
+          address: companyForm.address,
+          default_brand: companyForm.brand,
+          default_packing: companyForm.packing,
+        } : c
+      ));
+      setEditingCompany(null);
+    } finally {
+      setIsSavingCompany(false);
+    }
+  };
 
   const handleSaveContact = async (contactData: ContactFormData) => {
     const initials = contactData.initials || contactData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -298,6 +429,9 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
             <button onClick={() => { setEditingContact(null); setShowModal(true); }} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Icon name="Plus" size={16} /><span className="text-sm font-medium">Add Contact</span>
             </button>
+            <button onClick={scanForDuplicates} className="px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium text-center">
+              Scan Duplicates
+            </button>
             {onBulkImport && (
               <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium text-center">
                 Import CSV/Excel
@@ -462,10 +596,27 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800">{company}</h3>
-                      <p className="text-sm text-gray-500">{companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}</p>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span>{companyContacts.length} contact{companyContacts.length > 1 ? 's' : ''}</span>
+                        {(companyContacts[0] as any)?.address && (
+                          <span className="text-gray-400">· {(companyContacts[0] as any).address.slice(0, 40)}{(companyContacts[0] as any).address.length > 40 ? '...' : ''}</span>
+                        )}
+                        {!(companyContacts[0] as any)?.address && (
+                          <span className="text-gray-300">· No address</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openEditCompany(company); }}
+                      className="p-1.5 hover:bg-gray-100 rounded-lg"
+                      title="Edit company"
+                    >
+                      <Icon name="Settings" size={16} className="text-gray-400" />
+                    </button>
+                    <Icon name="ChevronDown" size={20} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
 
                 {isExpanded && (
@@ -616,8 +767,6 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
             // Refresh contacts from DB after import
             if (onRefresh) {
               await onRefresh();
-              // We need to update local state too — refetch will update dbContacts via hook
-              // For now, also add to local state so UI updates immediately
               const newLocalContacts = importedContacts.map(c => ({
                 id: c.email,
                 email: c.email,
@@ -633,7 +782,6 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                 initials: c.name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2),
                 color: 'bg-blue-500',
               }));
-              // Merge: update existing, add new
               const existingMap = new Map(contacts.map(c => [c.email.toLowerCase(), c]));
               for (const nc of newLocalContacts) {
                 existingMap.set(nc.email.toLowerCase(), nc);
@@ -644,6 +792,152 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
           }}
           onClose={() => setShowImportModal(false)}
         />
+      )}
+
+      {/* Duplicate Companies Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Duplicate Companies</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {duplicateGroups.length > 0
+                    ? `Found ${duplicateGroups.length} group${duplicateGroups.length > 1 ? 's' : ''} of similar company names`
+                    : 'No duplicates found — all company names look unique!'}
+                </p>
+              </div>
+              <button onClick={() => setShowDuplicateModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <Icon name="X" size={18} className="text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              {duplicateGroups.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Icon name="Check" size={24} className="text-green-600" />
+                  </div>
+                  <p className="font-medium text-gray-800">All clean!</p>
+                  <p className="text-sm text-gray-500 mt-1">No similar company names detected.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {duplicateGroups.map((group, gIdx) => {
+                    const totalContacts = group.contacts.length;
+                    return (
+                      <div key={gIdx} className="border border-gray-200 rounded-xl p-4">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                          Possible duplicates · {totalContacts} contact{totalContacts !== 1 ? 's' : ''} total
+                        </p>
+                        <div className="space-y-2 mb-3">
+                          {group.companies.map(comp => (
+                            <div key={comp} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+                                  {comp.slice(0, 2).toUpperCase()}
+                                </div>
+                                <span className="font-medium text-gray-800 text-sm">{comp}</span>
+                                <span className="text-xs text-gray-400">({(contactsByCompany[comp] || []).length})</span>
+                              </div>
+                              <button
+                                onClick={() => handleMergeCompanies(group, comp)}
+                                disabled={isMerging}
+                                className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {isMerging ? 'Merging...' : `Merge all into "${comp}"`}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setDuplicateGroups(prev => prev.filter((_, i) => i !== gIdx))}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Leave as is
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Company Modal */}
+      {editingCompany && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                  {editingCompany.slice(0, 2).toUpperCase()}
+                </div>
+                <h3 className="font-semibold text-gray-900">Edit Company</h3>
+              </div>
+              <button onClick={() => setEditingCompany(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <Icon name="X" size={18} className="text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">Company Name</label>
+                <input
+                  type="text"
+                  value={companyForm.name}
+                  onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">Address</label>
+                <input
+                  type="text"
+                  value={companyForm.address}
+                  onChange={e => setCompanyForm({ ...companyForm, address: e.target.value })}
+                  placeholder="Company address for PO generation"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">Default Brand</label>
+                <input
+                  type="text"
+                  value={companyForm.brand}
+                  onChange={e => setCompanyForm({ ...companyForm, brand: e.target.value })}
+                  placeholder="e.g. Ocean Pearl, Golden Star"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">Default Packing</label>
+                <input
+                  type="text"
+                  value={companyForm.packing}
+                  onChange={e => setCompanyForm({ ...companyForm, packing: e.target.value })}
+                  placeholder="e.g. 10 x 1 kg, 6 x 2 kg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="p-5 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => setEditingCompany(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCompany}
+                disabled={!companyForm.name || isSavingCompany}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isSavingCompany ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
