@@ -415,7 +415,7 @@ Rules:
     if (!commission) {
       try {
         console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
-        const commissionPrompt = `Carefully read this scanned document image. I need you to transcribe EXACTLY the text that appears between the "Packing" section and the "Payment" section. Include every single line of text, word for word, as it appears in the document. Do NOT translate anything - keep it in the original language. Do NOT skip any lines.`
+        const commissionPrompt = `Read this scanned purchase order document. I need you to find the word "Commission" in the document and tell me EXACTLY what value appears after it. The Commission field is typically located below the product table, between "Delivery / Shipment" and "Payment" fields. Return ONLY the commission value text (like "05 Cents per Kg + GST" or "2%"). If not found, return NONE.`
         const commRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -424,8 +424,8 @@ Rules:
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 500,
+            model: 'claude-haiku-3-5-20241022',
+            max_tokens: 200,
             messages: [{
               role: 'user',
               content: [contentBlock, { type: 'text', text: commissionPrompt }]
@@ -436,14 +436,10 @@ Rules:
           const commData = await commRes.json()
           const commText = (commData.content?.[0]?.text || '').trim()
           secondPassResult = commText ? commText.substring(0, 500) : 'empty'
-          console.log(`[PO-VISION] Second-pass result: "${commText?.substring(0, 200)}"`)
-          // Parse commission from the listed fields
-          const commMatch = commText.match(/[Cc]ommission[:\s]+(.+)/i)
-          if (commMatch) {
-            const commValue = commMatch[1].trim()
-            if (commValue && commValue !== '-' && commValue !== 'N/A') {
-              commission = commValue
-            }
+          console.log(`[PO-VISION] Second-pass (haiku) result: "${commText?.substring(0, 200)}"`)
+          // Use the response directly if it looks like a commission value (not NONE)
+          if (commText && commText !== 'NONE' && !commText.startsWith('I ') && commText.length < 100) {
+            commission = commText
           }
         }
       } catch (err2) {
