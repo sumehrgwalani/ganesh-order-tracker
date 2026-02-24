@@ -148,7 +148,7 @@ async function getAttachmentPartsForMessage(accessToken: string, messageId: stri
 // Extract structured PO data from email text using Claude AI
 async function extractPODataFromEmail(
   email: any, orderCompany: string, orderSupplier: string
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number } | null> {
   try {
     const emailText = `Subject: ${email.subject || ''}\n\nBody:\n${(email.body_text || '').substring(0, 6000)}`
     if (emailText.length < 30) return null
@@ -256,6 +256,8 @@ Rules:
       lineItems,
       deliveryTerms: String(parsed.deliveryTerms || ''),
       payment: String(parsed.payment || ''),
+      commission: String(parsed.commission || ''),
+      destination: String(parsed.destination || ''),
       totalKilos,
       totalValue: Math.round(totalValue * 100) / 100,
     }
@@ -281,7 +283,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 // Extract PO data from an image (scanned PO) using Claude vision
 async function extractPODataFromImage(
   imageBase64: string, mimeType: string, orderCompany: string, orderSupplier: string
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, totalKilos: number, totalValue: number } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number } | null> {
   try {
     const isImage = mimeType.startsWith('image/')
     const isPdf = mimeType.includes('pdf')
@@ -363,7 +365,7 @@ Rules:
     if (!res.ok) {
       const errText = await res.text()
       console.error(`[PO-VISION] AI API error: ${res.status} ${errText.substring(0, 200)}`)
-      return { lineItems: [], deliveryTerms: '', payment: '', totalKilos: 0, totalValue: 0, _debug: `API ${res.status}: ${errText.substring(0, 100)}` }
+      return { lineItems: [], deliveryTerms: '', payment: '', commission: '', destination: '', totalKilos: 0, totalValue: 0, _debug: `API ${res.status}: ${errText.substring(0, 100)}` }
     }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
@@ -395,7 +397,7 @@ Rules:
     const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
     const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
 
-    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
+    return { lineItems, deliveryTerms: String(parsed.deliveryTerms || ''), payment: String(parsed.payment || ''), commission: String(parsed.commission || ''), destination: String(parsed.destination || ''), totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -652,6 +654,8 @@ async function processEmailAttachments(
           }
           if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
           if (extractedData.payment) updates.payment_terms = extractedData.payment
+          if (extractedData.commission) updates.commission = extractedData.commission
+          if (extractedData.destination) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
           await supabase.from('orders').update(updates).eq('id', orderUuid)
@@ -661,6 +665,7 @@ async function processEmailAttachments(
             const richMeta = {
               pdfUrl: poAttachment.url, supplier: orderRow?.supplier || '', buyer: orderRow?.company || '',
               deliveryTerms: extractedData.deliveryTerms || '', payment: extractedData.payment || '',
+              commission: extractedData.commission || '', destination: extractedData.destination || '',
               totalKilos: extractedData.totalKilos, grandTotal: extractedData.totalValue,
               extractedFromEmail: true, lineItems: extractedData.lineItems,
             }
