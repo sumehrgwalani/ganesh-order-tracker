@@ -1775,13 +1775,15 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           const updates: any = {}
           if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
           if (extractedData.payment) updates.payment_terms = extractedData.payment
+          if (extractedData.commission) updates.commission = extractedData.commission
+          if (extractedData.destination) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
           // Don't overwrite the product field — it's set by the user
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, source: 'attachment' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
