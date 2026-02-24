@@ -411,6 +411,7 @@ Rules:
     const destination = String(parsed.destination || '')
 
     // If commission is empty, do a focused second-pass extraction
+    let secondPassResult = 'skipped'
     if (!commission) {
       try {
         console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
@@ -434,6 +435,7 @@ Rules:
         if (commRes.ok) {
           const commData = await commRes.json()
           const commText = (commData.content?.[0]?.text || '').trim()
+          secondPassResult = commText || 'empty'
           console.log(`[PO-VISION] Second-pass commission result: "${commText}"`)
           if (commText && commText !== 'NONE' && commText.length < 200) {
             commission = commText
@@ -445,7 +447,7 @@ Rules:
     }
 
     console.log(`[PO-VISION] Final fields: commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
-    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
+    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, _secondPassResult: secondPassResult }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -1827,7 +1829,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment', _2ndPass: extractedData._secondPassResult || '' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
