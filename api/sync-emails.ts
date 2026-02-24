@@ -603,11 +603,23 @@ async function processEmailAttachments(
     let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
     let foundPI = false
 
+    // Use email subject to hint classification — if subject says "PURCHASE ORDER", first attachment is a PO
+    const emailSubject = (email.subject || '').toUpperCase()
+    const subjectHintsPO = emailSubject.includes('PURCHASE ORDER') || emailSubject.includes('NEW PO') || emailSubject.includes('PO/')
+
     // 2. For each attachment: download, classify, upload to correct stage
+    let firstAttachment = true
     for (const part of validParts) {
       try {
         const result = await downloadAndClassify(accessToken, email.gmail_id, part)
         if (!result) continue
+
+        // Override classification: if email subject clearly says "PURCHASE ORDER" and AI said "pi", treat as "po"
+        if (firstAttachment && subjectHintsPO && (result.classification === 'pi' || result.classification === 'other')) {
+          console.log(`[PROCESS] Overriding classification from "${result.classification}" to "po" (email subject: "${email.subject}")`)
+          result.classification = 'po'
+        }
+        firstAttachment = false
 
         const stage = classificationToStage(result.classification)
         if (!stage) {
