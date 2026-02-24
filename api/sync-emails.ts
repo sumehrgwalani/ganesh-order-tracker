@@ -448,7 +448,7 @@ Rules:
     }
 
     console.log(`[PO-VISION] Final fields: commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
-    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, _secondPassResult: secondPassResult }
+    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -1830,7 +1830,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
-          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment', _2ndPass: extractedData._secondPassResult || '' })
+          results.push({ order: order.order_id, status: 'ok', items: extractedData.lineItems.length, totalKilos: extractedData.totalKilos, totalValue: extractedData.totalValue, commission: extractedData.commission || '', destination: extractedData.destination || '', deliveryTerms: extractedData.deliveryTerms || '', source: 'attachment' })
         } catch (err) {
           results.push({ order: order.order_id, status: 'error', reason: String(err) })
         }
