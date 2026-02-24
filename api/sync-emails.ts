@@ -1550,10 +1550,20 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       // retry=true to retry previously failed orders
       const targetPO = reqBody.order_po as string | undefined
       const retryFailed = reqBody.retry === true
+      const forceReextract = reqBody.force === true
 
       let ordersToProcess: any[] = []
 
-      if (retryFailed) {
+      if (forceReextract && targetPO) {
+        // Force mode: re-extract even if line items already exist
+        const { data: order } = await supabase
+          .from('orders')
+          .select('id, order_id, company, supplier')
+          .eq('organization_id', organization_id)
+          .eq('order_id', targetPO)
+          .single()
+        if (order) ordersToProcess = [order]
+      } else if (retryFailed) {
         // Retry mode: clear extraction_attempted flag and re-process
         const { data } = await supabase
           .from('orders')
