@@ -100,35 +100,41 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const renderDocumentContent = (sectionId: string) => {
     switch (sectionId) {
       case 'purchaseOrder': {
-        // Find PO document URL from order history (stored attachment from email)
+        // Find stored PO document URL (from email attachment or app-generated PDF)
         const poUrl = (() => {
+          // Check stage 1 history attachments first
           const stage1 = order.history.filter(h => h.stage === 1 && h.attachments?.length);
           for (const h of stage1) {
             for (const att of (h.attachments || [])) {
               const meta = getAttachmentMeta(att);
-              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att) };
+              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att), isEmail: !!meta.extractedFromEmail };
             }
           }
+          // Fallback: check order metadata
+          if (order.metadata?.pdfUrl) return { url: order.metadata.pdfUrl, name: `${order.id}.pdf`, isEmail: !!order.metadata?.extractedFromEmail };
           return null;
         })();
+
+        const isEmailOrder = poUrl?.isEmail || order.metadata?.extractedFromEmail;
+        const poLabel = isEmailOrder ? 'Original PO' : 'View PO';
+        const poTitle = isEmailOrder ? `Original PO Attachment - ${order.id}` : `Purchase Order - ${order.id}`;
+
         return (
           <div className="space-y-3">
             <div className="flex items-stretch gap-2">
-              {poUrl && (
-                <button
-                  onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `PO - ${order.id}`, loading: false })}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
-                >
-                  <Icon name="FileText" size={15} />
-                  View PO
-                </button>
-              )}
               <button
-                onClick={previewPOasPDF}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                onClick={() => {
+                  if (poUrl) {
+                    setPdfModal({ open: true, url: poUrl.url, title: poTitle, loading: false });
+                  } else {
+                    // Legacy fallback: generate from HTML for orders with no stored PDF
+                    previewPOasPDF();
+                  }
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
               >
                 <Icon name="FileText" size={15} />
-                {poUrl ? 'Generated PO' : 'View as PDF'}
+                {poLabel}
               </button>
               <button
                 onClick={() => {
@@ -901,7 +907,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800 text-sm">{pdfModal.title}</h3>
-                  <p className="text-xs text-gray-500">{(order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Stored Document' : 'Generated Preview'}</p>
+                  <p className="text-xs text-gray-500">{order.metadata?.extractedFromEmail ? 'Original Email Attachment' : (order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Saved Document' : 'Generated Preview'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
