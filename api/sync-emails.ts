@@ -415,7 +415,7 @@ Rules:
     if (!commission) {
       try {
         console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
-        const commissionPrompt = `Look at this document image carefully. Below the product/price table, there should be fields like "Total Value", "Packing", "Delivery / Shipment", "Commission", "Payment", "Variation", etc. List every field label and its value that appears BELOW the product table. Format: "FieldLabel: value" on each line. Include ALL fields you can see.`
+        const commissionPrompt = `Carefully read this scanned document image. I need you to transcribe EXACTLY the text that appears between the "Packing" section and the "Payment" section. Include every single line of text, word for word, as it appears in the document. Do NOT translate anything - keep it in the original language. Do NOT skip any lines.`
         const commRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -425,7 +425,7 @@ Rules:
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 200,
+            max_tokens: 500,
             messages: [{
               role: 'user',
               content: [contentBlock, { type: 'text', text: commissionPrompt }]
