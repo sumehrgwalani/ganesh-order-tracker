@@ -110,34 +110,51 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           }
           return null;
         })();
+        // Email-synced orders: show original attachment as primary action
+        // App-generated orders: show generated PDF as primary action
+        const isFromEmail = !!poUrl;
         return (
           <div className="space-y-3">
             <div className="flex items-stretch gap-2">
-              {poUrl && (
-                <button
-                  onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `PO - ${order.id}`, loading: false })}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
-                >
-                  <Icon name="FileText" size={15} />
-                  View PO
-                </button>
+              {isFromEmail ? (
+                <>
+                  <button
+                    onClick={() => setPdfModal({ open: true, url: poUrl.url, title: poUrl.name || `PO - ${order.id}`, loading: false })}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                  >
+                    <Icon name="FileText" size={15} />
+                    View Original PO
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAmendModal(true);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                  >
+                    <Icon name="Edit" size={15} />
+                    Amend PO
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={previewPOasPDF}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                  >
+                    <Icon name="FileText" size={15} />
+                    View as PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAmendModal(true);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                  >
+                    <Icon name="Edit" size={15} />
+                    Amend PO
+                  </button>
+                </>
               )}
-              <button
-                onClick={previewPOasPDF}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
-              >
-                <Icon name="FileText" size={15} />
-                {poUrl ? 'Generated PO' : 'View as PDF'}
-              </button>
-              <button
-                onClick={() => {
-                  setAmendModal(true);
-                }}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
-              >
-                <Icon name="Edit" size={15} />
-                Amend PO
-              </button>
             </div>
             {renderAttachments(1)}
           </div>
@@ -479,10 +496,6 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
 
   // Handle clicking an attachment
   const handleAttachmentClick = (name: string, stage: number) => {
-    if (name.toLowerCase().endsWith('.pdf') && stage === 1) {
-      previewPOasPDF();
-      return;
-    }
     // Look for pdfUrl in attachment metadata
     const stageHistory = order.history.filter(h => h.stage === stage && h.attachments?.length);
     for (const h of stageHistory) {
@@ -900,7 +913,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800 text-sm">{pdfModal.title}</h3>
-                  <p className="text-xs text-gray-500">{(order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Stored Document' : 'Generated Preview'}</p>
+                  <p className="text-xs text-gray-500">{(order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? (order.metadata?.extractedFromEmail ? 'Original Email Attachment' : 'Stored Document') : 'Generated Preview'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
