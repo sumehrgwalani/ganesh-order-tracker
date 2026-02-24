@@ -334,13 +334,17 @@ Field notes:
 - "Cases" and "Cartons" and "Ctns" and "c/s" all mean the same thing
 - freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
 - currency: 'USD' or 'EUR'. Default 'USD'
+- commission: IMPORTANT - Look for a "Commission" field outside the line items table, often near Delivery/Payment fields. Examples: "10 Cents per Kg + GST", "2%", "$0.10/kg". Extract the FULL commission text exactly as written.
+- destination: Look for the delivery destination/port. It may appear after CFR/CIF/FOB in delivery terms (e.g. "CFR Valencia" means destination is "Valencia"), or in a separate Destination field.
+- deliveryTerms: Extract the FULL delivery terms including the destination if present (e.g. "CFR Valencia", not just "CFR")
 
 Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
 - CRITICAL: Extract the Cases/Cartons number from the table. Look for a column labeled Cases, Cartons, Ctns, or similar
 - If you cannot read the document clearly or find line item details, return empty lineItems array
-- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons`
+- Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons
+- CRITICAL: Carefully scan the ENTIRE document for commission, payment, delivery terms, and destination. These fields are often in a separate section from the line items table.`
 
     const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
