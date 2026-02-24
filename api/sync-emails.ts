@@ -1806,6 +1806,9 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
             continue
           }
 
+          // Delete any existing line items first to prevent duplicates
+          await supabase.from('order_line_items').delete().eq('order_id', order.id)
+
           const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
             order_id: order.id,
             product: item.product, brand: item.brand || '', size: item.size || '',

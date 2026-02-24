@@ -101,22 +101,32 @@ export function useOrders(orgId: string | null) {
       payment_terms: row.payment_terms || '',
       commission: row.commission || '',
       metadata: row.metadata || undefined,
-      lineItems: (row.order_line_items || [])
-        .sort((a: DbLineItem, b: DbLineItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((li: DbLineItem) => ({
-          product: li.product || '',
-          brand: li.brand || '',
-          freezing: li.freezing || '',
-          size: li.size || '',
-          glaze: li.glaze || '',
-          glazeMarked: li.glaze_marked || '',
-          packing: li.packing || '',
-          cases: li.cases || 0,
-          kilos: li.kilos || 0,
-          pricePerKg: li.price_per_kg || 0,
-          currency: li.currency || 'USD',
-          total: li.total || 0,
-        })),
+      lineItems: (() => {
+        const sorted = (row.order_line_items || [])
+          .sort((a: DbLineItem, b: DbLineItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map((li: DbLineItem) => ({
+            product: li.product || '',
+            brand: li.brand || '',
+            freezing: li.freezing || '',
+            size: li.size || '',
+            glaze: li.glaze || '',
+            glazeMarked: li.glaze_marked || '',
+            packing: li.packing || '',
+            cases: li.cases || 0,
+            kilos: li.kilos || 0,
+            pricePerKg: li.price_per_kg || 0,
+            currency: li.currency || 'USD',
+            total: li.total || 0,
+          }))
+        // Deduplicate line items (same product+size+glaze+packing = duplicate)
+        const seen = new Set<string>()
+        return sorted.filter(li => {
+          const key = `${li.product}|${li.size}|${li.glaze}|${li.packing}|${li.kilos}|${li.pricePerKg}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+      })(),
       history: (row.order_history || [])
         .sort((a: DbHistoryRow, b: DbHistoryRow) => a.stage - b.stage || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
         .map((h: DbHistoryRow): HistoryEntry => ({
