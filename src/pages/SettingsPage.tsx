@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 import { useSettings } from '../hooks/useSettings';
 import { supabase } from '../lib/supabase';
+import { apiCall } from '../utils/api';
 import type { OrganizationSettings } from '../types';
 
 interface SettingsPageProps {
@@ -46,6 +47,60 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
 
   // Email tab
   const [emailFormData, setEmailFormData] = useState({ provider: 'none', smtpHost: '', smtpPort: '', smtpUsername: '', smtpPassword: '', smtpFromEmail: '', smtpUseTls: false, sendgridKey: '', resendKey: '' });
+  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [gmailClientId, setGmailClientId] = useState<string | null>(null);
+
+  // Load Gmail connection status
+  useEffect(() => {
+    if (!orgId) return;
+    (async () => {
+      // Get gmail_client_id from org settings
+      const { data: settings } = await supabase.from('organization_settings').select('gmail_client_id').eq('organization_id', orgId).single();
+      if (settings?.gmail_client_id) setGmailClientId(settings.gmail_client_id);
+      // Get current user's gmail status
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: member } = await supabase.from('organization_members').select('gmail_email').eq('organization_id', orgId).eq('user_id', user.id).single();
+      if (member?.gmail_email) setGmailEmail(member.gmail_email);
+    })();
+  }, [orgId]);
+
+  // Handle Gmail OAuth callback (code in URL query params)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code || !orgId || !gmailClientId) return;
+    // Clean the URL
+    const cleanUrl = window.location.href.split('?')[0] + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+    // Exchange code for tokens
+    (async () => {
+      setGmailConnecting(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not logged in');
+        const redirectUri = window.location.origin + window.location.pathname;
+        const { data, error } = await apiCall('/api/gmail-auth', { code, client_id: gmailClientId, redirect_uri: redirectUri, organization_id: orgId, user_id: user.id });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        setGmailEmail(data.email);
+        setSaveStatus({ type: 'success', message: `Gmail connected as ${data.email}` });
+      } catch (err: any) {
+        setSaveStatus({ type: 'error', message: `Gmail connection failed: ${err.message}` });
+      } finally {
+        setGmailConnecting(false);
+      }
+    })();
+  }, [orgId, gmailClientId]);
+
+  const handleConnectGmail = () => {
+    if (!gmailClientId) return;
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scope = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${gmailClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+    window.location.href = url;
+  };
 
   // Initialize form data when settings load
   useEffect(() => {
@@ -545,6 +600,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                 <div className="space-y-3 mb-6">
                   {[
                     { value: 'none', label: 'None' },
+                    { value: 'gmail', label: 'Gmail' },
                     { value: 'smtp', label: 'SMTP' },
                     { value: 'sendgrid', label: 'SendGrid' },
                     { value: 'resend', label: 'Resend' },
@@ -562,6 +618,52 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                     </label>
                   ))}
                 </div>
+
+                {emailFormData.provider === 'gmail' && (
+                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">
+                    {gmailConnecting ? (
+                      <div className="flex items-center gap-3 py-4">
+                        <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-sm text-gray-600">Connecting to Gmail...</span>
+                      </div>
+                    ) : gmailEmail ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                            <Icon name="Check" size={16} className="text-green-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">Connected as {gmailEmail}</p>
+                            <p className="text-xs text-gray-500">Gmail is used to send and read emails</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleConnectGmail}
+                          className="px-4 py-2 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100"
+                        >
+                          Reconnect Gmail
+                        </button>
+                        <p className="text-xs text-gray-400">Use this if emails stop sending — it refreshes your Gmail connection.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-600">Connect your Gmail account to send and receive emails directly from the app.</p>
+                        {gmailClientId ? (
+                          <button
+                            type="button"
+                            onClick={handleConnectGmail}
+                            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                          >
+                            Connect Gmail Account
+                          </button>
+                        ) : (
+                          <p className="text-sm text-amber-600">Gmail is not configured for this organization. Contact support.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {emailFormData.provider === 'smtp' && (
                   <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg">

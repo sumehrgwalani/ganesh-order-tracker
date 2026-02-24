@@ -2,11 +2,17 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
+import SignaturePad from '../components/SignaturePad';
+import PODocumentPreview from '../components/PODocumentPreview';
 import { ORDER_STAGES, BUYER_CODES, GI_LOGO_URL } from '../data/constants';
-import { GILogo } from '../components/Logos';
 import { supabase } from '../lib/supabase';
+import { apiCall } from '../utils/api';
 import type { ContactsMap, Order, LineItem, POFormData } from '../types';
 import { parsePackingKg, calculateLineItem, recalculateAllLineItems, calcGrandTotal, calcTotalKilos, calcTotalCases } from '../utils/lineItemCalcs';
+import {
+  getNextPONumber, getNextLoteNumber, incrementPONumber, getCurrentBulkPONumber,
+  formatDate, getLastOrderDefaults, getAutoDestination, buildAttachmentMeta,
+} from '../utils/poHelpers';
 
 interface Props {
   contacts?: ContactsMap;
@@ -14,20 +20,6 @@ interface Props {
   setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
   orgId?: string | null;
-}
-
-interface SupplierInfo {
-  email: string;
-  name: string;
-  company: string;
-  role: string;
-}
-
-interface BuyerInfo {
-  email: string;
-  company: string;
-  role: string;
-  country?: string;
 }
 
 interface POLineItem {
@@ -46,35 +38,6 @@ interface POLineItem {
   [key: string]: string | number | boolean;
 }
 
-interface LineItemInternal extends LineItem {
-  total: number | string;
-}
-
-interface PODataInternal extends POFormData {
-  poNumber: string;
-  date: string;
-  supplier: string;
-  supplierEmail: string;
-  supplierAddress: string;
-  supplierCountry: string;
-  product: string;
-  brand: string;
-  buyer: string;
-  buyerCode: string;
-  destination: string;
-  deliveryTerms: string;
-  commission: string;
-  overseasCommission: string;
-  overseasCommissionCompany: string;
-  payment: string;
-  packing: string;
-  deliveryDate: string;
-  loteNumber: string;
-  shippingMarks: string;
-  buyerBank: string;
-  notes: string;
-}
-
 interface Notification {
   type: 'success' | 'error' | 'warning' | 'info';
   message: string;
@@ -86,77 +49,8 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
   const isAmendment = !!amendmentOrder;
 
-  // Get next PO number for a specific buyer
-  const getNextPONumber = (buyerName = '') => {
-    const year = new Date().getFullYear();
-    const nextYear = (year + 1).toString().slice(-2);
-    const yearPrefix = `${year.toString().slice(-2)}-${nextYear}`;
-
-    if (!buyerName) {
-      // Generic next number based on all orders
-      const allPONumbers = orders
-        .map(o => {
-          const match = o.id.match(/\/(\d+)$/);
-          return match ? parseInt(match[1]) : 0;
-        })
-        .filter(n => n > 0);
-      const maxNum = allPONumbers.length > 0 ? Math.max(...allPONumbers) : 3043;
-      return `GI/PO/${yearPrefix}/${maxNum + 1}`;
-    }
-
-    // Buyer-specific numbering
-    const buyerCode = BUYER_CODES[buyerName] || buyerName.substring(0, 2).toUpperCase();
-
-    // Find existing orders for this buyer and get the max sequence
-    const buyerOrders = orders.filter(o =>
-      o.id.includes(`/${buyerCode}-`) || o.company?.toLowerCase().includes(buyerName.toLowerCase())
-    );
-
-    const buyerSequences = buyerOrders
-      .map(o => {
-        const match = o.id.match(new RegExp(`${buyerCode}-(\\d+)$`));
-        return match ? parseInt(match[1]) : 0;
-      })
-      .filter(n => n > 0);
-
-    const nextSeq = buyerSequences.length > 0 ? Math.max(...buyerSequences) + 1 : 1;
-    const seqStr = nextSeq.toString().padStart(3, '0');
-
-    return `GI/PO/${yearPrefix}/${buyerCode}-${seqStr}`;
-  };
-
-  // Get next lote number for a buyer — format: xxxx/year, buyer-specific series
-  const getNextLoteNumber = (buyerName: string) => {
-    if (!buyerName) return '';
-    const year = new Date().getFullYear();
-
-    // Look through all orders for this buyer and find lote numbers in metadata
-    const buyerOrders = orders.filter(o =>
-      o.company?.toLowerCase().includes(buyerName.toLowerCase())
-    );
-
-    let maxLote = 0;
-    for (const o of buyerOrders) {
-      const meta = o.metadata as any;
-      if (!meta?.history) continue;
-      for (const h of (Array.isArray(meta.history) ? meta.history : [])) {
-        for (const att of (h.attachments || [])) {
-          const lote = att.meta?.loteNumber || '';
-          const match = lote.match(/^(\d+)\//);
-          if (match) {
-            const num = parseInt(match[1]);
-            if (num > maxLote) maxLote = num;
-          }
-        }
-      }
-    }
-
-    const nextNum = (maxLote + 1).toString().padStart(4, '0');
-    return `${nextNum}/${year}`;
-  };
-
   const [poData, setPOData] = useState({
-    poNumber: getNextPONumber(),
+    poNumber: getNextPONumber('', orders, BUYER_CODES),
     date: new Date().toISOString().split('T')[0],
     supplier: '',
     supplierEmail: '',
@@ -184,7 +78,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: '', freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }
   ]);
 
-  const [status, setStatus] = useState('draft'); // draft, pending_approval, approved, sent
+  const [status, setStatus] = useState('draft');
   const [showPreview, setShowPreview] = useState(false);
   const [showSignOff, setShowSignOff] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
@@ -203,10 +97,8 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   const [bulkPreviewIndex, setBulkPreviewIndex] = useState(0);
   const [bulkDates, setBulkDates] = useState<string[]>([]);
   const [signatureData, setSignatureData] = useState<string>('');
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [isParsingAI, setIsParsingAI] = useState(false);
   const poDocRef = useRef<HTMLDivElement>(null);
-  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const buyerDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -243,7 +135,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
   // Pre-fill form when amending an existing PO
   useEffect(() => {
     if (!amendmentOrder) return;
-    // Extract metadata from the PO attachment
     const stage1 = amendmentOrder.history?.find((h: any) => h.stage === 1 && h.attachments?.length);
     const meta = stage1?.attachments?.[0]?.meta || (typeof stage1?.attachments?.[0] === 'object' ? stage1.attachments[0] : null);
     const m = (meta && typeof meta === 'object' && 'supplier' in meta) ? meta as Record<string, any> : null;
@@ -273,7 +164,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       notes: '',
     });
 
-    // Pre-fill line items
     const existingItems = amendmentOrder.lineItems || m?.lineItems || [];
     if (existingItems.length > 0) {
       setLineItems(existingItems.map((li: any) => ({
@@ -292,109 +182,67 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       })));
     }
 
-    // Disable bulk mode and parser for amendments
     setBulkCreate(false);
     setShowParser(false);
-  }, []); // Run once on mount
+  }, []);
 
-  // Signature drawing helpers
-  const initCanvas = () => {
-    const canvas = signatureCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#1a1a2e';
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-  };
+  // ── Contact lists ──────────────────────────────────────────────
+  const suppliers = Object.entries(contacts)
+    .filter(([_, c]) => (c.role || '').toLowerCase().includes('supplier'))
+    .map(([email, c]) => ({ email, ...c }));
 
-  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    const canvas = signatureCanvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    if ('touches' in e) {
-      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+  const buyers = Object.entries(contacts)
+    .filter(([_, c]) => {
+      const r = (c.role || '').toLowerCase();
+      return r.includes('buyer') || r.includes('compras') || r.includes('calidad');
+    })
+    .map(([email, c]) => ({ email, ...c }));
+
+  // ── Line item management ────────────────────────────────────────
+  const updateLineItem = (index: number, field: string, value: string | number) => {
+    const updated = [...lineItems];
+    updated[index][field] = value;
+
+    if (field === 'kilos' || field === 'packing' || field === 'pricePerKg') {
+      const calculated = calculateLineItem(updated[index]);
+      updated[index].cases = calculated.cases;
+      if (field !== 'kilos' && parsePackingKg(updated[index].packing as string)) {
+        updated[index].kilos = calculated.adjustedKilos;
+      }
+      updated[index].total = calculated.total;
     }
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const canvas = signatureCanvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
-    setIsDrawing(true);
-    const { x, y } = getCanvasCoords(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    if (!isDrawing) return;
-    const canvas = signatureCanvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = getCanvasCoords(e);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const saveSignature = () => {
-    const canvas = signatureCanvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    setSignatureData(dataUrl);
-    localStorage.setItem('gi_signature', dataUrl);
-    setShowSignaturePad(false);
-    setNotification({ type: 'success', message: 'Signature saved! It will appear on your POs.' });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  const clearCanvas = () => {
-    const canvas = signatureCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setNotification({ type: 'error', message: 'Please upload an image file (PNG, JPG).' });
-      setTimeout(() => setNotification(null), 3000);
-      return;
+    if (field === 'cases') {
+      const cases = parseInt(value as string) || 0;
+      const kgPerCarton = parsePackingKg(updated[index].packing as string);
+      if (kgPerCarton && cases > 0) {
+        updated[index].kilos = cases * kgPerCarton;
+        const price = parseFloat(updated[index].pricePerKg as string) || 0;
+        updated[index].total = ((cases * kgPerCarton) * price).toFixed(2);
+      }
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setSignatureData(dataUrl);
-      localStorage.setItem('gi_signature', dataUrl);
-      setShowSignaturePad(false);
-      setNotification({ type: 'success', message: 'Signature uploaded and saved!' });
-      setTimeout(() => setNotification(null), 3000);
-    };
-    reader.readAsDataURL(file);
+
+    setLineItems(updated);
   };
 
-  const removeSignature = () => {
-    setSignatureData('');
-    localStorage.removeItem('gi_signature');
-    setNotification({ type: 'info', message: 'Signature removed.' });
-    setTimeout(() => setNotification(null), 3000);
+  const addLineItem = () => {
+    const currentBuyer = buyers.find(b => b.company === poData.buyer);
+    const defaultBrand = currentBuyer?.default_brand || '';
+    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: defaultBrand, freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
   };
 
-  // AI-powered parser — calls Supabase Edge Function which uses Claude Haiku
-  const [isParsingAI, setIsParsingAI] = useState(false);
+  const removeLineItem = (index: number) => {
+    if (lineItems.length > 1) {
+      setLineItems(lineItems.filter((_, i) => i !== index));
+    }
+  };
 
+  // ── Totals ──────────────────────────────────────────────────────
+  const grandTotal = calcGrandTotal(lineItems);
+  const totalKilos = calcTotalKilos(lineItems);
+  const totalCases = calcTotalCases(lineItems);
+
+  // ── AI Parser ───────────────────────────────────────────────────
   const parseNaturalLanguage = async (text: string) => {
     if (!text.trim()) {
       setNotification({ type: 'error', message: 'Please paste some text to parse.' });
@@ -406,7 +254,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setNotification({ type: 'info', message: 'Parsing with AI...' });
 
     try {
-      // Build supplier/buyer lists from contacts
       const suppliersList = Object.entries(contacts)
         .filter(([_, c]) => (c.role || '').toLowerCase().includes('supplier'))
         .map(([email, c]) => ({ company: c.company, email, address: c.address, country: c.country }));
@@ -418,18 +265,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         })
         .map(([email, c]) => ({ company: c.company, email, country: c.country }));
 
-      // Call Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('parse-po', {
-        body: { rawText: text, suppliers: suppliersList, buyers: buyersList },
-      });
+      const { data, error } = await apiCall('/api/parse-po', { rawText: text, suppliers: suppliersList, buyers: buyersList });
 
-      if (error) {
-        throw new Error(error.message || 'Failed to call AI parser');
-      }
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
+      if (error) throw new Error(error.message || 'Failed to call AI parser');
+      if (data?.error) throw new Error(data.error);
 
       const { lineItems: parsedItems, detectedSupplier, detectedSupplierEmail, detectedBuyer } = data;
 
@@ -439,14 +278,12 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         return;
       }
 
-      // Post-process: recalculate cases and totals, format prices
       const processedItems = recalculateAllLineItems(parsedItems).map((item: any) => ({
         ...item,
         pricePerKg: item.pricePerKg ? Number(item.pricePerKg).toFixed(2) : '',
       }));
       setLineItems(processedItems);
 
-      // Update PO data with detected supplier/buyer
       if (detectedSupplier || detectedBuyer) {
         const matchedSupplier = detectedSupplier
           ? suppliersList.find(s => s.company.toLowerCase() === detectedSupplier.toLowerCase())
@@ -465,7 +302,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         if (detectedBuyer) setBuyerSearch(detectedBuyer);
       }
 
-      // Build product description from unique products (case-insensitive dedup, include freezing + glaze)
+      // Build product description from unique products
       const seen = new Set<string>();
       const uniqueDescs: string[] = [];
       processedItems.forEach((item: any) => {
@@ -484,7 +321,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         setPOData(prev => ({ ...prev, product: productDesc }));
       }
 
-      // Show success
       const parts = [`${processedItems.length} product(s)`];
       if (detectedSupplier) parts.push('supplier');
       if (detectedBuyer) parts.push('buyer');
@@ -500,99 +336,22 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
   };
 
-
-  // Get suppliers from contacts — flexible match (handles 'Supplier', 'Suppliers', 'suppliers', etc.)
-  const suppliers = Object.entries(contacts)
-    .filter(([_, c]) => {
-      const r = (c.role || '').toLowerCase();
-      return r.includes('supplier');
-    })
-    .map(([email, c]) => ({ email, ...c }));
-
-  // Get buyers from contacts — flexible match
-  const buyers = Object.entries(contacts)
-    .filter(([_, c]) => {
-      const r = (c.role || '').toLowerCase();
-      return r.includes('buyer') || r.includes('compras') || r.includes('calidad');
-    })
-    .map(([email, c]) => ({ email, ...c }));
-
-  // Parse packing to extract kg per carton (e.g., "6x1 kg" = 6, "10 kg Bulk" = 10)
-  // parsePackingKg, calculateLineItem, recalculateAllLineItems imported from utils/lineItemCalcs
-
-  // Update line item with smart calculations
-  const updateLineItem = (index: number, field: string, value: string | number) => {
-    const updated = [...lineItems];
-    updated[index][field] = value;
-
-    // Recalculate when kilos, packing, or price changes
-    if (field === 'kilos' || field === 'packing' || field === 'pricePerKg') {
-      const calculated = calculateLineItem(updated[index]);
-      updated[index].cases = calculated.cases;
-      // Only adjust kilos if packing is set and we're not directly editing kilos
-      if (field !== 'kilos' && parsePackingKg(updated[index].packing)) {
-        updated[index].kilos = calculated.adjustedKilos;
-      }
-      updated[index].total = calculated.total;
-    }
-
-    // If cases is manually edited, recalculate kilos
-    if (field === 'cases') {
-      const cases = parseInt(value as string) || 0;
-      const kgPerCarton = parsePackingKg(updated[index].packing as string);
-      if (kgPerCarton && cases > 0) {
-        updated[index].kilos = cases * kgPerCarton;
-        const price = parseFloat(updated[index].pricePerKg as string) || 0;
-        updated[index].total = ((cases * kgPerCarton) * price).toFixed(2);
-      }
-    }
-
-    setLineItems(updated);
-  };
-
-  // recalculateAllLineItems imported from utils/lineItemCalcs
-
-  // Add line item
-  const addLineItem = () => {
-    // Inherit brand from buyer's default if set
-    const currentBuyer = buyers.find(b => b.company === poData.buyer);
-    const defaultBrand = currentBuyer?.default_brand || '';
-    setLineItems([...lineItems, { product: '', size: '', glaze: '', glazeMarked: '', packing: '', brand: defaultBrand, freezing: '', cases: '', kilos: '', pricePerKg: '', currency: 'USD', total: 0 }]);
-  };
-
-  // Remove line item
-  const removeLineItem = (index: number) => {
-    if (lineItems.length > 1) {
-      setLineItems(lineItems.filter((_, i) => i !== index));
-    }
-  };
-
-  // Calculate grand totals
-  const grandTotal = calcGrandTotal(lineItems);
-  const totalKilos = calcTotalKilos(lineItems);
-  const totalCases = calcTotalCases(lineItems);
-
-  // Handle supplier selection - auto-fill payment from previous orders
+  // ── Supplier / Buyer handlers ───────────────────────────────────
   const handleSupplierChange = (email: string) => {
-    // Look in suppliers first, then fall back to full contacts map
     const supplier = suppliers.find(s => s.email === email) || (contacts[email] ? { email, ...contacts[email] } : null);
     const supplierName = supplier?.name?.toLowerCase() || '';
     const buyerCompany = poData.buyer?.toLowerCase() || '';
 
-    // Find last order with this supplier + buyer combo for payment terms
     let autoPayment = '';
     if (buyerCompany && supplierName) {
       const matchingOrders = orders.filter(o =>
         o.company?.toLowerCase().includes(buyerCompany) &&
         o.supplier?.toLowerCase().includes(supplierName)
       );
-      if (matchingOrders.length > 0) {
-        autoPayment = 'LC at Sight';
-      }
+      if (matchingOrders.length > 0) autoPayment = 'LC at Sight';
     }
 
     const supplierCompany = supplier ? supplier.company : '';
-    // Get address: try selected contact first, then fallback to any other contact from same company
     let supplierAddr = (supplier?.address && supplier.address !== 'EMPTY') ? supplier.address : '';
     if (!supplierAddr && supplierCompany) {
       const sameCompany = Object.values(contacts).find(c =>
@@ -609,9 +368,8 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       payment: autoPayment || poData.payment,
     });
 
-    // Auto-fill packing/brand on existing line items from last order
     if (supplierCompany && poData.buyer) {
-      const defaults = getLastOrderDefaults(supplierCompany, poData.buyer);
+      const defaults = getLastOrderDefaults(supplierCompany, poData.buyer, orders);
       if (defaults) {
         setLineItems(prev => prev.map(item => ({
           ...item,
@@ -623,48 +381,17 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
   };
 
-  // Handle buyer selection - with auto-fill from previous orders
   const handleBuyerChange = (email: string) => {
     const buyer = buyers.find(b => b.email === email);
     const buyerCompany = buyer ? buyer.company : '';
     const buyerCode = BUYER_CODES[buyerCompany] || buyerCompany.substring(0, 2).toUpperCase();
-    const newPONumber = getNextPONumber(buyerCompany);
+    const newPONumber = getNextPONumber(buyerCompany, orders, BUYER_CODES);
 
-    // Auto-fill destination based on known buyers
-    const buyerDestinations: Record<string, string> = {
-      'PESCADOS E.GUILLEM': 'Valencia, Spain',
-      'Pescados E Guillem': 'Valencia, Spain',
-      'Seapeix': 'Barcelona, Spain',
-      'Noriberica': 'Portugal',
-      'Ruggiero Seafood': 'Italy',
-      'Fiorital': 'Italy',
-      'Ferrittica': 'Italy',
-      'Compesca': 'Spain',
-      'Soguima': 'Spain',
-      'Mariberica': 'Spain',
-    };
-    const autoDestination = Object.entries(buyerDestinations).find(
-      ([key]) => buyerCompany.toLowerCase().includes(key.toLowerCase())
-    )?.[1] || '';
+    const autoDestination = getAutoDestination(buyerCompany);
 
-    // Auto-fill shipment date (25 days from today)
     const shipmentDate = new Date();
     shipmentDate.setDate(shipmentDate.getDate() + 25);
     const autoDeliveryDate = shipmentDate.toISOString().split('T')[0];
-
-    // Auto-fill payment terms from last order to this buyer's supplier
-    let autoPayment = '';
-    if (poData.supplierEmail) {
-      const supplierName = poData.supplier.split(' - ')[0]?.toLowerCase() || '';
-      const matchingOrders = orders.filter(o =>
-        o.company?.toLowerCase().includes(buyerCompany.toLowerCase()) &&
-        o.supplier?.toLowerCase().includes(supplierName)
-      );
-      if (matchingOrders.length > 0) {
-        // Look for payment info in the last matching order's history
-        // For now use a sensible default
-      }
-    }
 
     setPOData({
       ...poData,
@@ -672,18 +399,16 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       buyerCode: buyerCode,
       buyerBank: buyer?.country || '',
       poNumber: newPONumber,
-      loteNumber: getNextLoteNumber(buyerCompany),
+      loteNumber: getNextLoteNumber(buyerCompany, orders),
       destination: autoDestination || poData.destination,
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',
     });
 
-    // Auto-fill brand from buyer's default_brand setting (highest priority)
     const buyerDefaultBrand = buyer?.default_brand || '';
 
-    // Auto-fill packing/brand on existing line items from last order or buyer default
     if (poData.supplier && buyerCompany) {
-      const defaults = getLastOrderDefaults(poData.supplier, buyerCompany);
+      const defaults = getLastOrderDefaults(poData.supplier, buyerCompany, orders);
       setLineItems(prev => prev.map(item => ({
         ...item,
         packing: item.packing || defaults?.packing || '',
@@ -691,7 +416,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         freezing: item.freezing || defaults?.freezing || '',
       })));
     } else if (buyerDefaultBrand) {
-      // No supplier yet, but buyer has a default brand — apply it
       setLineItems(prev => prev.map(item => ({
         ...item,
         brand: item.brand || buyerDefaultBrand,
@@ -699,45 +423,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
   };
 
-  // Pull defaults (packing, brand) from the most recent order between a supplier+buyer pair
-  const getLastOrderDefaults = (supplierName: string, buyerName: string) => {
-    if (!supplierName || !buyerName) return null;
-    const sLower = supplierName.toLowerCase();
-    const bLower = buyerName.toLowerCase();
-
-    // Find matching orders, sorted by date descending (most recent first)
-    const matchingOrders = orders
-      .filter(o =>
-        o.supplier?.toLowerCase().includes(sLower) &&
-        o.company?.toLowerCase().includes(bLower)
-      )
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    if (matchingOrders.length === 0) return null;
-
-    const lastOrder = matchingOrders[0];
-    const lastLineItems = lastOrder.lineItems || [];
-
-    // Extract defaults from the last order's line items
-    const defaults: { packing: string; brand: string; freezing: string } = { packing: '', brand: '', freezing: '' };
-
-    for (const item of lastLineItems) {
-      if (!defaults.packing && item.packing && typeof item.packing === 'string') {
-        defaults.packing = item.packing;
-      }
-      if (!defaults.brand && item.brand && typeof item.brand === 'string') {
-        defaults.brand = item.brand;
-      }
-      if (!defaults.freezing && item.freezing && typeof item.freezing === 'string') {
-        defaults.freezing = item.freezing;
-      }
-      if (defaults.packing && defaults.brand && defaults.freezing) break;
-    }
-
-    return defaults;
-  };
-
-  // Submit for approval — go to sign-off page
+  // ── Submit / Approve / Reject ───────────────────────────────────
   const submitForApproval = () => {
     if (!poData.supplier || !poData.buyer || lineItems.every(item => !item.product)) {
       setNotification({ type: 'error', message: 'Please fill in required fields: Supplier, Buyer, and at least one product line.' });
@@ -758,14 +444,12 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setBulkPreviewIndex(0);
   };
 
-  // Approve PO
   const approvePO = () => {
     setStatus('approved');
     setNotification({ type: 'success', message: '✅ Purchase Order approved! Ready to send to supplier.' });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Reject/Edit PO — back to form
   const rejectPO = () => {
     setStatus('draft');
     setShowPreview(false);
@@ -774,7 +458,11 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Download PO as PDF
+  // ── PDF Download ────────────────────────────────────────────────
+  const currentPreviewPONumber = bulkCreate
+    ? getCurrentBulkPONumber(poData.poNumber, bulkPreviewIndex)
+    : poData.poNumber;
+
   const downloadPDF = async () => {
     if (!poDocRef.current) return;
     setGeneratingPdf(true);
@@ -797,36 +485,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     setGeneratingPdf(false);
   };
 
-  // Increment a PO number's sequence: "GI/PO/25-26/EG-001" → "GI/PO/25-26/EG-002"
-  const incrementPONumber = (poNumber: string): string => {
-    // Try buyer-code format: .../XX-001
-    const buyerMatch = poNumber.match(/^(.*\/)([A-Z]+-?)(\d+)$/);
-    if (buyerMatch) {
-      const nextNum = (parseInt(buyerMatch[3]) + 1).toString().padStart(buyerMatch[3].length, '0');
-      return buyerMatch[1] + buyerMatch[2] + nextNum;
-    }
-    // Try generic format: .../3044
-    const genericMatch = poNumber.match(/^(.*\/)(\d+)$/);
-    if (genericMatch) {
-      return genericMatch[1] + (parseInt(genericMatch[2]) + 1).toString();
-    }
-    return poNumber + '-2';
-  };
-
-  // Compute the current PO number for bulk preview navigation
-  const getCurrentBulkPONumber = (index: number): string => {
-    let num = poData.poNumber;
-    for (let i = 0; i < index; i++) {
-      num = incrementPONumber(num);
-    }
-    return num;
-  };
-
-  const currentPreviewPONumber = bulkCreate
-    ? getCurrentBulkPONumber(bulkPreviewIndex)
-    : poData.poNumber;
-
-  // Convert Blob to base64 for email attachment
+  // ── Email sending ───────────────────────────────────────────────
   const blobToBase64 = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -835,7 +494,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       reader.readAsDataURL(blob);
     });
 
-  // Actually send the PO email via the send-email Edge Function
   const sendEmailWithPdf = async (recipient: string, cc: string, subject: string, body: string, pdfBlob: Blob | null, filename: string) => {
     if (!orgId) return;
     try {
@@ -850,10 +508,8 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         attachments.push({ filename, data: await blobToBase64(pdfBlob), mimeType: 'application/pdf' });
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke('send-email', {
-        body: { organization_id: orgId, user_id: user.id, recipients, subject, body, attachments },
-      });
-      if (fnError) throw fnError;
+      const { data, error: sendErr } = await apiCall('/api/send-email', { organization_id: orgId, user_id: user.id, recipients, subject, body, attachments });
+      if (sendErr) throw sendErr;
       if (data?.error) throw new Error(data.error);
     } catch (err: any) {
       console.error('Email send failed:', err);
@@ -861,9 +517,8 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
   };
 
-  // Send PO to supplier (supports bulk creation and amendments)
+  // ── Send PO (new + amendment) ───────────────────────────────────
   const sendPO = async () => {
-    // Step 1: Capture PDF blob from the live preview BEFORE any state changes
     let pdfBlob: Blob | null = null;
     const primaryFilename = `${poData.poNumber.replace(/\//g, '_')}.pdf`;
     const primaryPdfUrl = supabase.storage.from('po-documents').getPublicUrl(primaryFilename).data.publicUrl;
@@ -881,9 +536,13 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       }
     }
 
-    // ── Amendment flow ──────────────────────────────────────────────
+    const totals = { totalCases, totalKilos, grandTotal };
+
+    // ── Amendment flow ──
     if (isAmendment && amendmentOrder) {
-      const pdfUrl = primaryPdfUrl;
+      const meta = buildAttachmentMeta(poData, lineItems, totals);
+      meta.pdfUrl = primaryPdfUrl;
+
       const updatedOrder: Order = {
         ...amendmentOrder,
         company: poData.buyer,
@@ -895,7 +554,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         totalValue: grandTotal,
         totalKilos: totalKilos,
         lineItems: lineItems,
-        metadata: { pdfUrl },
+        metadata: { pdfUrl: primaryPdfUrl },
         history: [
           ...(amendmentOrder.history || []),
           {
@@ -906,37 +565,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             subject: `AMENDED PO ${poData.poNumber}`,
             body: `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
             hasAttachment: true,
-            attachments: [{
-              name: `${poData.poNumber.replace(/\//g, '_')}.pdf`,
-              meta: {
-                pdfUrl,
-                supplier: poData.supplier,
-                supplierAddress: poData.supplierAddress || '',
-                supplierCountry: poData.supplierCountry || 'India',
-                buyer: poData.buyer,
-                buyerBank: poData.buyerBank || '',
-                destination: poData.destination || '',
-                deliveryTerms: poData.deliveryTerms || '',
-                deliveryDate: poData.deliveryDate || '',
-                commission: poData.commission || '',
-                overseasCommission: poData.overseasCommission || '',
-                overseasCommissionCompany: poData.overseasCommissionCompany || '',
-                payment: poData.payment || '',
-                shippingMarks: poData.shippingMarks || '',
-                loteNumber: poData.loteNumber || '',
-                date: poData.date,
-                product: poData.product || '',
-                totalCases: totalCases,
-                totalKilos: totalKilos,
-                grandTotal: grandTotal,
-                lineItems: lineItems.map(li => ({
-                  product: li.product, brand: li.brand || '', freezing: li.freezing || '',
-                  size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
-                  packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
-                  pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
-                })),
-              }
-            }]
+            attachments: [{ name: `${poData.poNumber.replace(/\//g, '_')}.pdf`, meta }]
           }
         ]
       };
@@ -944,23 +573,14 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       setStatus('sent');
       setNotification({ type: 'success', message: `Purchase Order ${poData.poNumber} amended successfully!` });
 
-      if (onOrderCreated) {
-        onOrderCreated(updatedOrder);
-      }
+      if (onOrderCreated) onOrderCreated(updatedOrder);
 
-      // Upload updated PDF
       if (pdfBlob) {
         try {
-          await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, {
-            contentType: 'application/pdf',
-            upsert: true,
-          });
-        } catch {
-          alert('PDF upload failed, but order was saved.');
-        }
+          await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, { contentType: 'application/pdf', upsert: true });
+        } catch { alert('PDF upload failed, but order was saved.'); }
       }
 
-      // Send amendment email to supplier
       const amendRecipient = sendTo || poData.supplierEmail;
       if (amendRecipient) {
         await sendEmailWithPdf(
@@ -973,23 +593,20 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       return;
     }
 
-    // ── New PO flow (original) ──────────────────────────────────────
-    // Step 2: Build order objects
+    // ── New PO flow ──
     const count = bulkCreate ? bulkCount : 1;
     const newOrders: Order[] = [];
 
     for (let i = 0; i < count; i++) {
-      let currentPONumber = poData.poNumber;
-      for (let j = 0; j < i; j++) {
-        currentPONumber = incrementPONumber(currentPONumber);
-      }
-
+      const currentPONumber = getCurrentBulkPONumber(poData.poNumber, i);
       const filename = `${currentPONumber.replace(/\//g, '_')}.pdf`;
       const pdfUrl = supabase.storage.from('po-documents').getPublicUrl(filename).data.publicUrl;
-
-      // Use per-PO date in bulk mode, or the main date field for single PO
       const orderDateStr = (bulkCreate && bulkDates[i]) ? bulkDates[i] : poData.date;
       const orderDateFormatted = new Date(orderDateStr + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+      const meta = buildAttachmentMeta(poData, lineItems, totals);
+      meta.pdfUrl = pdfUrl;
+      meta.date = orderDateStr;
 
       const newOrder: Order = {
         id: currentPONumber,
@@ -1015,37 +632,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             subject: `NEW PO ${currentPONumber}`,
             body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
             hasAttachment: true,
-            attachments: [{
-              name: `${currentPONumber.replace(/\//g, '_')}.pdf`,
-              meta: {
-                pdfUrl,
-                supplier: poData.supplier,
-                supplierAddress: poData.supplierAddress || '',
-                supplierCountry: poData.supplierCountry || 'India',
-                buyer: poData.buyer,
-                buyerBank: poData.buyerBank || '',
-                destination: poData.destination || '',
-                deliveryTerms: poData.deliveryTerms || '',
-                deliveryDate: poData.deliveryDate || '',
-                commission: poData.commission || '',
-                overseasCommission: poData.overseasCommission || '',
-                overseasCommissionCompany: poData.overseasCommissionCompany || '',
-                payment: poData.payment || '',
-                shippingMarks: poData.shippingMarks || '',
-                loteNumber: poData.loteNumber || '',
-                date: orderDateStr,
-                product: poData.product || '',
-                totalCases: totalCases,
-                totalKilos: totalKilos,
-                grandTotal: grandTotal,
-                lineItems: lineItems.map(li => ({
-                  product: li.product, brand: li.brand || '', freezing: li.freezing || '',
-                  size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
-                  packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
-                  pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
-                })),
-              }
-            }]
+            attachments: [{ name: `${currentPONumber.replace(/\//g, '_')}.pdf`, meta }]
           }
         ]
       };
@@ -1053,10 +640,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       newOrders.push(newOrder);
     }
 
-    // Step 3: Add orders to state + notify
-    if (setOrders) {
-      setOrders(prevOrders => [...newOrders, ...prevOrders]);
-    }
+    if (setOrders) setOrders(prevOrders => [...newOrders, ...prevOrders]);
 
     setStatus('sent');
     if (count > 1) {
@@ -1066,26 +650,16 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       setNotification({ type: 'success', message: `📧 Purchase Order ${poData.poNumber} sent to ${poData.supplier}! New order created.` });
     }
 
-    // Callback to parent for each order (saves to Supabase)
     if (onOrderCreated) {
-      for (const order of newOrders) {
-        onOrderCreated(order);
-      }
+      for (const order of newOrders) onOrderCreated(order);
     }
 
-    // Step 4: Upload captured PDF blob to Supabase Storage
     if (pdfBlob) {
       try {
-        await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, {
-          contentType: 'application/pdf',
-          upsert: true,
-        });
-      } catch {
-        alert('PDF upload failed, but order was saved.');
-      }
+        await supabase.storage.from('po-documents').upload(primaryFilename, pdfBlob, { contentType: 'application/pdf', upsert: true });
+      } catch { alert('PDF upload failed, but order was saved.'); }
     }
 
-    // Step 5: Send email to supplier
     const recipient = sendTo || poData.supplierEmail;
     if (recipient) {
       for (const order of newOrders) {
@@ -1101,24 +675,13 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
     }
   };
 
-  // Format date for display
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    return new Date(dateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  // ── Notification helper ─────────────────────────────────────────
+  const showNotification = (n: Notification) => {
+    setNotification(n);
+    setTimeout(() => setNotification(null), 3000);
   };
 
-  // Status badge component
-  const StatusBadge = ({ status }: { status: string }) => {
-    const statusConfig: Record<string, { color: string; label: string }> = {
-      draft: { color: 'bg-gray-100 text-gray-700', label: 'Draft' },
-      pending_approval: { color: 'bg-yellow-100 text-yellow-700', label: 'Pending Sign-off' },
-      approved: { color: 'bg-green-100 text-green-700', label: 'Approved' },
-      sent: { color: 'bg-blue-100 text-blue-700', label: 'Sent to Supplier' },
-    };
-    const config = statusConfig[status] || statusConfig.draft;
-    return <span className={`px-3 py-1 rounded-full text-sm font-medium ${config.color}`}>{config.label}</span>;
-  };
-
+  // ── RENDER ──────────────────────────────────────────────────────
   return (
     <div>
       {/* Notification Banner */}
@@ -1209,7 +772,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   Next <Icon name="ChevronRight" size={16} />
                 </button>
               </div>
-              {/* Submit for Sign-off button inside navigation bar */}
               {!showSignOff && status === 'draft' && (
                 <div className="flex justify-center mt-3 pt-3 border-t border-blue-200">
                   <button onClick={submitForApproval} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium shadow-sm text-sm">
@@ -1220,203 +782,19 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             </div>
           )}
 
-          {/* PO Document Preview */}
-          <div ref={poDocRef} className="px-6 py-3 mx-auto bg-white" style={{ fontSize: '12px', lineHeight: '1.35', maxWidth: '1000px' }}>
-            {/* Header with Logo */}
-            <div className="flex items-center justify-between mb-2 pb-1.5 border-b-2 border-gray-200">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800" style={{ marginBottom: '1px' }}>GANESH INTERNATIONAL</h2>
-                <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-                <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
-              </div>
-              <div className="ml-4 flex-shrink-0">
-                <GILogo size={60} />
-              </div>
-            </div>
-
-            {/* Date and PO Number */}
-            <div className="flex justify-between mb-2">
-              <div>
-                <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate((bulkCreate && bulkDates[bulkPreviewIndex]) ? bulkDates[bulkPreviewIndex] : poData.date)}</span></p>
-              </div>
-              <div>
-                <p className="font-medium text-gray-700">Purchase Order No: <span className="text-gray-900 font-bold">{currentPreviewPONumber}</span></p>
-              </div>
-            </div>
-
-            {/* To Section */}
-            <div className="mb-1.5 max-w-xs" style={{ lineHeight: '1.3' }}>
-              <p className="text-gray-500">To,</p>
-              <p className="font-bold text-gray-800">{poData.supplier || '[EXPORTER NAME]'}</p>
-              {poData.supplierAddress && <p className="text-gray-600">{poData.supplierAddress}</p>}
-              <p className="text-gray-600 font-medium">{poData.supplierCountry?.toUpperCase() || 'INDIA'}</p>
-            </div>
-
-            {/* Greeting */}
-            <div className="mb-2">
-              <p className="text-gray-700">Dear Sirs,</p>
-              <p className="text-gray-700 mt-0.5">
-                We are pleased to confirm our Purchase Order with you for the Export of{' '}
-                <span className="font-medium">
-                  {(() => {
-                    // Deduplicate by product + freezing + glaze combo
-                    const seen = new Set<string>();
-                    const unique: typeof lineItems = [];
-                    for (const item of lineItems.filter(i => i.product)) {
-                      const key = `${item.product}|${item.freezing || ''}|${item.glaze || ''}|${item.glazeMarked || ''}`;
-                      if (!seen.has(key)) {
-                        seen.add(key);
-                        unique.push(item);
-                      }
-                    }
-                    return unique.map((item, idx, arr) => {
-                      let desc = item.product;
-                      if (item.freezing && !desc.toLowerCase().includes(item.freezing.toLowerCase())) {
-                        desc += ` ${item.freezing}`;
-                      }
-                      if (item.glaze && item.glazeMarked) {
-                        desc += ` ${item.glaze} marked as ${item.glazeMarked}`;
-                      } else if (item.glaze) {
-                        desc += ` ${item.glaze}`;
-                      }
-                      if (idx < arr.length - 1) return desc + ', ';
-                      return desc;
-                    }).join('');
-                  })() || '______________________'}
-                </span>
-                {' '}to our Principals namely <span className="font-medium">M/s.{poData.buyer || '______________________'}</span>
-                {poData.destination && <>, <span className="font-medium">{poData.destination.toUpperCase()}</span></>}
-                {' '}under the following terms & conditions.
-              </p>
-            </div>
-
-            {/* Product Details Table */}
-            {(() => {
-              const hasBrand = lineItems.some(i => i.brand);
-              const hasFreezing = lineItems.some(i => i.freezing);
-              const hasSize = lineItems.some(i => i.size);
-              const hasGlaze = lineItems.some(i => i.glaze);
-              const hasPacking = lineItems.some(i => i.packing);
-              const hasCases = lineItems.some(i => i.cases);
-              const filledCols = [true, hasBrand, hasFreezing, hasSize, hasGlaze, hasPacking, hasCases, true, true, true].filter(Boolean).length;
-              const totalColSpan = filledCols - 4 + (hasCases ? 1 : 0); // columns before Cases/Kilos
-              return (
-            <div className="mb-2">
-              <table className="w-full border-collapse border border-gray-300" style={{ fontSize: '10px', tableLayout: 'auto' }}>
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ minWidth: '100px' }}>Product</th>
-                    {hasBrand && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Brand</th>}
-                    {hasFreezing && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Freezing</th>}
-                    {hasSize && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Size</th>}
-                    {hasGlaze && <th className="border border-gray-300 px-1.5 py-1 text-left">Glaze</th>}
-                    {hasPacking && <th className="border border-gray-300 px-1.5 py-1 text-left" style={{ whiteSpace: 'nowrap' }}>Packing</th>}
-                    {hasCases && <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Cases</th>}
-                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Kilos</th>
-                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>Price/Kg<br/><span style={{ fontSize: '8px', fontWeight: 'normal' }}>{poData.deliveryTerms} {poData.destination || '___'}</span></th>
-                    <th className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>
-                      {lineItems.some(i => i.currency && i.currency !== 'USD') ? 'Total' : 'Total (USD)'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineItems.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="border border-gray-300 px-1.5 py-1">{item.product || '-'}</td>
-                      {hasBrand && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.brand || '-'}</td>}
-                      {hasFreezing && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.freezing || '-'}</td>}
-                      {hasSize && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.size || '-'}</td>}
-                      {hasGlaze && <td className="border border-gray-300 px-1.5 py-1">{item.glaze && item.glazeMarked ? `${item.glaze} marked as ${item.glazeMarked}` : item.glaze || '-'}</td>}
-                      {hasPacking && <td className="border border-gray-300 px-1.5 py-1" style={{ whiteSpace: 'nowrap' }}>{item.packing || '-'}</td>}
-                      {hasCases && <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.cases || '-'}</td>}
-                      <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.kilos || '-'}</td>
-                      <td className="border border-gray-300 px-1.5 py-1 text-right" style={{ whiteSpace: 'nowrap' }}>{item.pricePerKg ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.pricePerKg).toFixed(2)}` : '-'}</td>
-                      <td className="border border-gray-300 px-1.5 py-1 text-right font-medium" style={{ whiteSpace: 'nowrap' }}>{Number(item.total) > 0 ? `${(!item.currency || item.currency === 'USD') ? '$' : item.currency + ' '}${Number(item.total).toFixed(2)}` : '-'}</td>
-                    </tr>
-                  ))}
-                  <tr className="bg-gray-50 font-bold">
-                    <td className="border border-gray-300 px-1.5 py-1" colSpan={1 + (hasBrand ? 1 : 0) + (hasFreezing ? 1 : 0) + (hasSize ? 1 : 0) + (hasGlaze ? 1 : 0) + (hasPacking ? 1 : 0)}>Total</td>
-                    {hasCases && <td className="border border-gray-300 px-1.5 py-1 text-right">{totalCases}</td>}
-                    <td className="border border-gray-300 px-1.5 py-1 text-right">{totalKilos}</td>
-                    <td className="border border-gray-300 px-1.5 py-1"></td>
-                    <td className="border border-gray-300 px-1.5 py-1 text-right">U.S. ${grandTotal}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-              );
-            })()}
-
-            {/* Terms Section */}
-            <div className="text-gray-700 mb-2" style={{ lineHeight: '1.35' }}>
-              <p><span className="font-medium">Total Value:</span> U.S. ${grandTotal}</p>
-              <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*We need a quality control of photos before loading</p>
-              <p className="text-gray-500 ml-4" style={{ fontSize: '10px' }}>*Different colors Tapes for different products & Lots.</p>
-              {(poData.deliveryTerms || poData.destination) && <p><span className="font-medium">Delivery Terms:</span> {poData.deliveryTerms} {poData.destination}</p>}
-              {poData.deliveryDate && <p><span className="font-medium">Shipment Date:</span> {formatDate(poData.deliveryDate)}</p>}
-              <p><span className="font-medium">Commission:</span> {poData.commission || '___________________'} + 18% GST</p>
-              {poData.overseasCommission && <p><span className="font-medium">Overseas Commission:</span> {poData.overseasCommission}{poData.overseasCommissionCompany ? `, payable to ${poData.overseasCommissionCompany}` : ''}</p>}
-              {poData.payment && <p><span className="font-medium">Payment:</span> {poData.payment}</p>}
-              <p><span className="font-medium">Variation:</span> +/- 5% in Quantity & Value</p>
-              <p><span className="font-medium">Labelling Details:</span> As per previous. (pls send for approval)</p>
-              {poData.loteNumber && <p><span className="font-medium">Lote number:</span> {poData.loteNumber}</p>}
-            </div>
-
-            {/* Important Notes */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded px-2.5 py-1.5 mb-2" style={{ pageBreakInside: 'avoid', fontSize: '10.5px', lineHeight: '1.3' }}>
-              <p className="font-medium text-yellow-800 mb-0.5" style={{ fontSize: '11px' }}>Important Notes:</p>
-              <ul className="text-yellow-700 space-y-0 list-disc list-inside">
-                <li>Should be minimum 5 days free Dem/ Det/ Plug in on the B/L or on the shipping line's letterhead.</li>
-                <li>Please send us Loading chart alongwith the docs & it should be mentioned the lot/code number.</li>
-                <li>Please make plastic certificate.</li>
-                <li>REQUIRED CERTIFICATE OF QUALITY OR FOOD SECURITY CERTIFICATE SUCH AS BRC, GLOBAL GAP ETC.</li>
-                <li>Please use different color carton's tapes for different code.</li>
-                <li>No Damaged boxes to be shipped.</li>
-              </ul>
-            </div>
-
-            {/* Shipping Marks */}
-            {poData.shippingMarks && <p className="mb-1.5"><span className="font-medium">Shipping Marks:</span> {poData.shippingMarks}</p>}
-
-            {/* Please Note Section */}
-            <div className="text-gray-600 mb-2" style={{ pageBreakInside: 'avoid', fontSize: '11px', lineHeight: '1.3' }}>
-              <p className="font-medium mb-0.5">Please Note:</p>
-              {poData.buyerBank && <p>After the documents are negotiated, please send us the Courier Airway Bill no for the documents send by your Bank to buyers bank in {poData.buyerBank}.</p>}
-              <p className="mt-0.5">While emailing us the shipment details, Please mention Exporter, Product, B/Ups, Packing, B/L No, Seal No, Container No, Vessel Name, ETD/ETA, Port Of Shipment / Destination and the Transfer of the Letter of Credit in whose Favour.</p>
-              <p className="mt-0.5">Any Claim on Quality, Grading, Packing and Short weight for this particular consignment will be borne entirely by you and will be your sole responsibility.</p>
-            </div>
-
-            {/* Closing */}
-            <div className="text-gray-700 mb-1" style={{ fontSize: '11px', lineHeight: '1.3' }}>
-              <p>Hope you find the above terms & conditions in order. Please put your Seal and Signature and send it to us as a token of your confirmation.</p>
-              <p className="mt-1">Thanking You,</p>
-            </div>
-
-            {/* Signature */}
-            <div className="mt-2" style={{ pageBreakInside: 'avoid' }}>
-              {signatureData && (status === 'pending_approval' || status === 'approved' || status === 'sent') && (
-                <div className="mb-0.5">
-                  <img src={signatureData} alt="Signature" className="h-10 object-contain" style={{ maxWidth: '150px' }} />
-                </div>
-              )}
-              <p className="font-bold text-gray-800" style={{ fontSize: '11px' }}>Sumehr Rajnish Gwalani</p>
-              <p className="text-gray-600" style={{ fontSize: '11px' }}>GANESH INTERNATIONAL</p>
-              {(status === 'approved' || status === 'sent') && signatureData ? (
-                <div className="mt-0.5 inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '10px' }}>
-                  ✓ Digitally Signed & Approved
-                </div>
-              ) : (status === 'approved' || status === 'sent') ? (
-                <div className="mt-0.5 inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '10px' }}>
-                  ✓ Approved
-                </div>
-              ) : null}
-            </div>
-
-            {/* Footer Note */}
-            <div className="mt-2 pt-1 border-t border-gray-200 text-gray-500" style={{ fontSize: '9px' }}>
-              <p>FOOTNOTE: SUGGEST USE OF DATA LOGGER IN REFER CONTAINER USEFUL IN CASE OF TEMP. FLUCTUATION ON BOARD</p>
-            </div>
-          </div>
+          {/* PO Document Preview — extracted component */}
+          <PODocumentPreview
+            ref={poDocRef}
+            poData={poData}
+            lineItems={lineItems}
+            grandTotal={grandTotal}
+            totalKilos={totalKilos}
+            totalCases={totalCases}
+            signatureData={signatureData}
+            status={status}
+            currentPreviewPONumber={currentPreviewPONumber}
+            displayDate={(bulkCreate && bulkDates[bulkPreviewIndex]) ? bulkDates[bulkPreviewIndex] : poData.date}
+          />
 
           {/* Bottom Action Bar */}
           {!showSignOff ? (
@@ -1450,78 +828,14 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                     </button>
                   </div>
 
-                  {/* Digital Signature */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="text-sm font-medium text-gray-700">Digital Signature</label>
-                      {signatureData && !showSignaturePad && (
-                        <div className="flex gap-2">
-                          <button onClick={() => { setShowSignaturePad(true); setTimeout(initCanvas, 100); }} className="text-xs text-blue-600 hover:text-blue-800 font-medium">Change</button>
-                          <button onClick={removeSignature} className="text-xs text-red-500 hover:text-red-700 font-medium">Remove</button>
-                        </div>
-                      )}
-                    </div>
+                  {/* Digital Signature — extracted component */}
+                  <SignaturePad
+                    signatureData={signatureData}
+                    onSignatureChange={setSignatureData}
+                    onNotification={(n) => { setNotification(n); setTimeout(() => setNotification(null), 3000); }}
+                  />
 
-                    {signatureData && !showSignaturePad ? (
-                      <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <img src={signatureData} alt="Your signature" className="h-12 object-contain" style={{ maxWidth: '180px' }} />
-                        <span className="text-sm text-green-700 font-medium flex items-center gap-1">
-                          <Icon name="CheckCircle" size={14} /> Signature ready
-                        </span>
-                      </div>
-                    ) : !showSignaturePad ? (
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => { setShowSignaturePad(true); setTimeout(initCanvas, 100); }}
-                          className="flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-600 flex flex-col items-center gap-1"
-                        >
-                          <Icon name="Edit" size={20} />
-                          <span>Draw Signature</span>
-                        </button>
-                        <label className="flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-600 flex flex-col items-center gap-1 cursor-pointer">
-                          <Icon name="Upload" size={20} />
-                          <span>Upload Image</span>
-                          <input type="file" accept="image/*" onChange={handleSignatureUpload} className="hidden" />
-                        </label>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {/* Tabs: Draw / Upload */}
-                        <div className="flex gap-2 border-b border-gray-200 pb-2">
-                          <span className="text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-1 px-1">Draw</span>
-                          <label className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer pb-1 px-1">
-                            Upload instead
-                            <input type="file" accept="image/*" onChange={handleSignatureUpload} className="hidden" />
-                          </label>
-                        </div>
-                        {/* Canvas */}
-                        <div className="border-2 border-gray-300 rounded-lg bg-white relative" style={{ touchAction: 'none' }}>
-                          <canvas
-                            ref={signatureCanvasRef}
-                            width={400}
-                            height={150}
-                            className="w-full cursor-crosshair"
-                            onMouseDown={startDrawing}
-                            onMouseMove={draw}
-                            onMouseUp={stopDrawing}
-                            onMouseLeave={stopDrawing}
-                            onTouchStart={startDrawing}
-                            onTouchMove={draw}
-                            onTouchEnd={stopDrawing}
-                          />
-                          <div className="absolute bottom-2 left-3 right-3 border-t border-gray-300" />
-                        </div>
-                        <p className="text-xs text-gray-400 text-center">Sign above the line using your mouse or finger</p>
-                        <div className="flex gap-2 justify-end">
-                          <button onClick={() => setShowSignaturePad(false)} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-                          <button onClick={clearCanvas} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Clear</button>
-                          <button onClick={saveSignature} className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Signature</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Bulk Email List - show each PO's subject */}
+                  {/* Bulk Email List */}
                   {bulkCreate && bulkCount > 1 && (
                     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
@@ -1529,7 +843,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       </div>
                       <div className="max-h-40 overflow-y-auto divide-y divide-gray-100">
                         {Array.from({ length: bulkCount }, (_, i) => {
-                          const poNum = getCurrentBulkPONumber(i);
+                          const poNum = getCurrentBulkPONumber(poData.poNumber, i);
                           return (
                             <div key={i} className={`px-4 py-2 flex items-center gap-3 text-sm ${i === bulkPreviewIndex ? 'bg-blue-50' : ''}`}>
                               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">{i + 1}</span>
@@ -1550,7 +864,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                     </div>
                   )}
 
-                  {/* Subject - shows current PO subject for single mode, or note for bulk */}
+                  {/* Subject */}
                   {!bulkCreate && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
@@ -1686,7 +1000,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                       s.name.toLowerCase().includes(search) ||
                       (s.country || '').toLowerCase().includes(search)
                     );
-                    // Also search ALL contacts as fallback (those not tagged as supplier)
                     const allContacts = Object.entries(contacts).map(([email, c]) => ({ email, ...c }));
                     const otherMatches = allContacts.filter(c => {
                       const r = (c.role || '').toLowerCase();
@@ -1810,7 +1123,6 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Glaze (Actual)</label>
                           <input type="text" value={item.glaze} onChange={(e) => updateLineItem(idx, 'glaze', e.target.value)} placeholder="e.g. 25%" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
-                          {/* Marked glaze row below */}
                           <label className="block text-xs font-medium text-orange-500 mb-1 mt-2">Marked As</label>
                           <input type="text" value={item.glazeMarked || ''} onChange={(e) => updateLineItem(idx, 'glazeMarked', e.target.value)} placeholder="e.g. 20%" className="w-full px-3 py-2.5 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm bg-orange-50" />
                         </div>
@@ -1974,7 +1286,6 @@ Example: 'We need Product A U/3 - 2900 Kgs @ 7.9 USD and 3/6 - 2160 Kgs @ 7.2 US
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Order Summary</h3>
 
-              {/* PO Number with Buyer Code */}
               <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                 <div className="text-xs text-gray-500 mb-1">Purchase Order Number</div>
                 <div className="text-lg font-bold text-gray-800 font-mono">{poData.poNumber}</div>

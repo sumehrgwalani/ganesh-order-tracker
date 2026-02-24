@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { apiCall } from '../utils/api';
 import { EmailAttachment, ContactsMap } from '../types';
 import Icon from './Icon';
 
@@ -154,16 +155,14 @@ export default function ComposeEmailModal({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const { data, error: fnError } = await supabase.functions.invoke('send-email', {
-        body: {
-          organization_id: orgId,
-          user_id: user.id,
-          recipients,
-          subject,
-          body,
-          attachments: attachments.map(a => ({ filename: a.filename, data: a.data, mimeType: a.mimeType })),
-          inReplyToMessageId,
-        },
+      const { data, error: fnError } = await apiCall('/api/send-email', {
+        organization_id: orgId,
+        user_id: user.id,
+        recipients,
+        subject,
+        body,
+        attachments: attachments.map(a => ({ filename: a.filename, data: a.data, mimeType: a.mimeType })),
+        inReplyToMessageId,
       });
 
       if (fnError) throw fnError;

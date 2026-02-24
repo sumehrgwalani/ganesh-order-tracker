@@ -6,6 +6,7 @@ import LinkEmailModal from '../components/LinkEmailModal';
 import { useSyncedEmails, SyncedEmail } from '../hooks/useSyncedEmails';
 import { useToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
+import { apiCall } from '../utils/api';
 import type { Order } from '../types';
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
   userId?: string;
 }
 
-type SyncPhase = 'idle' | 'pulling' | 'matching' | 'done';
+type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting' | 'done';
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Two-phase sync state
   const [syncPhase, setSyncPhase] = useState<SyncPhase>('idle');
@@ -70,9 +72,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     setSyncProgress('Downloading emails from Gmail...');
 
     try {
-      const { data: pullData, error: pullError } = await supabase.functions.invoke('sync-emails', {
-        body: { organization_id: orgId, user_id: userId, mode: 'pull' },
-      });
+      const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
       if (pullError) throw pullError;
 
       const pulled = pullData?.synced || 0;
@@ -88,9 +88,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       const MAX_BATCHES = 50; // Safety limit to prevent infinite loops
       while (!isDone && batchNum < MAX_BATCHES) {
         batchNum++;
-        const { data: matchData, error: matchError } = await supabase.functions.invoke('sync-emails', {
-          body: { organization_id: orgId, user_id: userId, mode: 'match' },
-        });
+        const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
         if (matchError) throw matchError;
 
         const remaining = matchData?.remaining || 0;
@@ -118,6 +116,54 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         if (!isDone) {
           // Small delay between batches
           await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+
+      // Phase 3: Reprocess attachments (download + classify + upload, 1 email at a time)
+      setSyncPhase('reprocessing');
+      let reprocessDone = false;
+      let reprocessCount = 0;
+      const MAX_REPROCESS = 100;
+
+      while (!reprocessDone && reprocessCount < MAX_REPROCESS) {
+        reprocessCount++;
+        const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
+        if (rpError) { console.error('Reprocess error:', rpError); break; }
+
+        const rpRemaining = rpData?.remaining || 0;
+        setSyncProgress(
+          rpRemaining > 0
+            ? `Processing attachments: ${reprocessCount} done, ${rpRemaining} remaining...`
+            : `Attachments processed!`
+        );
+
+        reprocessDone = rpData?.done === true || rpRemaining === 0;
+        if (!reprocessDone) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+
+      // Phase 4: Extract line items from PO attachments (1 order at a time)
+      setSyncPhase('extracting');
+      let extractDone = false;
+      let extractCount = 0;
+      const MAX_EXTRACT = 100;
+
+      while (!extractDone && extractCount < MAX_EXTRACT) {
+        extractCount++;
+        const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract', batch_size: 1 });
+        if (exError) { console.error('Extract error:', exError); break; }
+
+        const exRemaining = exData?.remaining || 0;
+        setSyncProgress(
+          exRemaining > 0
+            ? `Extracting line items: ${extractCount} done, ${exRemaining} remaining...`
+            : `Line items extracted!`
+        );
+
+        extractDone = exData?.done === true || exRemaining === 0;
+        if (!extractDone) {
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
 
@@ -158,7 +204,18 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     return orderId;
   };
 
-  const currentEmails = activeTab === 'matched' ? matchedEmails : unmatchedEmails;
+  const tabEmails = activeTab === 'matched' ? matchedEmails : unmatchedEmails;
+  const currentEmails = searchTerm
+    ? tabEmails.filter(e => {
+        const q = searchTerm.toLowerCase();
+        return (e.subject || '').toLowerCase().includes(q) ||
+          (e.from_name || '').toLowerCase().includes(q) ||
+          (e.from_email || '').toLowerCase().includes(q) ||
+          (e.body_text || '').toLowerCase().includes(q) ||
+          (e.matched_order_id || '').toLowerCase().includes(q) ||
+          (e.user_linked_order_id || '').toLowerCase().includes(q);
+      })
+    : tabEmails;
   const isSyncing = syncPhase !== 'idle' && syncPhase !== 'done';
 
   if (loading) {
@@ -189,7 +246,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
             }`}
           >
             <Icon name="RefreshCw" size={16} className={isSyncing ? 'animate-spin' : ''} />
-            {syncPhase === 'pulling' ? 'Pulling...' : syncPhase === 'matching' ? 'Matching...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
+            {syncPhase === 'pulling' ? 'Pulling...' : syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
           </button>
         }
       />
@@ -248,6 +305,23 @@ function MailboxPage({ orgId, orders, userId }: Props) {
             {unmatchedEmails.length}
           </span>
         </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative mb-4">
+        <Icon name="Search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search emails by subject, sender, content, or order..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+        />
+        {searchTerm && (
+          <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <Icon name="X" size={14} />
+          </button>
+        )}
       </div>
 
       {/* Email list */}
@@ -360,22 +434,11 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                         )}
                       </div>
 
-                      {/* AI Summary */}
-                      {email.ai_summary && (
-                        <div className="bg-blue-50 rounded-lg p-3">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <Icon name="Sparkles" size={14} className="text-blue-600" />
-                            <span className="text-xs font-medium text-blue-700">AI Summary</span>
-                          </div>
-                          <p className="text-sm text-blue-800">{email.ai_summary}</p>
-                        </div>
-                      )}
-
-                      {/* Email body */}
+                      {/* Full email body */}
                       <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">
+                        <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
                           {email.body_text}
-                        </p>
+                        </pre>
                       </div>
 
                       {/* Auto-advanced badge */}
