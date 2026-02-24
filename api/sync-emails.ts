@@ -415,7 +415,7 @@ Rules:
     if (!commission) {
       try {
         console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
-        const commissionPrompt = `Look at this document image carefully. Find the field labeled "Commission" or "Commission:" and tell me EXACTLY what text appears next to it. Return ONLY the commission text value, nothing else. If you cannot find a Commission field, return the word NONE.`
+        const commissionPrompt = `Look at this document image carefully. Below the product/price table, there should be fields like "Total Value", "Packing", "Delivery / Shipment", "Commission", "Payment", "Variation", etc. List every field label and its value that appears BELOW the product table. Format: "FieldLabel: value" on each line. Include ALL fields you can see.`
         const commRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -435,10 +435,15 @@ Rules:
         if (commRes.ok) {
           const commData = await commRes.json()
           const commText = (commData.content?.[0]?.text || '').trim()
-          secondPassResult = commText || 'empty'
-          console.log(`[PO-VISION] Second-pass commission result: "${commText}"`)
-          if (commText && commText !== 'NONE' && commText.length < 200) {
-            commission = commText
+          secondPassResult = commText ? commText.substring(0, 500) : 'empty'
+          console.log(`[PO-VISION] Second-pass result: "${commText?.substring(0, 200)}"`)
+          // Parse commission from the listed fields
+          const commMatch = commText.match(/[Cc]ommission[:\s]+(.+)/i)
+          if (commMatch) {
+            const commValue = commMatch[1].trim()
+            if (commValue && commValue !== '-' && commValue !== 'N/A') {
+              commission = commValue
+            }
           }
         }
       } catch (err2) {
