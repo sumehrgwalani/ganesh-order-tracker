@@ -1009,8 +1009,8 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             </div>
             <div className="p-4 overflow-y-auto flex-1">
               {(() => {
-                // Normalize: strip dots, collapse spaces, lowercase for fuzzy company matching
-                const norm = (s: string) => s.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+                // Normalize: strip all non-alphanumeric chars and lowercase for fuzzy company matching
+                const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
                 const target = norm(contactModal);
                 const companyContacts = Object.entries(contacts)
                   .filter(([, c]) => norm(c.company) === target || c.company === contactModal)
