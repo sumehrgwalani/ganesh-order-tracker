@@ -372,7 +372,7 @@ Rules:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-4-5-20250514',
         max_tokens: 4096,
         messages: [{
           role: 'user',
@@ -387,7 +387,7 @@ Rules:
     if (!res.ok) {
       const errText = await res.text()
       console.error(`[PO-VISION] AI API error: ${res.status} ${errText.substring(0, 200)}`)
-      return { lineItems: [], deliveryTerms: '', payment: '', commission: '', destination: '', totalKilos: 0, totalValue: 0, _debug: `API ${res.status}: ${errText.substring(0, 100)}` }
+      return { lineItems: [], deliveryTerms: '', payment: '', commission: '', destination: '', totalKilos: 0, totalValue: 0 }
     }
     const aiData = await res.json()
     const text = aiData.content?.[0]?.text || ''
@@ -423,43 +423,6 @@ Rules:
     const deliveryTerms = String(parsed.deliveryTerms || '')
     const payment = String(parsed.payment || '')
     const destination = String(parsed.destination || '')
-
-    // If commission is empty, do a focused second-pass extraction
-    let secondPassResult = 'skipped'
-    if (!commission) {
-      try {
-        console.log('[PO-VISION] Commission empty, trying focused second-pass extraction...')
-        const commissionPrompt = `Read this scanned purchase order document. I need you to find the word "Commission" in the document and tell me EXACTLY what value appears after it. The Commission field is typically located below the product table, between "Delivery / Shipment" and "Payment" fields. Return ONLY the commission value text (like "05 Cents per Kg + GST" or "2%"). If not found, return NONE.`
-        const commRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-3-5-20241022',
-            max_tokens: 200,
-            messages: [{
-              role: 'user',
-              content: [contentBlock, { type: 'text', text: commissionPrompt }]
-            }],
-          }),
-        })
-        if (commRes.ok) {
-          const commData = await commRes.json()
-          const commText = (commData.content?.[0]?.text || '').trim()
-          secondPassResult = commText ? commText.substring(0, 500) : 'empty'
-          console.log(`[PO-VISION] Second-pass (haiku) result: "${commText?.substring(0, 200)}"`)
-          // Use the response directly if it looks like a commission value (not NONE)
-          if (commText && commText !== 'NONE' && !commText.startsWith('I ') && commText.length < 100) {
-            commission = commText
-          }
-        }
-      } catch (err2) {
-        console.error('[PO-VISION] Second-pass commission extraction failed:', err2)
-      }
-    }
 
     const supplier = String(parsed.supplier || '')
     console.log(`[PO-VISION] Final fields: supplier="${supplier}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
