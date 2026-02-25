@@ -1876,7 +1876,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         // Force mode: re-extract even if line items already exist
         const { data: order } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, product')
+          .select('id, order_id, company, supplier, product, metadata')
           .eq('organization_id', organization_id)
           .eq('order_id', targetPO)
           .single()
@@ -1902,7 +1902,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         // Single order mode
         const { data: order } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, product')
+          .select('id, order_id, company, supplier, product, metadata')
           .eq('organization_id', organization_id)
           .eq('po_number', targetPO)
           .single()
@@ -1943,6 +1943,42 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
       for (const order of batch) {
         try {
+          let extractedData: any = null
+          let visionDebug: any = { attempted: false }
+
+          // PRIORITY: If order already has a stored PO PDF in Supabase, use that directly
+          const storedPdfUrl = order.metadata?.pdfUrl
+          if (storedPdfUrl) {
+            try {
+              console.log(`[BULK] Using stored PO PDF for ${order.order_id}: ${storedPdfUrl.substring(0, 80)}...`)
+              visionDebug.attempted = true
+              visionDebug.source = 'stored_pdf'
+              const pdfResp = await fetch(storedPdfUrl)
+              if (pdfResp.ok) {
+                const pdfBuffer = await pdfResp.arrayBuffer()
+                visionDebug.downloadedSize = pdfBuffer.byteLength
+                const bytes = new Uint8Array(pdfBuffer)
+                let binary = ''
+                const chunkSize = 8192
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+                  for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
+                }
+                const base64 = btoa(binary)
+                visionDebug.mimeType = 'application/pdf'
+                extractedData = await extractPODataFromImage(base64, 'application/pdf', order.company || '', order.supplier || '')
+                visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
+                console.log(`[BULK] Stored PDF extraction: ${extractedData?.lineItems?.length || 0} items, supplier: ${extractedData?.supplier || 'none'}`)
+              } else {
+                console.log(`[BULK] Failed to download stored PDF: ${pdfResp.status}`)
+              }
+            } catch (pdfErr) {
+              console.log(`[BULK] Stored PDF error: ${pdfErr}`)
+            }
+          }
+
+          // Fallback: search email attachments if stored PDF didn't work
+          if (!extractedData || extractedData.lineItems.length === 0) {
           // Find emails with attachments for this order (PO scans)
           const { data: emails } = await supabase
             .from('synced_emails')
@@ -1952,13 +1988,12 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             .eq('has_attachment', true)
             .limit(20)
 
-          let extractedData: any = null
-          let visionDebug: any = { attempted: false }
-
           if (!gmailAccessToken) {
-            results.push({ order: order.order_id, status: 'skip', reason: 'no Gmail access', vision: visionDebug })
-            continue
-          }
+            if (!extractedData || extractedData.lineItems.length === 0) {
+              results.push({ order: order.order_id, status: 'skip', reason: 'no Gmail access and no stored PDF', vision: visionDebug })
+              continue
+            }
+          } else {
 
           // Score emails: PO stage (1) = highest, then PI (2), then by subject keywords
           const scored = (emails || []).map((e: any) => {
@@ -2065,6 +2100,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               visionDebug.error = String(attErr)
             }
           }
+          } // close else (gmailAccessToken available)
+          } // close if (fallback to email attachments)
 
           if (!extractedData || extractedData.lineItems.length === 0) {
             // Mark order as extraction attempted so it doesn't get retried
