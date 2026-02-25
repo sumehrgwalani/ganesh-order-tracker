@@ -1209,6 +1209,127 @@ If no purchase orders found, return: []`
         })
       }
 
+      // ===== PRE-AI REGEX MATCHING =====
+      // Before calling the AI, try to match emails directly by PO number in subject/body.
+      // This is faster, cheaper, and more reliable than AI for emails with clear PO references.
+      const regexMatched: any[] = []
+      const needsAI: any[] = []
+
+      // Build a lookup map: PO short number -> full order
+      const poLookup = new Map<string, any>()
+      for (const order of ordersList) {
+        // Extract short PO number (e.g. "3044" from "GI/PO/25-26/3044")
+        const shortMatch = order.id.match(/(\d{4})$/)
+        if (shortMatch) {
+          poLookup.set(shortMatch[1], order)
+        }
+        // Also map the full PO number
+        poLookup.set(order.id, order)
+      }
+
+      for (const email of unmatchedEmails) {
+        const searchText = `${email.subject || ''} ${(email.body_text || '').substring(0, 2000)}`
+
+        // Look for PO number patterns: "PO 3044", "PO GI/PO/25-26/3044", "PO-3044", "PO3044"
+        const poPatterns = [
+          /PO\s*(?:GI\/PO\/\d{2}-\d{2}\/)?(3\d{3})/gi,  // "PO 3044" or "PO GI/PO/25-26/3044"
+          /GI\/PO\/\d{2}-\d{2}\/(3\d{3})/gi,              // "GI/PO/25-26/3044" without PO prefix
+          /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,    // "Purchase Order 3044"
+        ]
+
+        let matchedOrder: any = null
+        for (const pattern of poPatterns) {
+          let match
+          while ((match = pattern.exec(searchText)) !== null) {
+            const shortNum = match[1]
+            if (poLookup.has(shortNum)) {
+              matchedOrder = poLookup.get(shortNum)
+              break
+            }
+          }
+          if (matchedOrder) break
+        }
+
+        if (matchedOrder) {
+          regexMatched.push({ email, order: matchedOrder })
+        } else {
+          needsAI.push(email)
+        }
+      }
+
+      // Process regex-matched emails immediately
+      let regexMatchCount = 0
+      for (const { email, order } of regexMatched) {
+        const summary = `Auto-matched by PO number in email subject/body`
+
+        // Detect stage from email content
+        let detectedStage: number | null = null
+        const subjectLower = (email.subject || '').toLowerCase()
+        if (subjectLower.includes('artwork') || subjectLower.includes('label')) detectedStage = 3
+        else if (subjectLower.includes('proforma') || subjectLower.includes('pi ') || subjectLower.includes('invoice')) detectedStage = 2
+        else if (subjectLower.includes('purchase order') || subjectLower.includes('new po') || subjectLower.includes('new purchase')) detectedStage = 1
+        else if (subjectLower.includes('quality') || subjectLower.includes('inspection')) detectedStage = 4
+        else if (subjectLower.includes('schedule') || subjectLower.includes('vessel') || subjectLower.includes('shipment')) detectedStage = 5
+        else if (subjectLower.includes('draft') || subjectLower.includes('document') || subjectLower.includes('bl ') || subjectLower.includes('bill of lading')) detectedStage = 6
+        else if (subjectLower.includes('final doc') || subjectLower.includes('telex')) detectedStage = 7
+        else if (subjectLower.includes('dhl') || subjectLower.includes('courier') || subjectLower.includes('shipped')) detectedStage = 8
+
+        await supabase
+          .from('synced_emails')
+          .update({
+            matched_order_id: order.id,
+            detected_stage: detectedStage,
+            ai_summary: summary,
+          })
+          .eq('id', email.id)
+
+        regexMatchCount++
+
+        // Advance order stage if needed
+        if (detectedStage && detectedStage > order.currentStage) {
+          const newSkipped = [...(order.skippedStages || [])]
+          for (let s = order.currentStage + 1; s < detectedStage; s++) {
+            if (!newSkipped.includes(s)) newSkipped.push(s)
+          }
+          await supabase
+            .from('orders')
+            .update({ current_stage: detectedStage, skipped_stages: newSkipped })
+            .eq('order_id', order.id)
+            .eq('organization_id', organization_id)
+          order.currentStage = detectedStage
+          order.skippedStages = newSkipped
+
+          await supabase.from('order_history').insert({
+            organization_id,
+            order_id: order.uuid,
+            stage: detectedStage,
+            note: `Stage auto-advanced from email: ${email.subject?.substring(0, 100)}`,
+            created_by: user_id,
+          })
+        }
+      }
+
+      if (regexMatchCount > 0) {
+        console.log(`[REGEX] Pre-AI matched ${regexMatchCount} emails by PO number`)
+      }
+
+      // If ALL emails were regex-matched, skip AI entirely
+      if (needsAI.length === 0) {
+        const { count: totalCount } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id)
+        const { count: matchedTotal } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).not('matched_order_id', 'is', null)
+        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null)
+        setCors(res)
+        return res.status(200).json({
+          mode: 'match', done: (remaining || 0) === 0, matched: regexMatchCount, created: createdOrderCount,
+          remaining: remaining || 0, totalEmails: totalCount || 0, totalMatched: matchedTotal || 0,
+          message: `Regex matched ${regexMatchCount} emails by PO number`,
+        })
+      }
+
+      // Replace unmatchedEmails with only those that need AI
+      // (needsAI already has the right emails, use them for the AI prompt below)
+      const aiEmails = needsAI
+
       const aiPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International. Match each email below to an existing purchase order.
 ${catalogSection}
 ACTIVE ORDERS:
@@ -1218,7 +1339,7 @@ STAGE DEFINITIONS:
 ${STAGE_TRIGGERS}
 ${correctionExamples}
 EMAILS TO MATCH:
-${unmatchedEmails.map((e: any, i: number) => `
+${aiEmails.map((e: any, i: number) => `
 === EMAIL #${i + 1} ===
 GMAIL_ID: "${e.gmail_id}"
 From: ${e.from_name} <${e.from_email}>
@@ -1249,7 +1370,7 @@ STAGE RULES:
 - detected_stage is the stage this email provides EVIDENCE for — it can be ANY stage, not just current+1.
 - Sometimes steps get skipped in real trade — that's OK.
 
-Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.length} results, one per email, in the same order:
+Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} results, one per email, in the same order:
 [{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "What THIS specific email is about", "product": "Product name if order has Unknown product, omit otherwise" }]`
 
       let aiResults: any[] = []
@@ -1280,7 +1401,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       }
 
       // Validate: only keep results whose gmail_id actually matches an email we sent
-      const validGmailIds = new Set(unmatchedEmails.map((e: any) => e.gmail_id))
+      const validGmailIds = new Set(aiEmails.map((e: any) => e.gmail_id))
       aiResults = aiResults.filter((r: any) => {
         if (!validGmailIds.has(r.gmail_id)) {
           console.warn(`AI returned unknown gmail_id: ${r.gmail_id} — skipping`)
@@ -1294,7 +1415,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       let matchedCount = 0
       let advancedCount = 0
 
-      for (const email of unmatchedEmails) {
+      for (const email of aiEmails) {
         const ai = aiMap.get(email.gmail_id) || {}
         const matchedOrderId = ai.matched_order_id || null
         const detectedStage = ai.detected_stage || null
@@ -1440,7 +1561,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       const existingPOs = new Set(ordersList.map((o: any) => o.id))
       const newPOEmails = new Map<string, any[]>() // po_number -> emails[]
 
-      for (const email of unmatchedEmails) {
+      for (const email of aiEmails) {
         const ai = aiMap.get(email.gmail_id) || {}
         if (ai.matched_order_id) continue // already matched
 
@@ -1602,9 +1723,10 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
       return res.status(200).json({
         mode: 'match',
         done: (remainingCount || 0) === 0,
-        matched: matchedCount,
+        matched: matchedCount + regexMatchCount,
         advanced: advancedCount,
         created: createdOrderCount,
+        regexMatched: regexMatchCount,
         remaining: remainingCount || 0,
         totalEmails: totalEmails || 0,
         totalMatched: totalMatched || 0,
