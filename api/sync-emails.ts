@@ -1209,6 +1209,20 @@ If no purchase orders found, return: []`
         })
       }
 
+      // Helper: detect order stage from email subject keywords
+      const detectStageFromSubject = (subject: string | null): number | null => {
+        const s = (subject || '').toLowerCase()
+        if (s.includes('artwork') || s.includes('label')) return 3
+        if (s.includes('proforma') || s.includes('pi ') || s.includes('invoice')) return 2
+        if (s.includes('purchase order') || s.includes('new po') || s.includes('new purchase')) return 1
+        if (s.includes('quality') || s.includes('inspection')) return 4
+        if (s.includes('schedule') || s.includes('vessel') || s.includes('shipment')) return 5
+        if (s.includes('draft') || s.includes('document') || s.includes('bl ') || s.includes('bill of lading')) return 6
+        if (s.includes('final doc') || s.includes('telex')) return 7
+        if (s.includes('dhl') || s.includes('courier') || s.includes('shipped')) return 8
+        return null
+      }
+
       // ===== PRE-AI REGEX MATCHING =====
       // Match emails by PO number BEFORE calling AI. Runs on ALL unprocessed emails (not just the 5-email batch)
       // AND re-checks previously AI-processed-but-unmatched emails that now have matching orders.
@@ -1249,7 +1263,7 @@ If no purchase orders found, return: []`
       if (ordersList.length > 0) {
         const { data: prevUnmatched } = await supabase
           .from('synced_emails')
-          .select('id, subject, body_text')
+          .select('id, subject, body_text, from_email, from_name, date, has_attachment')
           .eq('organization_id', organization_id)
           .is('matched_order_id', null)
           .is('user_linked_order_id', null)
@@ -1260,27 +1274,31 @@ If no purchase orders found, return: []`
           for (const email of prevUnmatched) {
             const order = tryRegexMatch(email)
             if (order) {
-              const subjectLower = (email.subject || '').toLowerCase()
-              let detectedStage: number | null = null
-              if (subjectLower.includes('artwork') || subjectLower.includes('label')) detectedStage = 3
-              else if (subjectLower.includes('proforma') || subjectLower.includes('pi ') || subjectLower.includes('invoice')) detectedStage = 2
-              else if (subjectLower.includes('purchase order') || subjectLower.includes('new po') || subjectLower.includes('new purchase')) detectedStage = 1
-              else if (subjectLower.includes('quality') || subjectLower.includes('inspection')) detectedStage = 4
-              else if (subjectLower.includes('schedule') || subjectLower.includes('vessel') || subjectLower.includes('shipment')) detectedStage = 5
-              else if (subjectLower.includes('draft') || subjectLower.includes('document') || subjectLower.includes('bl ') || subjectLower.includes('bill of lading')) detectedStage = 6
-              else if (subjectLower.includes('final doc') || subjectLower.includes('telex')) detectedStage = 7
-              else if (subjectLower.includes('dhl') || subjectLower.includes('courier') || subjectLower.includes('shipped')) detectedStage = 8
+              const detectedStage = detectStageFromSubject(email.subject)
 
               await supabase.from('synced_emails').update({
                 matched_order_id: order.id,
                 detected_stage: detectedStage,
                 ai_summary: `Auto-matched by PO number (re-scan)`,
               }).eq('id', email.id)
+
+              // Create order_history entry so email shows on order detail page
+              await supabase.from('order_history').insert({
+                organization_id,
+                order_id: order.uuid,
+                stage: detectedStage || 1,
+                from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
+                subject: email.subject || 'No subject',
+                body: (email.body_text || '').substring(0, 5000),
+                timestamp: email.date || new Date().toISOString(),
+                has_attachment: email.has_attachment || false,
+              })
+
               regexMatchCount++
             }
           }
           if (regexMatchCount > 0) {
-            console.log(`[REGEX PASS 1] Re-matched ${regexMatchCount} previously unmatched emails`)
+            console.log(`[REGEX PASS 1] Re-matched ${regexMatchCount} previously unmatched emails (with history entries)`)
           }
         }
       }
@@ -1298,18 +1316,7 @@ If no purchase orders found, return: []`
       // Process regex-matched emails from Pass 2 (current batch)
       for (const { email, order } of regexMatched) {
         const summary = `Auto-matched by PO number in email subject/body`
-
-        // Detect stage from email content
-        let detectedStage: number | null = null
-        const subjectLower = (email.subject || '').toLowerCase()
-        if (subjectLower.includes('artwork') || subjectLower.includes('label')) detectedStage = 3
-        else if (subjectLower.includes('proforma') || subjectLower.includes('pi ') || subjectLower.includes('invoice')) detectedStage = 2
-        else if (subjectLower.includes('purchase order') || subjectLower.includes('new po') || subjectLower.includes('new purchase')) detectedStage = 1
-        else if (subjectLower.includes('quality') || subjectLower.includes('inspection')) detectedStage = 4
-        else if (subjectLower.includes('schedule') || subjectLower.includes('vessel') || subjectLower.includes('shipment')) detectedStage = 5
-        else if (subjectLower.includes('draft') || subjectLower.includes('document') || subjectLower.includes('bl ') || subjectLower.includes('bill of lading')) detectedStage = 6
-        else if (subjectLower.includes('final doc') || subjectLower.includes('telex')) detectedStage = 7
-        else if (subjectLower.includes('dhl') || subjectLower.includes('courier') || subjectLower.includes('shipped')) detectedStage = 8
+        const detectedStage = detectStageFromSubject(email.subject)
 
         await supabase
           .from('synced_emails')
@@ -1335,15 +1342,19 @@ If no purchase orders found, return: []`
             .eq('organization_id', organization_id)
           order.currentStage = detectedStage
           order.skippedStages = newSkipped
-
-          await supabase.from('order_history').insert({
-            organization_id,
-            order_id: order.uuid,
-            stage: detectedStage,
-            note: `Stage auto-advanced from email: ${email.subject?.substring(0, 100)}`,
-            created_by: user_id,
-          })
         }
+
+        // ALWAYS create order_history entry so email shows on order detail page
+        await supabase.from('order_history').insert({
+          organization_id,
+          order_id: order.uuid,
+          stage: detectedStage || 1,
+          from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
+          subject: email.subject || 'No subject',
+          body: (email.body_text || '').substring(0, 5000),
+          timestamp: email.date || new Date().toISOString(),
+          has_attachment: email.has_attachment || false,
+        })
       }
 
       if (regexMatchCount > 0) {
