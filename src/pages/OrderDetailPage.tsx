@@ -448,7 +448,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       return;
     }
 
-    // Fallback for older orders: generate from HTML
+    // Fallback for older orders: generate from HTML and auto-save to storage
     try {
       const html = buildPOHtml(getPdfData());
       const blob = await (html2pdf() as any).set({
@@ -460,6 +460,23 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       }).from(html, 'string').output('blob');
       const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
       setPdfModal(prev => ({ ...prev, url, loading: false }));
+
+      // Auto-save the generated PDF to Supabase storage so it becomes the frozen version
+      try {
+        const filename = `${order.id.replace(/\//g, '_')}.pdf`;
+        await supabase.storage.from('po-documents').upload(filename, blob, {
+          contentType: 'application/pdf', upsert: true,
+        });
+        const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(filename);
+        if (urlData?.publicUrl && onUpdateOrder) {
+          await onUpdateOrder(order.id, {
+            metadata: { ...(order.metadata || {}), pdfUrl: urlData.publicUrl },
+          });
+          console.log(`[PO] Auto-saved frozen PDF for ${order.id}`);
+        }
+      } catch (saveErr) {
+        console.warn('[PO] Could not auto-save PDF to storage:', saveErr);
+      }
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
     }
