@@ -140,34 +140,51 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           for (const h of stage1) {
             for (const att of (h.attachments || [])) {
               const meta = getAttachmentMeta(att);
-              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att), isEmail: !!meta.extractedFromEmail };
+              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att) };
             }
           }
           // Fallback: check order metadata
-          if (order.metadata?.pdfUrl) return { url: order.metadata.pdfUrl, name: `${order.id}.pdf`, isEmail: !!order.metadata?.extractedFromEmail };
+          if (order.metadata?.pdfUrl) return { url: order.metadata.pdfUrl, name: `${order.id}.pdf` };
           return null;
         })();
 
-        const isEmailOrder = poUrl?.isEmail || order.metadata?.extractedFromEmail;
-        const poLabel = isEmailOrder ? 'Original PO' : 'View PO';
-        const poTitle = isEmailOrder ? `Original PO Attachment - ${order.id}` : `Purchase Order - ${order.id}`;
+        // Email-created orders show the original scan only — no generated/amended PO path
+        const isEmailOrder = order.metadata?.created_by === 'email_sync_auto';
 
+        if (isEmailOrder) {
+          // Email orders: show scanned PO attachment only
+          return (
+            <div className="space-y-3">
+              {poUrl && (
+                <button
+                  onClick={() => setPdfModal({ open: true, url: poUrl.url, title: `Original PO - ${order.id}`, loading: false })}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+                >
+                  <Icon name="FileText" size={15} />
+                  Original PO
+                </button>
+              )}
+              {renderAttachments(1)}
+            </div>
+          );
+        }
+
+        // App-created orders: show View PO (generated) + Amend PO
         return (
           <div className="space-y-3">
             <div className="flex items-stretch gap-2">
               <button
                 onClick={() => {
                   if (poUrl) {
-                    setPdfModal({ open: true, url: poUrl.url, title: poTitle, loading: false });
+                    setPdfModal({ open: true, url: poUrl.url, title: `Purchase Order - ${order.id}`, loading: false });
                   } else {
-                    // Legacy fallback: generate from HTML for orders with no stored PDF
                     previewPOasPDF();
                   }
                 }}
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
               >
                 <Icon name="FileText" size={15} />
-                {poLabel}
+                View PO
               </button>
               <button
                 onClick={() => {
@@ -1027,7 +1044,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800 text-sm">{pdfModal.title}</h3>
-                  <p className="text-xs text-gray-500">{order.metadata?.extractedFromEmail ? 'Original Email Attachment' : (order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Saved Document' : 'Generated Preview'}</p>
+                  <p className="text-xs text-gray-500">{order.metadata?.created_by === 'email_sync_auto' ? 'Original Email Attachment' : (order.metadata?.pdfUrl || getPOMeta()?.pdfUrl) ? 'Saved Document' : 'Generated Preview'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1047,10 +1064,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     Download
                   </a>
                 )}
-                <button onClick={regeneratePDF} className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-1.5 font-medium" title="Regenerate PDF from order data">
-                  <Icon name="RefreshCw" size={14} />
-                  Regenerate
-                </button>
+                {order.metadata?.created_by !== 'email_sync_auto' && (
+                  <button onClick={regeneratePDF} className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-1.5 font-medium" title="Regenerate PDF from order data">
+                    <Icon name="RefreshCw" size={14} />
+                    Regenerate
+                  </button>
+                )}
                 <button onClick={closePdfModal} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
                   <Icon name="X" size={20} className="text-gray-500" />
                 </button>
