@@ -567,19 +567,20 @@ async function processEmailAttachments(
   supabase: any, accessToken: string, email: any,
   matchedOrderId: string, orderUuid: string, organizationId: string, userId: string,
   skipExtraction: boolean = false
-) {
+): Promise<{ filesStored: number; noValidParts: boolean }> {
   try {
     // 1. Get all attachment parts from the email
     const parts = await getAttachmentPartsForMessage(accessToken, email.gmail_id)
     const validParts = parts.filter((p: any) =>
       p.mimeType.includes('pdf') || p.mimeType.includes('image/jpeg') || p.mimeType.includes('image/jpg') || p.mimeType.includes('image/png')
     )
-    if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return }
+    if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return { filesStored: 0, noValidParts: true } }
     console.log(`[PROCESS] Found ${validParts.length} valid attachments for ${matchedOrderId}`)
 
     // Track what we found
     let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
     let foundPI = false
+    let filesStored = 0
 
     // 2. For each attachment: download, classify, upload to correct stage
     for (const part of validParts) {
@@ -601,6 +602,7 @@ async function processEmailAttachments(
 
         // Store in the correct stage's history entry
         await storeAttachmentInHistory(supabase, orderUuid, stage, part.filename, publicUrl)
+        filesStored++
 
         // Track PO attachment for later data extraction
         if (result.classification === 'po') {
@@ -747,9 +749,11 @@ async function processEmailAttachments(
       }
     }
 
-    console.log(`[PROCESS] Done processing attachments for ${matchedOrderId}`)
+    console.log(`[PROCESS] Done processing attachments for ${matchedOrderId} — ${filesStored} files stored`)
+    return { filesStored, noValidParts: false }
   } catch (err) {
     console.error('[PROCESS] Attachment processing error:', err)
+    throw err  // Re-throw so caller knows it failed
   }
 }
 
@@ -1608,7 +1612,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
                   }
                 }
                 if (gmailAccessToken) {
-                  await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                  try {
+                    await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                  } catch (attachErr) {
+                    console.log(`[MATCH] Attachment processing failed for ${matchedOrderId}, will retry in reprocess: ${attachErr}`)
+                  }
                 }
               }
             }
@@ -1639,7 +1647,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
                 }
               }
               if (gmailAccessToken) {
-                await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                try {
+                  await processEmailAttachments(supabase, gmailAccessToken, email, matchedOrderId, order.uuid, organization_id, user_id)
+                } catch (attachErr) {
+                  console.log(`[MATCH] Attachment processing failed for ${matchedOrderId}, will retry in reprocess: ${attachErr}`)
+                }
               }
             }
           }
@@ -2187,19 +2199,33 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         const orderUuid = orderMap.get(email.matched_order_id)
         let status = 'skip'
         let error = ''
+        let shouldMarkProcessed = false
 
         if (orderUuid) {
           try {
-            await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id, true)
-            status = 'ok'
+            const result = await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id, true)
+            if (result.filesStored > 0 || result.noValidParts) {
+              // Files were stored OR there were genuinely no valid attachments — mark as done
+              status = 'ok'
+              shouldMarkProcessed = true
+            } else {
+              // Had valid parts but none were stored (download/classify/upload failed)
+              status = 'no_files'
+              error = 'Attachments found but none were stored — will retry next sync'
+            }
           } catch (err) {
             status = 'error'
             error = String(err)
+            // Don't mark as processed on error — will retry next sync
           }
+        } else {
+          // Order doesn't exist (was deleted) — mark as processed so we skip it forever
+          shouldMarkProcessed = true
         }
 
-        // Mark as processed regardless of outcome to avoid infinite retries
-        await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
+        if (shouldMarkProcessed) {
+          await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
+        }
         rpProcessed++
         rpResults.push({ order: email.matched_order_id, stage: email.detected_stage, status, error: error || undefined })
       }
