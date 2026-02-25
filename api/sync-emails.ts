@@ -1210,55 +1210,92 @@ If no purchase orders found, return: []`
       }
 
       // ===== PRE-AI REGEX MATCHING =====
-      // Before calling the AI, try to match emails directly by PO number in subject/body.
-      // This is faster, cheaper, and more reliable than AI for emails with clear PO references.
+      // Match emails by PO number BEFORE calling AI. Runs on ALL unprocessed emails (not just the 5-email batch)
+      // AND re-checks previously AI-processed-but-unmatched emails that now have matching orders.
       const regexMatched: any[] = []
       const needsAI: any[] = []
 
       // Build a lookup map: PO short number -> full order
       const poLookup = new Map<string, any>()
       for (const order of ordersList) {
-        // Extract short PO number (e.g. "3044" from "GI/PO/25-26/3044")
         const shortMatch = order.id.match(/(\d{4})$/)
         if (shortMatch) {
           poLookup.set(shortMatch[1], order)
         }
-        // Also map the full PO number
         poLookup.set(order.id, order)
       }
 
-      for (const email of unmatchedEmails) {
+      // Helper: try to regex-match a single email to an order
+      const tryRegexMatch = (email: any): any | null => {
         const searchText = `${email.subject || ''} ${(email.body_text || '').substring(0, 2000)}`
-
-        // Look for PO number patterns: "PO 3044", "PO GI/PO/25-26/3044", "PO-3044", "PO3044"
         const poPatterns = [
-          /PO\s*(?:GI\/PO\/\d{2}-\d{2}\/)?(3\d{3})/gi,  // "PO 3044" or "PO GI/PO/25-26/3044"
-          /GI\/PO\/\d{2}-\d{2}\/(3\d{3})/gi,              // "GI/PO/25-26/3044" without PO prefix
-          /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,    // "Purchase Order 3044"
+          /PO\s*(?:GI\/PO\/\d{2}-\d{2}\/)?(3\d{3})/gi,
+          /GI\/PO\/\d{2}-\d{2}\/(3\d{3})/gi,
+          /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,
+          /(3\d{3})\s*(?:eguillem|guillem|label|artwork)/gi,  // "3034eguillem-label389"
         ]
-
-        let matchedOrder: any = null
         for (const pattern of poPatterns) {
           let match
           while ((match = pattern.exec(searchText)) !== null) {
-            const shortNum = match[1]
-            if (poLookup.has(shortNum)) {
-              matchedOrder = poLookup.get(shortNum)
-              break
+            if (poLookup.has(match[1])) return poLookup.get(match[1])
+          }
+        }
+        return null
+      }
+
+      // PASS 1: Re-check previously unmatched emails (have ai_summary but no matched_order_id)
+      // These were processed by AI earlier but the order didn't exist yet at that time
+      let regexMatchCount = 0
+      if (ordersList.length > 0) {
+        const { data: prevUnmatched } = await supabase
+          .from('synced_emails')
+          .select('id, subject, body_text')
+          .eq('organization_id', organization_id)
+          .is('matched_order_id', null)
+          .is('user_linked_order_id', null)
+          .not('ai_summary', 'is', null)
+          .limit(500)
+
+        if (prevUnmatched && prevUnmatched.length > 0) {
+          for (const email of prevUnmatched) {
+            const order = tryRegexMatch(email)
+            if (order) {
+              const subjectLower = (email.subject || '').toLowerCase()
+              let detectedStage: number | null = null
+              if (subjectLower.includes('artwork') || subjectLower.includes('label')) detectedStage = 3
+              else if (subjectLower.includes('proforma') || subjectLower.includes('pi ') || subjectLower.includes('invoice')) detectedStage = 2
+              else if (subjectLower.includes('purchase order') || subjectLower.includes('new po') || subjectLower.includes('new purchase')) detectedStage = 1
+              else if (subjectLower.includes('quality') || subjectLower.includes('inspection')) detectedStage = 4
+              else if (subjectLower.includes('schedule') || subjectLower.includes('vessel') || subjectLower.includes('shipment')) detectedStage = 5
+              else if (subjectLower.includes('draft') || subjectLower.includes('document') || subjectLower.includes('bl ') || subjectLower.includes('bill of lading')) detectedStage = 6
+              else if (subjectLower.includes('final doc') || subjectLower.includes('telex')) detectedStage = 7
+              else if (subjectLower.includes('dhl') || subjectLower.includes('courier') || subjectLower.includes('shipped')) detectedStage = 8
+
+              await supabase.from('synced_emails').update({
+                matched_order_id: order.id,
+                detected_stage: detectedStage,
+                ai_summary: `Auto-matched by PO number (re-scan)`,
+              }).eq('id', email.id)
+              regexMatchCount++
             }
           }
-          if (matchedOrder) break
+          if (regexMatchCount > 0) {
+            console.log(`[REGEX PASS 1] Re-matched ${regexMatchCount} previously unmatched emails`)
+          }
         }
+      }
 
-        if (matchedOrder) {
-          regexMatched.push({ email, order: matchedOrder })
+      // PASS 2: Regex-match the current batch of unprocessed emails
+      for (const email of unmatchedEmails) {
+        const order = tryRegexMatch(email)
+        if (order) {
+          regexMatched.push({ email, order })
         } else {
           needsAI.push(email)
         }
       }
 
-      // Process regex-matched emails immediately
-      let regexMatchCount = 0
+      // Process regex-matched emails from Pass 2 (current batch)
       for (const { email, order } of regexMatched) {
         const summary = `Auto-matched by PO number in email subject/body`
 
