@@ -1073,7 +1073,7 @@ For each distinct purchase order you can identify, extract:
 - po_number: The PO/reference number (look for patterns like "GI/PO/...", "PO-...", or any order reference)
 - company: The buyer company name
 - supplier: The supplier/seller company name
-- product: Main product being traded
+- product: The MAIN seafood product being traded (e.g. "Frozen Squid", "Frozen Shrimp", "Frozen Cuttlefish"). Look in email subjects, body text, PI references, and attachment names for product mentions like "squid", "shrimp", "cuttlefish", "octopus", "fish", "calamar", "pota", "sepia" etc. If the subject says something like "CALAMAR TROCEADO" that means squid. Use a short, clean English product name. NEVER return "Unknown" — if truly unclear, use the best guess from any product-related words in the emails.
 - from_location: Where goods ship FROM
 - highest_stage: The HIGHEST stage this order has reached based on ALL email evidence (1-8)
 - skipped_stages: Array of stage numbers that were SKIPPED (no email evidence found for them). For example, if an order went from stage 1 directly to stage 3 with no evidence of stage 2, skipped_stages would be [2].
@@ -1096,7 +1096,8 @@ RULES:
 - Be PRECISE with company names — similar names are DIFFERENT entities
 - Every field MUST be filled with real data from the emails
 - Each order should appear only once (deduplicate by PO number)
-- Ganesh International is usually the buyer/trading company — the supplier is the factory/producer
+- Ganesh International is usually the INTERMEDIARY trading company — the buyer is the end client (e.g. Pescados E. Guillem S.L.) and the supplier is the factory/producer (e.g. JJ Seafood, Premier Exports)
+- For the "product" field: look at email subjects, bodies, and attachment filenames for seafood product names. Common patterns: "CALAMAR" = Squid, "POTA" = Flying Squid, "SEPIA" = Cuttlefish, "GAMBA" = Shrimp. Combine with processing type if clear (e.g. "Frozen Squid Rings", "Frozen Baby Squid")
 - Return VALID JSON only, no markdown
 
 Return a JSON array:
@@ -1234,6 +1235,7 @@ For each email above, determine:
 1. Which order it matches (by PO number, company, supplier, or product references in the email body/subject). Use the order "id" field (PO number like "GI/PO/...").
 2. What stage this email represents (the stage the email is evidence of).
 3. A brief summary of what THIS specific email is about. The summary MUST describe the actual content of THIS email — its subject and body — not any other email.
+4. If the matched order has product "Unknown", extract the product name from this email (look in subject, body, attachment names for seafood names like squid, shrimp, cuttlefish, calamar, pota, sepia etc). Return it as "product" field. If order already has a real product name or you can't find one, omit this field.
 
 ACCURACY RULES — READ CAREFULLY:
 - You MUST copy the GMAIL_ID exactly from each email header above. Do NOT swap or mix up IDs between emails.
@@ -1248,7 +1250,7 @@ STAGE RULES:
 - Sometimes steps get skipped in real trade — that's OK.
 
 Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.length} results, one per email, in the same order:
-[{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "What THIS specific email is about" }]`
+[{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "What THIS specific email is about", "product": "Product name if order has Unknown product, omit otherwise" }]`
 
       let aiResults: any[] = []
       try {
@@ -1297,6 +1299,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         const matchedOrderId = ai.matched_order_id || null
         const detectedStage = ai.detected_stage || null
         const summary = ai.summary || null
+        const aiProduct = ai.product || null
 
         if (!matchedOrderId) {
           // Still save the AI summary so this email won't be re-processed
@@ -1326,6 +1329,19 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           .eq('id', email.id)
 
         matchedCount++
+
+        // Update product name if order has "Unknown" and AI found a product
+        if (aiProduct && aiProduct !== 'Unknown') {
+          const order = ordersList.find((o: any) => o.id === matchedOrderId)
+          if (order && (!order.product || order.product === 'Unknown')) {
+            await supabase
+              .from('orders')
+              .update({ product: aiProduct })
+              .eq('order_id', matchedOrderId)
+              .eq('organization_id', organization_id)
+            order.product = aiProduct // Update local copy
+          }
+        }
 
         // Handle stage advancement with skip support
         if (detectedStage) {
@@ -1612,7 +1628,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         // Force mode: re-extract even if line items already exist
         const { data: order } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier')
+          .select('id, order_id, company, supplier, product')
           .eq('organization_id', organization_id)
           .eq('order_id', targetPO)
           .single()
@@ -1621,7 +1637,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         // Retry mode: clear extraction_attempted flag and re-process
         const { data } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, metadata, order_line_items(id)')
+          .select('id, order_id, company, supplier, product, metadata, order_line_items(id)')
           .eq('organization_id', organization_id)
         ordersToProcess = (data || []).filter((o: any) =>
           (!o.order_line_items || o.order_line_items.length === 0)
@@ -1638,7 +1654,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         // Single order mode
         const { data: order } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier')
+          .select('id, order_id, company, supplier, product')
           .eq('organization_id', organization_id)
           .eq('po_number', targetPO)
           .single()
@@ -1647,7 +1663,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         // Batch mode: find orders with 0 line items via left join, skip already-attempted
         const { data } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, metadata, order_line_items(id)')
+          .select('id, order_id, company, supplier, product, metadata, order_line_items(id)')
           .eq('organization_id', organization_id)
         ordersToProcess = (data || []).filter((o: any) =>
           (!o.order_line_items || o.order_line_items.length === 0) &&
@@ -1832,7 +1848,15 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
           if (extractedData.destination) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
-          // Don't overwrite the product field — it's set by the user
+          // Update product name from line items if currently "Unknown"
+          if ((!order.product || order.product === 'Unknown') && extractedData.lineItems.length > 0) {
+            // Use the first line item's product as the main product name
+            const mainProduct = extractedData.lineItems[0].product
+            if (mainProduct && mainProduct !== 'Unknown') {
+              updates.product = mainProduct
+              console.log(`[BULK] Updated product for ${order.order_id}: "${mainProduct}"`)
+            }
+          }
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
 
           extracted++
