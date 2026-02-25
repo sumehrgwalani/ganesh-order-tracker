@@ -49,6 +49,8 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   const [emailFormData, setEmailFormData] = useState({ provider: 'none', smtpHost: '', smtpPort: '', smtpUsername: '', smtpPassword: '', smtpFromEmail: '', smtpUseTls: false, sendgridKey: '', resendKey: '' });
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [gmailDisconnecting, setGmailDisconnecting] = useState(false);
+  const [gmailLastSync, setGmailLastSync] = useState<string | null>(null);
   const [gmailClientId, setGmailClientId] = useState<string | null>(null);
 
   // Load Gmail connection status
@@ -61,8 +63,9 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       // Get current user's gmail status
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: member } = await supabase.from('organization_members').select('gmail_email').eq('organization_id', orgId).eq('user_id', user.id).single();
+      const { data: member } = await supabase.from('organization_members').select('gmail_email, gmail_last_sync').eq('organization_id', orgId).eq('user_id', user.id).single();
       if (member?.gmail_email) setGmailEmail(member.gmail_email);
+      if (member?.gmail_last_sync) setGmailLastSync(member.gmail_last_sync);
     })();
   }, [orgId]);
 
@@ -100,6 +103,24 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const scope = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
     const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${gmailClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
     window.location.href = url;
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!window.confirm('Disconnect Gmail? Email sync will stop working.')) return;
+    setGmailDisconnecting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase.from('organization_members').update({ gmail_refresh_token: null, gmail_email: null, gmail_last_sync: null }).eq('user_id', user.id).eq('organization_id', orgId);
+      if (error) throw error;
+      setSaveStatus({ type: 'success', message: 'Gmail disconnected' });
+      setGmailEmail(null);
+      setGmailLastSync(null);
+    } catch (err: any) {
+      setSaveStatus({ type: 'error', message: 'Failed to disconnect Gmail' });
+    } finally {
+      setGmailDisconnecting(false);
+    }
   };
 
   // Initialize form data when settings load
@@ -627,24 +648,38 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                         <span className="text-sm text-gray-600">Connecting to Gmail...</span>
                       </div>
                     ) : gmailEmail ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                            <Icon name="Check" size={16} className="text-green-600" />
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                              <Icon name="Mail" size={20} className="text-green-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-green-800">Connected</p>
+                              <p className="text-sm text-green-600">{gmailEmail}</p>
+                              {gmailLastSync && (
+                                <p className="text-xs text-green-500 mt-0.5">Last synced: {new Date(gmailLastSync).toLocaleString()}</p>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-800">Connected as {gmailEmail}</p>
-                            <p className="text-xs text-gray-500">Gmail is used to send and read emails</p>
-                          </div>
+                          <button
+                            onClick={handleDisconnectGmail}
+                            disabled={gmailDisconnecting}
+                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {gmailDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleConnectGmail}
-                          className="px-4 py-2 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100"
-                        >
-                          Reconnect Gmail
-                        </button>
-                        <p className="text-xs text-gray-400">Use this if emails stop sending — it refreshes your Gmail connection.</p>
+                        <div className="mt-3 pt-3 border-t border-green-200">
+                          <button
+                            type="button"
+                            onClick={handleConnectGmail}
+                            className="px-3 py-1.5 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100"
+                          >
+                            Reconnect Gmail
+                          </button>
+                          <p className="text-xs text-gray-400 mt-1">Use this if emails stop syncing — it refreshes your Gmail connection.</p>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-3">
