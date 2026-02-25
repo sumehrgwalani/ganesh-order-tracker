@@ -67,12 +67,13 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       o.product?.toLowerCase().trim() === currentOrder.product?.toLowerCase().trim() &&
       o.company?.toLowerCase().trim() === currentOrder.company?.toLowerCase().trim() &&
       (!currentOrder.brand || o.brand?.toLowerCase().trim() === currentOrder.brand?.toLowerCase().trim()) &&
-      o.artworkStatus === 'approved'
+      o.currentStage > 3 // Past artwork stage = artwork was approved
     );
     candidates.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     for (const candidate of candidates) {
-      const stage3 = candidate.history.filter(h => h.stage === 3 && h.hasAttachment && h.attachments?.length);
-      for (const entry of stage3) {
+      // Search stage 2-3 history entries for artwork attachments (artwork emails sometimes land at stage 2)
+      const withAttachments = candidate.history.filter(h => (h.stage === 2 || h.stage === 3) && h.hasAttachment && h.attachments?.length);
+      for (const entry of withAttachments) {
         for (const att of entry.attachments || []) {
           const meta = getAttachmentMeta(att);
           if (meta?.pdfUrl) {
