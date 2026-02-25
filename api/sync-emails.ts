@@ -283,7 +283,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 // Extract PO data from an image (scanned PO) using Claude vision
 async function extractPODataFromImage(
   imageBase64: string, mimeType: string, orderCompany: string, orderSupplier: string
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number, supplier?: string } | null> {
   try {
     const isImage = mimeType.startsWith('image/')
     const isPdf = mimeType.includes('pdf')
@@ -293,32 +293,45 @@ async function extractPODataFromImage(
         ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageBase64 } }
         : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } }
     const prompt = `You are an expert seafood trading order parser for Ganesh International.
-Extract structured purchase order data from this scanned PO document image.
+Extract structured purchase order data from this scanned PO document.
 
 CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences.
 
-IMPORTANT - BEFORE extracting line items, first scan the ENTIRE document for these fields that typically appear OUTSIDE the product table:
-1. Commission - usually labeled "Commission:" near Delivery/Payment section. Examples: "10 Cents per Kg + GST", "2%", "$0.10/kg", "USD 0.05 per kg"
+STEP 1 - Find the SUPPLIER name:
+- Look at the TOP of the document for the supplier/seller/vendor name
+- It is usually the company the PO is addressed TO (not Ganesh International who is the buyer)
+- Common supplier names: JJ SEAFOODS, RAUNAQ, AMULYA, J.L. INTERNATIONAL, etc.
+- The supplier address block is usually on the left side, often labeled "To:" or "M/s" or just the first company name that isn't Ganesh International
+
+STEP 2 - Scan the document for these fields (typically BELOW the product table):
+1. Commission - labeled "Commission:" Examples: "10 Cents per Kg + GST", "2%", "$0.10/kg"
 2. Delivery Terms - e.g. "CFR Valencia", "CIF Rotterdam", "FOB Kochi"
 3. Payment Terms - e.g. "LC at 75 Days", "Sight DP", "TT Payment"
-4. Destination - the port/city name from delivery terms or a separate field
+4. Destination - the port/city from delivery terms
 5. Delivery/Shipment date - e.g. "Before 10/03/2026"
+
+STEP 3 - Extract EVERY row from the product table. For each row read ALL columns carefully:
+- The table typically has columns: Product Description, Size, Cases/Ctns, Qty(Kgs)/Weight, Rate/Price, Amount/Total
+- CRITICAL: You MUST read the numeric values for Cases, Kilos, Price, and Total from EACH row. Never return 0 for these.
+- If a column header says "Cajas" that means Cases. "Unidades" means Units. "Precio" means Price. "Importe" means Amount/Total.
+- Calculate: if you have cases and packing (e.g. "6x1kg"), you can derive kilos = cases * kg_per_case
+- Calculate: total = kilos * pricePerKg (verify against the Amount column)
 
 Known context:
 - Buyer: ${orderCompany || 'Unknown'}
-- Supplier: ${orderSupplier || 'Unknown'}
 
 Return this JSON structure:
 {
+  "supplier": "The supplier/seller company name from the document",
   "lineItems": [
     {
-      "product": "string - full product name, start with 'Frozen'",
-      "size": "string - size range or empty string",
-      "glaze": "string - glaze percentage or empty string",
-      "glazeMarked": "string - marked/declared glaze if different, or empty string",
-      "packing": "string - packing format or empty string",
-      "brand": "string - brand name or empty string",
-      "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
+      "product": "full product name, start with 'Frozen'",
+      "size": "size range or empty string",
+      "glaze": "glaze percentage or empty string",
+      "glazeMarked": "marked/declared glaze if different, or empty string",
+      "packing": "packing format or empty string",
+      "brand": "brand name or empty string",
+      "freezing": "'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
       "cases": 2133,
       "kilos": 12798,
       "pricePerKg": 3.90,
@@ -333,22 +346,23 @@ Return this JSON structure:
 }
 
 Field notes:
+- supplier: The company this PO is sent TO (not Ganesh International). Read from document header.
 - product: full product name, always start with "Frozen"
-- cases: the number from the Cases/Cartons column. IMPORTANT: Read the actual number from the document, do NOT default to 0
-- kilos: total weight in kg. If MT given, multiply by 1000
-- pricePerKg: price per kg
-- total: the line total dollar/euro amount from the document
-- "Cases" and "Cartons" and "Ctns" and "c/s" all mean the same thing
+- cases: MUST be a number > 0. Read from Cases/Cartons/Ctns/Cajas/c/s column. If the table shows "Unidades" (units) with packing like "6x1kg", then cases = units.
+- kilos: total weight in kg. If MT given, multiply by 1000. If you see "6x1kg" packing with 800 cases, kilos = 800 * 6 = 4800
+- pricePerKg: price per kilogram. MUST be a number > 0. Read from Rate/Price/Precio column.
+- total: line total amount. MUST be a number > 0. Read from Amount/Total/Importe column. If missing, calculate as kilos * pricePerKg
+- "Cases" and "Cartons" and "Ctns" and "c/s" and "Cajas" all mean the same thing
 - freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
 - currency: 'USD' or 'EUR'. Default 'USD'
 
 Rules:
 - Always prefix product names with "Frozen" if not already
 - "07 MT" or "7 MT" = 7000 kg
-- CRITICAL: Extract the Cases/Cartons number from the table. Look for a column labeled Cases, Cartons, Ctns, or similar
-- If you cannot read the document clearly or find line item details, return empty lineItems array
+- NEVER return 0 for cases, kilos, pricePerKg, or total — read these numbers from the document
+- If you cannot read the document clearly, return empty lineItems array
 - Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons
-- CRITICAL: Do NOT return empty string for commission if a Commission field exists in the document. Read the exact text next to "Commission:" or "Commission :" label.`
+- CRITICAL: Do NOT return empty string for commission if a Commission field exists in the document.`
 
     const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -447,8 +461,9 @@ Rules:
       }
     }
 
-    console.log(`[PO-VISION] Final fields: commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
-    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100 }
+    const supplier = String(parsed.supplier || '')
+    console.log(`[PO-VISION] Final fields: supplier="${supplier}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
+    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, supplier }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -2081,6 +2096,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           if (extractedData.destination) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
+          // Update supplier from PO extraction (authoritative source)
+          if (extractedData.supplier && extractedData.supplier !== 'Unknown' && extractedData.supplier !== 'Ganesh International') {
+            updates.supplier = extractedData.supplier
+            console.log(`[BULK] Updated supplier for ${order.order_id}: "${extractedData.supplier}"`)
+          }
           // Always update product name from extracted PO line items (PO is authoritative source)
           if (extractedData.lineItems.length > 0) {
             const mainProduct = extractedData.lineItems[0].product
