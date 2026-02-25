@@ -2104,8 +2104,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           } // close if (fallback to email attachments)
 
           if (!extractedData || extractedData.lineItems.length === 0) {
-            // Mark order as extraction attempted so it doesn't get retried
-            await supabase.from('orders').update({ metadata: { extraction_attempted: true } }).eq('id', order.id)
+            // Mark order as extraction attempted so it doesn't get retried (merge metadata, don't replace!)
+            await supabase.from('orders').update({ metadata: { ...(order.metadata || {}), extraction_attempted: true } }).eq('id', order.id)
             results.push({ order: order.order_id, status: 'skip', reason: 'no PO attachment found', vision: visionDebug })
             continue
           }
