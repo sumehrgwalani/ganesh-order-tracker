@@ -1965,8 +1965,13 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
                   for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
                 }
                 const base64 = btoa(binary)
-                visionDebug.mimeType = 'application/pdf'
-                extractedData = await extractPODataFromImage(base64, 'application/pdf', order.company || '', order.supplier || '')
+                // Detect mime type from URL extension
+                const urlLower = storedPdfUrl.toLowerCase()
+                const mimeType = urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg') ? 'image/jpeg'
+                  : urlLower.endsWith('.png') ? 'image/png'
+                  : pdfResp.headers.get('content-type') || 'application/pdf'
+                visionDebug.mimeType = mimeType
+                extractedData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '')
                 visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
                 console.log(`[BULK] Stored PDF extraction: ${extractedData?.lineItems?.length || 0} items, supplier: ${extractedData?.supplier || 'none'}`)
               } else {
