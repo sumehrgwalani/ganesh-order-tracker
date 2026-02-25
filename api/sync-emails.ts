@@ -1536,11 +1536,23 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
               body: `Order ${fullPO} (${supplier}) auto-created during email sync at stage ${highestStage}`,
             })
 
-            // Match all emails for this PO to the new order
+            // Match all emails for this PO to the new order (include detected_stage)
             for (const e of emails) {
+              const subj = (e.subject || '').toUpperCase()
+              let emailStage: number | null = null
+              if (subj.includes('PURCHASE ORDER') || subj.includes('NEW PO')) emailStage = 1
+              else if (subj.includes('PROFORMA INVOICE')) emailStage = 2
+              else if (subj.includes('ARTWORK APPROVAL') || subj.includes('LABELS APPROVAL')) emailStage = 3
+              else if (subj.includes('QUALITY CHECK') || subj.includes('INSPECTION')) emailStage = 4
+              else if (subj.includes('SCHEDULE') || subj.includes('VESSEL')) emailStage = 5
+              else if (subj.includes('DRAFT DOCUMENT') || subj.includes('DRAFT BL') || subj.includes('HC DRAFT')) emailStage = 6
+              else if (subj.includes('FINAL DOCUMENT') || subj.includes('ORIGINAL DOCUMENT')) emailStage = 7
+              else if (subj.includes('DHL') || subj.includes('TRACKING')) emailStage = 8
+              const updateData: any = { matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` }
+              if (emailStage) updateData.detected_stage = emailStage
               await supabase
                 .from('synced_emails')
-                .update({ matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` })
+                .update(updateData)
                 .eq('id', e.id)
               matchedCount++
             }
@@ -1861,7 +1873,6 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         .eq('organization_id', organization_id)
         .not('matched_order_id', 'is', null)
         .eq('has_attachment', true)
-        .in('detected_stage', [1, 2])
         .eq('attachment_processed', false)
         .order('date', { ascending: true })
         .limit(1)
@@ -1875,7 +1886,6 @@ Return VALID JSON only, no markdown fences. Return exactly ${unmatchedEmails.len
         .eq('organization_id', organization_id)
         .not('matched_order_id', 'is', null)
         .eq('has_attachment', true)
-        .in('detected_stage', [1, 2])
         .eq('attachment_processed', false)
 
       if (!emails || emails.length === 0) {
