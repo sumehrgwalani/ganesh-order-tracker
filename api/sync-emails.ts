@@ -932,7 +932,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .is('user_linked_order_id', null)
         .is('ai_summary', null)
         .order('date', { ascending: true })
-        .limit(5) // Small batches for high accuracy — prevents AI from mixing up emails
+        .limit(15) // Larger batches — 300s timeout allows more per call
 
       if (fetchErr) throw fetchErr
       if (!unmatchedEmails || unmatchedEmails.length === 0) {
@@ -1899,7 +1899,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         }
       } catch { /* Gmail setup failed, will skip attachment extraction */ }
 
-      const batchLimit = batch_size || 1
+      const batchLimit = batch_size || 3
       const batch = ordersToProcess.slice(0, batchLimit)
       const results: any[] = []
       let extracted = 0
@@ -2146,8 +2146,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
       const gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
       if (!gmailAccessToken) throw new Error('Failed to refresh Gmail token')
 
-      // Process exactly 1 email per call to stay within free-plan CPU limit
-      // Frontend auto-loops until done=true
+      // Process up to 5 emails per call (300s timeout with Fluid Compute)
+      const rpBatchSize = 5
       const { data: emails, error: fetchErr } = await supabase
         .from('synced_emails')
         .select('id, gmail_id, subject, from_name, from_email, date, has_attachment, matched_order_id, detected_stage, body_text')
@@ -2156,11 +2156,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         .eq('has_attachment', true)
         .eq('attachment_processed', false)
         .order('date', { ascending: true })
-        .limit(1)
+        .limit(rpBatchSize)
 
       if (fetchErr) throw fetchErr
 
-      // Count total remaining (including the one we're about to process)
+      // Count total remaining (including the ones we're about to process)
       const { count: totalRemaining } = await supabase
         .from('synced_emails')
         .select('id', { count: 'exact', head: true })
@@ -2171,38 +2171,44 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
       if (!emails || emails.length === 0) {
         setCors(res)
-      return res.status(200).json({ mode: 'reprocess', done: true, processed: 0, remaining: 0, message: 'All attachments processed' })
+        return res.status(200).json({ mode: 'reprocess', done: true, processed: 0, remaining: 0, message: 'All attachments processed' })
       }
 
-      const email = emails[0]
       const { data: orders } = await supabase
         .from('orders')
         .select('id, order_id')
         .eq('organization_id', organization_id)
       const orderMap = new Map((orders || []).map((o: any) => [o.order_id, o.id]))
 
-      const orderUuid = orderMap.get(email.matched_order_id)
-      let status = 'skip'
-      let error = ''
+      const rpResults: any[] = []
+      let rpProcessed = 0
 
-      if (orderUuid) {
-        try {
-          await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id, true)
-          status = 'ok'
-        } catch (err) {
-          status = 'error'
-          error = String(err)
+      for (const email of emails) {
+        const orderUuid = orderMap.get(email.matched_order_id)
+        let status = 'skip'
+        let error = ''
+
+        if (orderUuid) {
+          try {
+            await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id, true)
+            status = 'ok'
+          } catch (err) {
+            status = 'error'
+            error = String(err)
+          }
         }
+
+        // Mark as processed regardless of outcome to avoid infinite retries
+        await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
+        rpProcessed++
+        rpResults.push({ order: email.matched_order_id, stage: email.detected_stage, status, error: error || undefined })
       }
 
-      // Mark as processed regardless of outcome to avoid infinite retries
-      await supabase.from('synced_emails').update({ attachment_processed: true }).eq('id', email.id)
-
-      const remaining = (totalRemaining || 1) - 1
+      const remaining = (totalRemaining || rpProcessed) - rpProcessed
       setCors(res)
       return res.status(200).json({
-        mode: 'reprocess', done: remaining === 0, processed: 1, remaining,
-        order: email.matched_order_id, stage: email.detected_stage, status, error: error || undefined,
+        mode: 'reprocess', done: remaining <= 0, processed: rpProcessed, remaining: Math.max(0, remaining),
+        results: rpResults,
       })
     }
 
@@ -2246,7 +2252,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
     const isPull = syncMode === 'pull'
     const lookbackDays = isPull ? 180 : 7
     const emailLimit = isPull ? 500 : 50
-    const fetchLimit = 100 // Max emails to actually download per call (Vercel 60s limit)
+    const fetchLimit = 400 // Max emails to download per call (300s timeout with Fluid Compute)
     const lastSync = isPull
       ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
       : member.gmail_last_sync

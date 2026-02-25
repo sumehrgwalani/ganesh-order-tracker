@@ -72,11 +72,11 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     setSyncProgress('Downloading emails from Gmail...');
 
     try {
-      // Pull loops until all emails are downloaded (100 per call due to Vercel timeout)
+      // Pull loops until all emails are downloaded (400 per call with 300s timeout)
       let pullDone = false;
       let totalPulled = 0;
       let pullRound = 0;
-      const MAX_PULL_ROUNDS = 10;
+      const MAX_PULL_ROUNDS = 5;
       while (!pullDone && pullRound < MAX_PULL_ROUNDS) {
         pullRound++;
         const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
@@ -129,51 +129,51 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         }
       }
 
-      // Phase 3: Reprocess attachments (download + classify + upload, 1 email at a time)
+      // Phase 3: Reprocess attachments (download + classify + upload, 5 emails per call)
       setSyncPhase('reprocessing');
       let reprocessDone = false;
-      let reprocessCount = 0;
-      const MAX_REPROCESS = 100;
+      let totalReprocessed = 0;
+      const MAX_REPROCESS = 300;
 
-      while (!reprocessDone && reprocessCount < MAX_REPROCESS) {
-        reprocessCount++;
+      while (!reprocessDone && totalReprocessed < MAX_REPROCESS) {
         const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
         if (rpError) { console.error('Reprocess error:', rpError); break; }
 
+        totalReprocessed += rpData?.processed || 0;
         const rpRemaining = rpData?.remaining || 0;
         setSyncProgress(
           rpRemaining > 0
-            ? `Processing attachments: ${reprocessCount} done, ${rpRemaining} remaining...`
+            ? `Processing attachments: ${totalReprocessed} done, ${rpRemaining} remaining...`
             : `Attachments processed!`
         );
 
         reprocessDone = rpData?.done === true || rpRemaining === 0;
         if (!reprocessDone) {
-          await new Promise((r) => setTimeout(r, 1500));
+          await new Promise((r) => setTimeout(r, 500));
         }
       }
 
-      // Phase 4: Extract line items from PO attachments (1 order at a time)
+      // Phase 4: Extract line items from PO attachments (3 orders per call)
       setSyncPhase('extracting');
       let extractDone = false;
-      let extractCount = 0;
-      const MAX_EXTRACT = 100;
+      let totalExtracted = 0;
+      const MAX_EXTRACT = 200;
 
-      while (!extractDone && extractCount < MAX_EXTRACT) {
-        extractCount++;
-        const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract', batch_size: 1 });
+      while (!extractDone && totalExtracted < MAX_EXTRACT) {
+        const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
         if (exError) { console.error('Extract error:', exError); break; }
 
+        totalExtracted += exData?.batchProcessed || 0;
         const exRemaining = exData?.remaining || 0;
         setSyncProgress(
           exRemaining > 0
-            ? `Extracting line items: ${extractCount} done, ${exRemaining} remaining...`
+            ? `Extracting line items: ${totalExtracted} done, ${exRemaining} remaining...`
             : `Line items extracted!`
         );
 
         extractDone = exData?.done === true || exRemaining === 0;
         if (!extractDone) {
-          await new Promise((r) => setTimeout(r, 1500));
+          await new Promise((r) => setTimeout(r, 500));
         }
       }
 
