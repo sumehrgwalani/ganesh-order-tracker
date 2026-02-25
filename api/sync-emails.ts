@@ -2081,9 +2081,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           if (extractedData.destination) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
-          // Update product name from line items if currently "Unknown"
-          if ((!order.product || order.product === 'Unknown') && extractedData.lineItems.length > 0) {
-            // Use the first line item's product as the main product name
+          // Always update product name from extracted PO line items (PO is authoritative source)
+          if (extractedData.lineItems.length > 0) {
             const mainProduct = extractedData.lineItems[0].product
             if (mainProduct && mainProduct !== 'Unknown') {
               updates.product = mainProduct
