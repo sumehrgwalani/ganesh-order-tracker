@@ -64,7 +64,10 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: member } = await supabase.from('organization_members').select('gmail_email, gmail_last_sync').eq('organization_id', orgId).eq('user_id', user.id).single();
-      if (member?.gmail_email) setGmailEmail(member.gmail_email);
+      if (member?.gmail_email) {
+        setGmailEmail(member.gmail_email);
+        setEmailFormData(prev => ({ ...prev, provider: 'gmail' }));
+      }
       if (member?.gmail_last_sync) setGmailLastSync(member.gmail_last_sync);
     })();
   }, [orgId]);
