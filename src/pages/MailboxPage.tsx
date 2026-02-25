@@ -95,7 +95,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       let batchNum = 0;
       let isDone = false;
 
-      const MAX_BATCHES = 50; // Safety limit to prevent infinite loops
+      const MAX_BATCHES = 200; // Safety limit to prevent infinite loops
       while (!isDone && batchNum < MAX_BATCHES) {
         batchNum++;
         const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
