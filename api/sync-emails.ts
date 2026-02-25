@@ -1102,7 +1102,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (!createErr && newOrder) {
               createdOrderCount++
               ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier: 'Unknown', product: 'Unknown', currentStage: 1, skippedStages: [] })
-              existingPOs.add(fullPO)
               await supabase.from('order_history').insert({
                 order_id: newOrder.id, organization_id, stage: 1,
                 timestamp: new Date().toISOString(), from_address: 'System (Regex Discovery)',
