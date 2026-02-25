@@ -12,6 +12,7 @@ import { getAttachmentName, getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
 import { buildPOHtml, buildPIHtml, orderToPdfData } from '../utils/pdfBuilders';
 import type { CatalogProduct } from '../hooks/useProducts';
+import ArtworkCompare from '../components/ArtworkCompare';
 
 interface Props {
   orders: Order[];
@@ -33,6 +34,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [editModal, setEditModal] = useState(false);
   const [amendModal, setAmendModal] = useState(false);
   const [contactModal, setContactModal] = useState<string | null>(null);
+  const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string } | null>(null);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -51,6 +53,36 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     if (!contacts) return [];
     return [...new Set(Object.values(contacts).map(c => c.default_brand))].filter(Boolean).sort();
   }, [contacts]);
+
+  // Find the last approved artwork reference for the same product + buyer (+ brand if set)
+  const artworkReference = useMemo(() => {
+    const currentOrder = orders.find(o => o.id === orderId);
+    if (!currentOrder) return null;
+    // Check for manual override first
+    if (currentOrder.metadata?.artworkReference) {
+      return { url: currentOrder.metadata.artworkReference as string, orderId: currentOrder.id, date: currentOrder.date, name: 'Manual Reference', isManual: true };
+    }
+    const candidates = orders.filter(o =>
+      o.id !== currentOrder.id &&
+      o.product?.toLowerCase().trim() === currentOrder.product?.toLowerCase().trim() &&
+      o.company?.toLowerCase().trim() === currentOrder.company?.toLowerCase().trim() &&
+      (!currentOrder.brand || o.brand?.toLowerCase().trim() === currentOrder.brand?.toLowerCase().trim()) &&
+      o.artworkStatus === 'approved'
+    );
+    candidates.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    for (const candidate of candidates) {
+      const stage3 = candidate.history.filter(h => h.stage === 3 && h.hasAttachment && h.attachments?.length);
+      for (const entry of stage3) {
+        for (const att of entry.attachments || []) {
+          const meta = getAttachmentMeta(att);
+          if (meta?.pdfUrl) {
+            return { url: meta.pdfUrl, orderId: candidate.id, date: candidate.date, name: getAttachmentName(att), isManual: false };
+          }
+        }
+      }
+    }
+    return null;
+  }, [orders, orderId]);
 
   const order = orders.find(o => o.id === orderId);
 
@@ -214,7 +246,18 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         );
       }
 
-      case 'artwork':
+      case 'artwork': {
+        // Get current order's stage 3 artwork URL for comparison
+        const currentArtworkUrl = (() => {
+          const s3 = order.history.filter(h => h.stage === 3 && h.hasAttachment && h.attachments?.length);
+          for (const entry of s3) {
+            for (const att of entry.attachments || []) {
+              const meta = getAttachmentMeta(att);
+              if (meta?.pdfUrl) return { url: meta.pdfUrl, name: getAttachmentName(att) };
+            }
+          }
+          return null;
+        })();
         return (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -240,8 +283,44 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               </div>
             </div>
             {renderAttachments(3)}
+            {/* Artwork Reference & Comparison */}
+            {artworkReference && currentArtworkUrl ? (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="GitCompare" size={16} className="text-purple-600" />
+                    <p className="text-sm text-purple-800">
+                      Reference from <span className="font-semibold">{artworkReference.orderId}</span>
+                      <span className="text-purple-500 ml-1">({formatDate(artworkReference.date)})</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setArtworkCompareModal({ open: true, newUrl: currentArtworkUrl.url, newLabel: `${order.id} — ${currentArtworkUrl.name}` })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    <Icon name="Layers" size={14} />
+                    Compare
+                  </button>
+                </div>
+              </div>
+            ) : artworkReference && !currentArtworkUrl ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <Icon name="GitCompare" size={14} className="text-gray-400" />
+                  Reference available from {artworkReference.orderId} — upload artwork to compare
+                </p>
+              </div>
+            ) : (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <Icon name="Image" size={14} className="text-gray-400" />
+                  No previous approved artwork found for this product
+                </p>
+              </div>
+            )}
           </div>
         );
+      }
 
       case 'inspection':
         return (
@@ -383,10 +462,21 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     return null;
   };
 
+  // Handle setting an artwork as the reference
+  const handleSetAsReference = async (url: string) => {
+    if (!onUpdateOrder) return;
+    try {
+      await onUpdateOrder(order.id, { metadata: { ...(order.metadata || {}), artworkReference: url } } as any);
+    } catch { /* ignore */ }
+  };
+
   // Render attachment list for a given stage
   const renderAttachments = (stage: number) => {
     const stageEmails = order.history.filter(h => h.stage === stage && h.hasAttachment && h.attachments?.length);
-    const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => ({ name: getAttachmentName(att), date: h.timestamp })));
+    const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => {
+      const meta = getAttachmentMeta(att);
+      return { name: getAttachmentName(att), date: h.timestamp, pdfUrl: meta?.pdfUrl || null };
+    }));
     if (allAttachments.length === 0) return null;
     return (
       <div className="pt-3 border-t border-gray-100">
@@ -394,17 +484,29 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         <div className="space-y-1.5">
           {allAttachments.map((att, idx) => {
             const isPdf = att.name.toLowerCase().endsWith('.pdf');
+            const isCurrentRef = stage === 3 && att.pdfUrl && order.metadata?.artworkReference === att.pdfUrl;
             return (
-              <button
-                key={idx}
-                onClick={() => handleAttachmentClick(att.name, stage)}
-                className="w-full flex items-center gap-2 text-sm bg-gray-50 hover:bg-blue-50 rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer"
-              >
-                <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
-                <span className="font-medium text-gray-700 flex-1 group-hover:text-blue-700 transition-colors">{att.name}</span>
-                {isPdf && <span className="text-xs font-medium text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to preview</span>}
-                <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
-              </button>
+              <div key={idx} className="flex items-center gap-1">
+                <button
+                  onClick={() => handleAttachmentClick(att.name, stage)}
+                  className="flex-1 flex items-center gap-2 text-sm bg-gray-50 hover:bg-blue-50 rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer"
+                >
+                  <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
+                  <span className="font-medium text-gray-700 flex-1 group-hover:text-blue-700 transition-colors">{att.name}</span>
+                  {isCurrentRef && <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">Reference</span>}
+                  {isPdf && !isCurrentRef && <span className="text-xs font-medium text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to preview</span>}
+                  <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
+                </button>
+                {stage === 3 && att.pdfUrl && !isCurrentRef && onUpdateOrder && (
+                  <button
+                    onClick={() => handleSetAsReference(att.pdfUrl!)}
+                    title="Set as reference for comparison"
+                    className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                  >
+                    <Icon name="Bookmark" size={14} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -1079,6 +1181,17 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             </div>
           </div>
         </div>
+      )}
+
+      {/* Artwork Comparison Modal */}
+      {artworkCompareModal?.open && artworkReference && (
+        <ArtworkCompare
+          referenceUrl={artworkReference.url}
+          referenceLabel={`${artworkReference.orderId} — ${artworkReference.name}`}
+          newUrl={artworkCompareModal.newUrl}
+          newLabel={artworkCompareModal.newLabel}
+          onClose={() => setArtworkCompareModal(null)}
+        />
       )}
     </div>
   );
