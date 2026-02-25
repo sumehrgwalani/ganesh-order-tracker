@@ -1050,10 +1050,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       } catch (err) { console.error('Failed to fetch corrections:', err) }
 
-      // If no orders exist yet, run discovery mode first
+      // If no orders exist yet, try regex discovery first (scan ALL emails for PO numbers)
       let createdOrderCount = 0
       if (ordersList.length === 0) {
-        console.log('No orders found — running discovery from emails...')
+        console.log('No orders found — trying regex discovery first...')
+        // Scan ALL emails (not just the 5-email batch) for PO numbers
+        const { data: allEmails } = await supabase
+          .from('synced_emails')
+          .select('id, subject, body_text, from_email, from_name')
+          .eq('organization_id', organization_id)
+          .limit(500)
+
+        const discoveredPOs = new Map<string, { subject: string, from_name: string, from_email: string }>()
+        const poPatterns = [
+          /PO\s*(?:GI\/PO\/\d{2}-\d{2}\/)?(3\d{3})/gi,
+          /GI\/PO\/\d{2}-\d{2}\/(3\d{3})/gi,
+          /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,
+          /(3\d{3})\s*(?:eguillem|guillem|label|artwork)/gi,
+        ]
+        for (const email of (allEmails || [])) {
+          const searchText = `${email.subject || ''} ${(email.body_text || '').substring(0, 2000)}`
+          for (const pattern of poPatterns) {
+            let match
+            while ((match = pattern.exec(searchText)) !== null) {
+              if (!discoveredPOs.has(match[1])) {
+                discoveredPOs.set(match[1], { subject: email.subject || '', from_name: email.from_name || '', from_email: email.from_email || '' })
+              }
+            }
+          }
+        }
+
+        if (discoveredPOs.size > 0) {
+          console.log(`[REGEX DISCOVERY] Found ${discoveredPOs.size} unique PO numbers in emails`)
+          for (const [shortPO, ref] of discoveredPOs) {
+            const fullPO = `GI/PO/25-26/${shortPO}`
+            // Guess company from sender
+            const company = ref.from_name || ref.from_email?.split('@')[1]?.split('.')[0] || 'Unknown'
+            const { data: newOrder, error: createErr } = await supabase.from('orders').insert({
+              organization_id,
+              order_id: fullPO,
+              po_number: fullPO,
+              company,
+              supplier: 'Unknown',
+              product: 'Unknown',
+              current_stage: 1,
+              status: 'sent',
+              order_date: new Date().toISOString().split('T')[0],
+              metadata: { created_by: 'regex_discovery', needsReview: true },
+            }).select('id').single()
+
+            if (!createErr && newOrder) {
+              createdOrderCount++
+              ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier: 'Unknown', product: 'Unknown', currentStage: 1, skippedStages: [] })
+              existingPOs.add(fullPO)
+              await supabase.from('order_history').insert({
+                order_id: newOrder.id, organization_id, stage: 1,
+                timestamp: new Date().toISOString(), from_address: 'System (Regex Discovery)',
+                subject: `Order ${fullPO} discovered from email subjects`,
+                body: `Found PO ${shortPO} referenced in: ${ref.subject}`,
+              })
+            }
+          }
+          console.log(`[REGEX DISCOVERY] Created ${createdOrderCount} orders`)
+        }
+      }
+
+      // If still no orders after regex discovery, try AI discovery
+      if (ordersList.length === 0) {
+        console.log('No orders found — running AI discovery from emails...')
 
         const discoveryPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International (based in India).
 Analyze these emails and identify all distinct purchase orders you can find.
