@@ -72,13 +72,23 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     setSyncProgress('Downloading emails from Gmail...');
 
     try {
-      const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
-      if (pullError) throw pullError;
-
-      const pulled = pullData?.synced || 0;
-      const total = pullData?.total || 0;
-      setSyncProgress(`Downloaded ${pulled} new emails (${total} total)`);
-      showToast(`Phase 1 complete — ${pulled} emails downloaded`, 'success');
+      // Pull loops until all emails are downloaded (100 per call due to Vercel timeout)
+      let pullDone = false;
+      let totalPulled = 0;
+      let pullRound = 0;
+      const MAX_PULL_ROUNDS = 10;
+      while (!pullDone && pullRound < MAX_PULL_ROUNDS) {
+        pullRound++;
+        const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
+        if (pullError) throw pullError;
+        totalPulled += pullData?.synced || 0;
+        const total = pullData?.total || 0;
+        const pending = pullData?.pendingDownload || 0;
+        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails so far (${pending} remaining)...` : `Downloaded ${totalPulled} new emails (${total} total)`);
+        pullDone = pullData?.done !== false || (pullData?.synced || 0) === 0;
+        if (!pullDone) await new Promise((r) => setTimeout(r, 500));
+      }
+      showToast(`Phase 1 complete — ${totalPulled} emails downloaded`, 'success');
 
       // Phase 2: AI matching in batches
       setSyncPhase('matching');

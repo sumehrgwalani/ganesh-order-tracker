@@ -2159,6 +2159,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
     const isPull = syncMode === 'pull'
     const lookbackDays = isPull ? 180 : 7
     const emailLimit = isPull ? 500 : 50
+    const fetchLimit = 100 // Max emails to actually download per call (Vercel 60s limit)
     const lastSync = isPull
       ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
       : member.gmail_last_sync
@@ -2206,8 +2207,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
       return res.status(200).json({ mode: syncMode, synced: 0, total: messageIds.length, alreadyHad: existingIds.size })
     }
 
-    // Fetch full content of new messages (in batches of 10)
-    const toFetch = newMessageIds.slice(0, emailLimit)
+    // Fetch full content of new messages (in batches of 10, capped at fetchLimit for Vercel timeout)
+    const toFetch = newMessageIds.slice(0, fetchLimit)
     const emails: any[] = []
     const BATCH_SIZE = 10
 
@@ -2274,12 +2275,15 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', organization_id)
 
+    const pendingDownload = newMessageIds.length - toFetch.length
     setCors(res)
       return res.status(200).json({
         mode: syncMode,
         synced: storedCount,
         total: totalStored || 0,
         alreadyHad: existingIds.size,
+        pendingDownload,
+        done: pendingDownload === 0,
       })
   } catch (err: any) {
     console.error('Sync error:', err)
