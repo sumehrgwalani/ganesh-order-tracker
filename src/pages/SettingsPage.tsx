@@ -137,7 +137,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       });
       setEmailFormData(prev => ({
         ...prev,
-        provider: orgSettings.email_provider || 'none',
+        provider: prev.provider === 'gmail' ? 'gmail' : (orgSettings.email_provider || 'none'),
         smtpHost: orgSettings.smtp_host || '',
         smtpPort: orgSettings.smtp_port ? String(orgSettings.smtp_port) : '',
         smtpUsername: orgSettings.smtp_username || '',
