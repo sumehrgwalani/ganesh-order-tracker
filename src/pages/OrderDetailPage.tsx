@@ -35,6 +35,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [amendModal, setAmendModal] = useState(false);
   const [contactModal, setContactModal] = useState<string | null>(null);
   const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ historyId: string; attName: string; stage: number; isDataSource: boolean } | null>(null);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -505,7 +506,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     const stageEmails = order.history.filter(h => h.stage === stage && h.hasAttachment && h.attachments?.length);
     const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => {
       const meta = getAttachmentMeta(att);
-      return { name: getAttachmentName(att), date: h.timestamp, pdfUrl: meta?.pdfUrl || null };
+      return { name: getAttachmentName(att), date: h.timestamp, pdfUrl: meta?.pdfUrl || null, historyId: h.id || '', meta };
     }));
     if (allAttachments.length === 0) return null;
     return (
@@ -515,10 +516,18 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           {allAttachments.map((att, idx) => {
             const isPdf = att.name.toLowerCase().endsWith('.pdf');
             const isCurrentRef = stage === 3 && att.pdfUrl && order.metadata?.artworkReference === att.pdfUrl;
+            // Check if this attachment is a data source (has lineItems or is the main PO used for extraction)
+            const isDataSource = !!(att.meta?.lineItems?.length || (stage === 1 && att.pdfUrl && att.pdfUrl === order.metadata?.pdfUrl));
             return (
               <div key={idx} className="flex items-center gap-1">
                 <button
-                  onClick={() => handleAttachmentClick(att.name, stage)}
+                  onClick={() => {
+                    if (att.pdfUrl) {
+                      setPdfModal({ open: true, url: att.pdfUrl, title: att.name, loading: false });
+                    } else {
+                      handleAttachmentClick(att.name, stage);
+                    }
+                  }}
                   className="flex-1 flex items-center gap-2 text-sm bg-gray-50 hover:bg-blue-50 rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer"
                 >
                   <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
@@ -534,6 +543,15 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                     className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                   >
                     <Icon name="Bookmark" size={14} />
+                  </button>
+                )}
+                {onUpdateOrder && (
+                  <button
+                    onClick={() => setDeleteConfirm({ historyId: att.historyId, attName: att.name, stage, isDataSource })}
+                    title="Delete attachment"
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Icon name="Trash2" size={14} />
                   </button>
                 )}
               </div>
@@ -736,6 +754,43 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       window.location.reload();
     } catch (err) {
       console.error('Remove failed:', err);
+    }
+  };
+
+  // Handle deleting a single attachment from a history entry
+  const handleDeleteAttachment = async (historyId: string, attName: string) => {
+    if (!onUpdateOrder) return;
+    try {
+      const entry = order.history.find(h => h.id === historyId);
+      if (!entry || !entry.attachments) return;
+
+      // Remove only this specific attachment from the history entry's attachments array
+      const remainingAtts = entry.attachments.filter(att => getAttachmentName(att) !== attName);
+
+      if (remainingAtts.length === 0) {
+        // No attachments left — delete the entire history entry
+        await supabase.from('order_history').delete().eq('id', historyId);
+      } else {
+        // Update the history entry with remaining attachments
+        await supabase.from('order_history').update({
+          attachments: remainingAtts.map(a => typeof a === 'string' ? a : JSON.stringify(a)),
+          has_attachment: remainingAtts.length > 0,
+        }).eq('id', historyId);
+      }
+
+      // If this was a revised PO, clear revisedPdfUrl from metadata
+      if (attName.startsWith('REVISED_') && order.metadata?.revisedPdfUrl) {
+        const { revisedPdfUrl, ...restMetadata } = order.metadata;
+        await onUpdateOrder(order.id, { metadata: restMetadata } as any);
+      }
+
+      // Also try deleting the file from storage (best effort)
+      const storageName = attName.replace(/\//g, '_');
+      await supabase.storage.from('po-documents').remove([storageName]);
+
+      window.location.reload();
+    } catch (err) {
+      console.error('Delete attachment failed:', err);
     }
   };
 
@@ -1133,6 +1188,51 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Attachment Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${deleteConfirm.isDataSource ? 'bg-amber-100' : 'bg-red-100'}`}>
+                  <Icon name={deleteConfirm.isDataSource ? 'AlertTriangle' : 'Trash2'} size={20} className={deleteConfirm.isDataSource ? 'text-amber-600' : 'text-red-600'} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Delete Attachment</h3>
+                  <p className="text-xs text-gray-500">{deleteConfirm.attName}</p>
+                </div>
+              </div>
+              {deleteConfirm.isDataSource ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                  <p className="text-sm text-amber-800 font-medium mb-1">This attachment is used to pull order information</p>
+                  <p className="text-xs text-amber-700">Deleting it may affect the order data (line items, supplier, buyer details). The order data itself will not be deleted, but the source document will no longer be available.</p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600 mb-4">Are you sure you want to delete this attachment? This action cannot be undone.</p>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const { historyId, attName } = deleteConfirm;
+                  setDeleteConfirm(null);
+                  await handleDeleteAttachment(historyId, attName);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                {deleteConfirm.isDataSource ? 'Delete Anyway' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>
