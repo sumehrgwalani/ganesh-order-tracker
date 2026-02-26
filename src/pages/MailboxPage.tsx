@@ -66,26 +66,82 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
   const handleQuickSync = async () => {
     if (!orgId || !userId) return;
-    setSyncPhase('pulling');
-    setSyncProgress('Fetching latest emails...');
+
     try {
+      // Phase 1: Pull latest emails
+      setSyncPhase('pulling');
+      setSyncProgress('Fetching latest emails...');
       let pullDone = false;
       let totalPulled = 0;
       let pullRound = 0;
-      while (!pullDone && pullRound < 5) {
+      while (!pullDone && pullRound < 3) {
         pullRound++;
         const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
         if (pullError) throw pullError;
         totalPulled += pullData?.synced || 0;
         const pending = pullData?.pendingDownload || 0;
-        const total = pullData?.total || 0;
-        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails (${pending} remaining)...` : `Downloaded ${totalPulled} new emails (${total} total)`);
+        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails (${pending} remaining)...` : `Pulled ${totalPulled} new emails`);
         pullDone = pullData?.done !== false || (pullData?.synced || 0) === 0;
         if (!pullDone) await new Promise((r) => setTimeout(r, 500));
       }
+
+      if (totalPulled === 0) {
+        setSyncPhase('done');
+        setSyncProgress('No new emails found');
+        showToast('No new emails to sync', 'info');
+        refetch();
+        setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 3000);
+        return;
+      }
+
+      // Phase 2: Match new emails to orders
+      setSyncPhase('matching');
+      let matchBatch = 0;
+      let totalMatched = 0;
+      let matchDone = false;
+      while (!matchDone && matchBatch < 20) {
+        matchBatch++;
+        const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
+        if (matchError) { console.error('Match error:', matchError); break; }
+        const remaining = matchData?.remaining || 0;
+        totalMatched = matchData?.totalMatched || 0;
+        setSyncProgress(remaining > 0 ? `Matching: ${remaining} emails remaining...` : `Matched ${totalMatched} emails`);
+        setMatchProgress({ matched: totalMatched, remaining, total: matchData?.totalEmails || 0 });
+        matchDone = matchData?.done === true || remaining === 0;
+        if (!matchDone) await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      // Phase 3: Process attachments for new emails
+      setSyncPhase('reprocessing');
+      let rpDone = false;
+      let totalRp = 0;
+      while (!rpDone && totalRp < 50) {
+        const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
+        if (rpError) { console.error('Reprocess error:', rpError); break; }
+        totalRp += rpData?.processed || 0;
+        const rpRemaining = rpData?.remaining || 0;
+        setSyncProgress(rpRemaining > 0 ? `Processing attachments: ${totalRp} done, ${rpRemaining} remaining...` : 'Attachments processed');
+        rpDone = rpData?.done === true || rpRemaining === 0;
+        if (!rpDone) await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // Phase 4: Extract line items from new POs
+      setSyncPhase('extracting');
+      let exDone = false;
+      let totalEx = 0;
+      while (!exDone && totalEx < 20) {
+        const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
+        if (exError) { console.error('Extract error:', exError); break; }
+        totalEx += exData?.batchProcessed || 0;
+        const exRemaining = exData?.remaining || 0;
+        setSyncProgress(exRemaining > 0 ? `Extracting line items: ${totalEx} done, ${exRemaining} remaining...` : 'Line items extracted');
+        exDone = exData?.done === true || exRemaining === 0;
+        if (!exDone) await new Promise((r) => setTimeout(r, 500));
+      }
+
       setSyncPhase('done');
-      setSyncProgress(`Quick sync done — ${totalPulled} new emails`);
-      showToast(`Quick sync: ${totalPulled} new emails downloaded`, 'success');
+      setSyncProgress(`Quick sync done — ${totalPulled} new emails processed`);
+      showToast(`Quick sync complete: ${totalPulled} new emails`, 'success');
       refetch();
       setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 4000);
     } catch (err: unknown) {
