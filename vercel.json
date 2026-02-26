@@ -9,6 +9,15 @@
   "functions": {
     "api/sync-emails.ts": {
       "maxDuration": 300
+    },
+    "api/cron-sync.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron-sync",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
