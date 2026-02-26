@@ -620,7 +620,7 @@ async function processEmailAttachments(
     if (poAttachment) {
       const { data: orderRow } = await supabase
         .from('orders')
-        .select('company, supplier, metadata')
+        .select('company, supplier, metadata, delivery_terms, payment_terms, commission, to_location, total_kilos, total_value')
         .eq('id', orderUuid)
         .single()
 
@@ -646,8 +646,15 @@ async function processEmailAttachments(
 
       // Now attempt line item extraction (separate from PDF linking)
       // skipExtraction=true used by reprocess mode to stay under worker limit
+      // SAFETY: Never re-extract if order already has line items — prevents data loss
       if (!skipExtraction) {
-      {
+        // Check if order already has line items
+        const { count: existingItemCount } = await supabase.from('order_line_items')
+          .select('id', { count: 'exact', head: true }).eq('order_id', orderUuid)
+
+        if (existingItemCount && existingItemCount > 0) {
+          console.log(`[PROCESS] Skipping extraction for ${matchedOrderId} — already has ${existingItemCount} line items`)
+        } else {
         let extractedData: any = null
         if (poAttachment.mimeType.startsWith('image/')) {
           extractedData = await extractPODataFromImage(poAttachment.base64, poAttachment.mimeType, orderRow?.company || '', orderRow?.supplier || '')
@@ -657,9 +664,6 @@ async function processEmailAttachments(
         }
 
         if (extractedData && extractedData.lineItems.length > 0) {
-          // Always delete existing line items first to prevent duplicates
-          await supabase.from('order_line_items').delete().eq('order_id', orderUuid)
-
           const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
             order_id: orderUuid, product: item.product, brand: item.brand || '',
             size: item.size || '', glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
@@ -670,16 +674,16 @@ async function processEmailAttachments(
           const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
           if (insertErr) console.error(`Line items insert error: ${insertErr.message}`)
 
-          // Update order with extracted delivery/payment/totals
+          // Update order with extracted delivery/payment/totals — only fill empty fields, never overwrite
           const updates: any = {
             metadata: { ...currentMeta, extractedFromEmail: true, pdfUrl: poAttachment.url },
           }
-          if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
-          if (extractedData.payment) updates.payment_terms = extractedData.payment
-          if (extractedData.commission) updates.commission = extractedData.commission
-          if (extractedData.destination) updates.to_location = extractedData.destination
-          if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
-          if (extractedData.totalValue > 0) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
+          if (extractedData.deliveryTerms && !orderRow?.delivery_terms) updates.delivery_terms = extractedData.deliveryTerms
+          if (extractedData.payment && !orderRow?.payment_terms) updates.payment_terms = extractedData.payment
+          if (extractedData.commission && !orderRow?.commission) updates.commission = extractedData.commission
+          if (extractedData.destination && !orderRow?.to_location) updates.to_location = extractedData.destination
+          if (extractedData.totalKilos > 0 && !orderRow?.total_kilos) updates.total_kilos = extractedData.totalKilos
+          if (extractedData.totalValue > 0 && !orderRow?.total_value) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
           await supabase.from('orders').update(updates).eq('id', orderUuid)
 
           // Enrich stage 1 history with line item data
@@ -694,9 +698,9 @@ async function processEmailAttachments(
             const entry = JSON.stringify({ name: poAttachment.filename, meta: richMeta })
             await supabase.from('order_history').update({ attachments: [entry] }).eq('id', stage1History[0].id)
           }
-          console.log(`[PROCESS] Extracted ${extractedData.lineItems.length} line items from PO (replaced any existing)`)
+          console.log(`[PROCESS] Extracted ${extractedData.lineItems.length} line items from PO`)
         }
-      }
+        }
       } else {
         console.log(`[PROCESS] Skipping extraction for ${matchedOrderId} (skipExtraction=true, use bulk-extract later)`)
       }
@@ -1877,7 +1881,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         // Single order mode
         const { data: order } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, product, metadata')
+          .select('id, order_id, company, supplier, product, metadata, delivery_terms, payment_terms, commission, to_location, total_kilos, total_value')
           .eq('organization_id', organization_id)
           .eq('po_number', targetPO)
           .single()
@@ -1886,7 +1890,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         // Batch mode: find orders with 0 line items via left join, skip already-attempted
         const { data } = await supabase
           .from('orders')
-          .select('id, order_id, company, supplier, product, metadata, order_line_items(id)')
+          .select('id, order_id, company, supplier, product, metadata, delivery_terms, payment_terms, commission, to_location, total_kilos, total_value, order_line_items(id)')
           .eq('organization_id', organization_id)
         ordersToProcess = (data || []).filter((o: any) =>
           (!o.order_line_items || o.order_line_items.length === 0) &&
@@ -2090,8 +2094,14 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             continue
           }
 
-          // Delete any existing line items first to prevent duplicates
-          await supabase.from('order_line_items').delete().eq('order_id', order.id)
+          // Check if order already has line items — if so, skip to prevent data loss
+          const { count: existingCount } = await supabase.from('order_line_items')
+            .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+          if (existingCount && existingCount > 0) {
+            console.log(`[BULK] Skipping ${order.order_id} — already has ${existingCount} line items`)
+            results.push({ order: order.order_id, status: 'skip', reason: `Already has ${existingCount} line items` })
+            continue
+          }
 
           const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
             order_id: order.id,
@@ -2106,24 +2116,29 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           const { error: insertErr } = await supabase.from('order_line_items').insert(lineItemRows)
           if (insertErr) { results.push({ order: order.order_id, status: 'error', reason: insertErr.message }); continue }
 
+          // Only fill in empty fields — never overwrite existing data
           const updates: any = {}
-          if (extractedData.deliveryTerms) updates.delivery_terms = extractedData.deliveryTerms
-          if (extractedData.payment) updates.payment_terms = extractedData.payment
-          if (extractedData.commission) updates.commission = extractedData.commission
-          if (extractedData.destination) updates.to_location = extractedData.destination
-          if (extractedData.totalKilos > 0) updates.total_kilos = extractedData.totalKilos
-          if (extractedData.totalValue > 0) updates.total_value = String(extractedData.totalValue)
-          // Update supplier from PO extraction (authoritative source)
+          if (extractedData.deliveryTerms && !order.delivery_terms) updates.delivery_terms = extractedData.deliveryTerms
+          if (extractedData.payment && !order.payment_terms) updates.payment_terms = extractedData.payment
+          if (extractedData.commission && !order.commission) updates.commission = extractedData.commission
+          if (extractedData.destination && !order.to_location) updates.to_location = extractedData.destination
+          if (extractedData.totalKilos > 0 && !order.total_kilos) updates.total_kilos = extractedData.totalKilos
+          if (extractedData.totalValue > 0 && !order.total_value) updates.total_value = String(extractedData.totalValue)
+          // Only set supplier if order doesn't have one yet
           if (extractedData.supplier && extractedData.supplier !== 'Unknown' && extractedData.supplier !== 'Ganesh International') {
-            updates.supplier = extractedData.supplier
-            console.log(`[BULK] Updated supplier for ${order.order_id}: "${extractedData.supplier}"`)
+            if (!order.supplier || order.supplier === 'Unknown') {
+              updates.supplier = extractedData.supplier
+              console.log(`[BULK] Set supplier for ${order.order_id}: "${extractedData.supplier}"`)
+            }
           }
-          // Always update product name from extracted PO line items (PO is authoritative source)
+          // Only set product if order doesn't have one yet
           if (extractedData.lineItems.length > 0) {
             const mainProduct = extractedData.lineItems[0].product
             if (mainProduct && mainProduct !== 'Unknown') {
-              updates.product = mainProduct
-              console.log(`[BULK] Updated product for ${order.order_id}: "${mainProduct}"`)
+              if (!order.product || order.product === 'Unknown') {
+                updates.product = mainProduct
+                console.log(`[BULK] Set product for ${order.order_id}: "${mainProduct}"`)
+              }
             }
           }
           if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
