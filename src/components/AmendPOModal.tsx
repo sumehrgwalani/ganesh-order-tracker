@@ -108,14 +108,51 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     setShowPreview(true);
   };
 
-  // Step 2: Generate PDF from the rendered DOM and persist to DB + storage
-  const commitSave = async () => {
-    if (!revisedDocRef.current) return;
+  // Build the order updates object (reused by both save paths)
+  const buildOrderUpdates = (revisedPdfUrl: string) => {
+    const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
+    const updatedHistory = {
+      stage: 1,
+      timestamp: new Date().toISOString(),
+      from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+      to: '',
+      subject: `REVISED PO ${order.id}`,
+      body: `Purchase Order ${order.id} revised.\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos} Kg`,
+      hasAttachment: true,
+      attachments: [{
+        name: revisedFilename,
+        meta: {
+          ...(meta || {}),
+          isRevised: true,
+          pdfUrl: revisedPdfUrl,
+          totalCases: amendTotalCases,
+          totalKilos: amendTotalKilos,
+          grandTotal: amendGrandTotal,
+          lineItems: amendItems.map(li => ({
+            product: li.product, brand: li.brand || '', freezing: li.freezing || '',
+            size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
+            packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
+            pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
+          })),
+        }
+      }]
+    };
+    return {
+      product: amendItems.map(li => li.product).filter(Boolean).join(', '),
+      specs: amendItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(Boolean).join(', '),
+      totalValue: String(amendGrandTotal),
+      totalKilos: amendTotalKilos,
+      lineItems: amendItems,
+      metadata: { ...order.metadata, revisedPdfUrl },
+      history: [...(order.history || []), updatedHistory],
+    };
+  };
 
+  // Generate PDF blob + upload to storage (does NOT save to DB — that would trigger navigation)
+  const generateAndUploadPdf = async (): Promise<{ blob: Blob; revisedPdfUrl: string } | null> => {
+    if (!revisedDocRef.current) return null;
     try {
       const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
-
-      // Generate PDF from the rendered DOM element (same approach as PO generator)
       const blob = await (html2pdf() as any).set({
         margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
@@ -124,59 +161,25 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
       }).from(revisedDocRef.current).output('blob');
 
-      setPdfBlob(blob);
-
-      // Upload PDF to storage
       await supabase.storage.from('po-documents').upload(revisedFilename, blob, {
         contentType: 'application/pdf', upsert: true,
       });
-
       const revisedPdfUrl = supabase.storage.from('po-documents').getPublicUrl(revisedFilename).data.publicUrl;
-
-      const updatedHistory = {
-        stage: 1,
-        timestamp: new Date().toISOString(),
-        from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
-        to: '',
-        subject: `REVISED PO ${order.id}`,
-        body: `Purchase Order ${order.id} revised.\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos} Kg`,
-        hasAttachment: true,
-        attachments: [{
-          name: revisedFilename,
-          meta: {
-            ...(meta || {}),
-            isRevised: true,
-            pdfUrl: revisedPdfUrl,
-            totalCases: amendTotalCases,
-            totalKilos: amendTotalKilos,
-            grandTotal: amendGrandTotal,
-            lineItems: amendItems.map(li => ({
-              product: li.product, brand: li.brand || '', freezing: li.freezing || '',
-              size: li.size || '', glaze: li.glaze || '', glazeMarked: li.glazeMarked || '',
-              packing: li.packing || '', cases: li.cases || 0, kilos: li.kilos || 0,
-              pricePerKg: li.pricePerKg || 0, currency: li.currency || 'USD', total: li.total || 0,
-            })),
-          }
-        }]
-      };
-
-      await onUpdateOrder(order.id, {
-        product: amendItems.map(li => li.product).filter(Boolean).join(', '),
-        specs: amendItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(Boolean).join(', '),
-        totalValue: String(amendGrandTotal),
-        totalKilos: amendTotalKilos,
-        lineItems: amendItems,
-        metadata: { ...order.metadata, revisedPdfUrl },
-        history: [...(order.history || []), updatedHistory],
-      });
-
-      return blob;
+      return { blob, revisedPdfUrl };
     } catch (err) {
-      console.error('Save failed:', err);
-      alert('Failed to save revised order.');
+      console.error('PDF generation failed:', err);
+      alert('Failed to generate revised PDF.');
       return null;
     }
   };
+
+  // Save to DB (triggers parent re-render / navigation)
+  const persistToDb = async (revisedPdfUrl: string) => {
+    await onUpdateOrder(order.id, buildOrderUpdates(revisedPdfUrl));
+  };
+
+  // Keep a ref to the revisedPdfUrl so email-close can persist
+  const pendingPdfUrlRef = useRef<string | null>(null);
 
   const inputClass = 'w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
 
@@ -236,7 +239,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
                 disabled={saving}
                 onClick={async () => {
                   setSaving(true);
-                  await commitSave();
+                  const result = await generateAndUploadPdf();
+                  if (result) {
+                    await persistToDb(result.revisedPdfUrl);
+                  }
                   setSaving(false);
                   onClose();
                 }}
@@ -248,10 +254,11 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
                 disabled={saving}
                 onClick={async () => {
                   setSaving(true);
-                  const blob = await commitSave();
+                  const result = await generateAndUploadPdf();
                   setSaving(false);
-                  if (blob) {
-                    setPdfBlob(blob);
+                  if (result) {
+                    setPdfBlob(result.blob);
+                    pendingPdfUrlRef.current = result.revisedPdfUrl;
                     setShowPreview(false);
                     setShowEmailModal(true);
                   }
@@ -264,23 +271,35 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           </div>
         </div>
 
-        {/* Email Modal */}
-        {showEmailModal && pdfBlob && (
-          <ComposeEmailModal
-            isOpen={true}
-            onClose={() => { setShowEmailModal(false); onClose(); }}
-            orgId={orgId}
-            prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
-            prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
-            attachmentBlobs={[{
-              filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
-              blob: pdfBlob,
-              mimeType: 'application/pdf',
-            }]}
-            onSent={() => { setShowEmailModal(false); onClose(); }}
-          />
-        )}
       </div>
+    );
+  }
+
+  // Email compose modal — rendered independently, not inside preview
+  if (showEmailModal && pdfBlob) {
+    const handleEmailClose = async () => {
+      // Persist to DB now that email flow is done
+      if (pendingPdfUrlRef.current) {
+        await persistToDb(pendingPdfUrlRef.current);
+        pendingPdfUrlRef.current = null;
+      }
+      setShowEmailModal(false);
+      onClose();
+    };
+    return (
+      <ComposeEmailModal
+        isOpen={true}
+        onClose={handleEmailClose}
+        orgId={orgId}
+        prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
+        prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
+        attachmentBlobs={[{
+          filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
+          blob: pdfBlob,
+          mimeType: 'application/pdf',
+        }]}
+        onSent={handleEmailClose}
+      />
     );
   }
 
