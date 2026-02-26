@@ -64,6 +64,37 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     }
   };
 
+  const handleQuickSync = async () => {
+    if (!orgId || !userId) return;
+    setSyncPhase('pulling');
+    setSyncProgress('Fetching latest emails...');
+    try {
+      let pullDone = false;
+      let totalPulled = 0;
+      let pullRound = 0;
+      while (!pullDone && pullRound < 5) {
+        pullRound++;
+        const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
+        if (pullError) throw pullError;
+        totalPulled += pullData?.synced || 0;
+        const pending = pullData?.pendingDownload || 0;
+        const total = pullData?.total || 0;
+        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails (${pending} remaining)...` : `Downloaded ${totalPulled} new emails (${total} total)`);
+        pullDone = pullData?.done !== false || (pullData?.synced || 0) === 0;
+        if (!pullDone) await new Promise((r) => setTimeout(r, 500));
+      }
+      setSyncPhase('done');
+      setSyncProgress(`Quick sync done — ${totalPulled} new emails`);
+      showToast(`Quick sync: ${totalPulled} new emails downloaded`, 'success');
+      refetch();
+      setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 4000);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Quick sync failed', 'error');
+      setSyncPhase('idle');
+      setSyncProgress('');
+    }
+  };
+
   const handleFullSync = async () => {
     if (!orgId || !userId) return;
 
@@ -246,18 +277,32 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         subtitle="Email integration for order tracking"
         onBack={() => navigate('/')}
         actions={
-          <button
-            onClick={handleFullSync}
-            disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isSyncing
-                ? 'bg-blue-50 text-blue-600'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <Icon name="RefreshCw" size={16} className={isSyncing ? 'animate-spin' : ''} />
-            {syncPhase === 'pulling' ? 'Pulling...' : syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleQuickSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isSyncing
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <Icon name="Download" size={15} className={syncPhase === 'pulling' ? 'animate-bounce' : ''} />
+              {syncPhase === 'pulling' ? 'Pulling...' : 'Quick Sync'}
+            </button>
+            <button
+              onClick={handleFullSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isSyncing
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              <Icon name="RefreshCw" size={15} className={isSyncing && syncPhase !== 'pulling' ? 'animate-spin' : ''} />
+              {syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
+            </button>
+          </div>
         }
       />
 
