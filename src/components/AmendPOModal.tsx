@@ -126,9 +126,16 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
 
       // Generate revised PDF (separate from original) and show preview
       try {
+        // Build PDF data with amended values — override everything that could be stale from order prop
+        const amendedProduct = amendItems.map(li => li.product).filter(Boolean).join(', ');
         const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
         pdfData.isRevised = true;
         pdfData.poDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        pdfData.orderProduct = amendedProduct;
+        pdfData.grandTotal = amendGrandTotal;
+        pdfData.totalKilos = amendTotalKilos;
+        pdfData.totalCases = amendTotalCases;
+        pdfData.items = amendItems;
         const html = buildPOHtml(pdfData);
         const container = document.createElement('div');
         container.innerHTML = html;
