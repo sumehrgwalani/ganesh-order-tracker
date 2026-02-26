@@ -1734,11 +1734,20 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           const refEmail = emails.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
           const subject = refEmail.subject || ''
 
-          // Extract supplier from subject or To field
+          // Extract supplier from email subjects — check ALL emails for this PO, not just the earliest
           let supplier = 'Unknown'
-          // Common patterns: "PO 3046 - Raunaq", "PO 3045 - JJ SEAFOODS"
-          const supplierMatch = subject.match(/PO\s*\d{4}\s*[-–]\s*(.+?)(?:\s*$)/i)
-          if (supplierMatch) supplier = supplierMatch[1].trim()
+          for (const e of emails) {
+            const subj = e.subject || ''
+            // Pattern 1: "PO 3046 - Raunaq" or "PO 3046 - JJ SEAFOODS"
+            const m1 = subj.match(/PO\s*\d{4}\s*[-–]\s*(.+?)(?:\s*$)/i)
+            if (m1 && m1[1].trim() !== `PO ${fullPO.split('/').pop()}`) { supplier = m1[1].trim(); break }
+            // Pattern 2: PI emails like "PI GI/PI/25-26/I02062 - SILVER SEAFOOD - PO 3053"
+            const m2 = subj.match(/(?:PI|proforma)[^-]*[-–]\s*(.+?)\s*[-–]\s*PO/i)
+            if (m2) { supplier = m2[1].trim(); break }
+            // Pattern 3: "SILVER SEAFOOD - PO 3053" at the end
+            const m3 = subj.match(/[-–]\s*([A-Z][A-Z\s]+?)\s*[-–]\s*PO\s*\d{4}/i)
+            if (m3) { supplier = m3[1].trim(); break }
+          }
 
           // Extract company (buyer) - usually Pescados or the To address
           const toEmail = refEmail.to_email || ''
