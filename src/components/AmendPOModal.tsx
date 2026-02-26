@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import html2pdf from 'html2pdf.js';
 import Icon from './Icon';
+import ComposeEmailModal from './ComposeEmailModal';
 import { buildPOHtml, orderToPdfData } from '../utils/pdfBuilders';
 import { getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
@@ -20,6 +21,18 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
 
   const [amendItems, setAmendItems] = useState<any[]>(initialItems);
   const [saving, setSaving] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
+
+  // Get orgId from user's session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user?.id) return;
+      supabase.from('organization_members').select('organization_id').eq('user_id', session.user.id).limit(1).single()
+        .then(({ data }) => { if (data?.organization_id) setOrgId(data.organization_id); });
+    });
+  }, []);
 
   const hasBrand = amendItems.some(i => i.brand);
   const hasSize = amendItems.some(i => i.size);
@@ -65,7 +78,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     return null;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (andEmail = false) => {
     setSaving(true);
     try {
       const meta = getPOMeta();
@@ -104,7 +117,8 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         history: [...(order.history || []), updatedHistory],
       });
 
-      // Re-upload PDF
+      // Re-upload PDF and keep blob for email
+      let generatedBlob: Blob | null = null;
       try {
         const filename = `${order.id.replace(/\//g, '_')}.pdf`;
         const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
@@ -114,7 +128,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         container.style.position = 'absolute';
         container.style.left = '-9999px';
         document.body.appendChild(container);
-        const blob = await (html2pdf() as any).set({
+        generatedBlob = await (html2pdf() as any).set({
           margin: [4, 5, 4, 5],
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
@@ -122,12 +136,17 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         }).from(container).output('blob');
         document.body.removeChild(container);
-        await supabase.storage.from('po-documents').upload(filename, blob, {
+        await supabase.storage.from('po-documents').upload(filename, generatedBlob!, {
           contentType: 'application/pdf', upsert: true,
         });
       } catch { alert('PO PDF could not be regenerated, but the order was saved.'); }
 
-      onClose();
+      if (andEmail && generatedBlob) {
+        setPdfBlob(generatedBlob);
+        setShowEmailModal(true);
+      } else {
+        onClose();
+      }
     } catch { alert('Failed to save amended order.'); }
     finally { setSaving(false); }
   };
@@ -238,7 +257,18 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           </button>
           <button
             disabled={saving}
-            onClick={handleSave}
+            onClick={() => handleSave(true)}
+            className="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? (
+              <><div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /> Saving...</>
+            ) : (
+              <><Icon name="Send" size={16} /> Save &amp; Email</>
+            )}
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => handleSave(false)}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             {saving ? (
@@ -249,6 +279,23 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Email Modal */}
+      {showEmailModal && pdfBlob && (
+        <ComposeEmailModal
+          isOpen={true}
+          onClose={() => { setShowEmailModal(false); onClose(); }}
+          orgId={orgId}
+          prefillSubject={`Amended PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
+          prefillBody={`Dear Sir/Madam,\n\nPlease find attached the amended Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
+          attachmentBlobs={[{
+            filename: `${order.id.replace(/\//g, '_')}.pdf`,
+            blob: pdfBlob,
+            mimeType: 'application/pdf',
+          }]}
+          onSent={() => { setShowEmailModal(false); onClose(); }}
+        />
+      )}
     </div>
   );
 }
