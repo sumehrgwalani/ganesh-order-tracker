@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Order, HistoryEntry, OrderLineItem } from '../types'
+import type { Order, HistoryEntry, OrderLineItem, AttachmentEntry } from '../types'
 import { ORDER_STAGES } from '../data/constants'
 
 // DB row shapes returned by Supabase queries
@@ -334,10 +334,10 @@ export function useOrders(orgId: string | null) {
 
       // Insert new history entries if provided (amendment audit trail)
       if (updates.history && updates.history.length > 0) {
-        // Only insert entries that don't already exist (new amendment entries)
-        // We identify new entries by checking for "AMENDED" in subject
+        // Only insert entries that don't already exist (new amendment / revised entries)
+        // We identify new entries by checking for "AMENDED" or "REVISED" in subject
         const newEntries = updates.history.filter((h: HistoryEntry) =>
-          h.subject?.includes('AMENDED') &&
+          (h.subject?.includes('AMENDED') || h.subject?.includes('REVISED')) &&
           h.timestamp && new Date(h.timestamp).getTime() > Date.now() - 60000
         )
         if (newEntries.length > 0) {
@@ -350,7 +350,7 @@ export function useOrders(orgId: string | null) {
             subject: h.subject,
             body: h.body || '',
             has_attachment: h.hasAttachment || false,
-            attachments: h.attachments || null,
+            attachments: h.attachments ? h.attachments.map((a: AttachmentEntry) => typeof a === 'string' ? a : JSON.stringify(a)) : null,
           }))
           await supabase.from('order_history').insert(historyRows)
         }
