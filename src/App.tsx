@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Order, Stats, AppNotification } from './types';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
@@ -57,7 +57,13 @@ class ErrorBoundary extends React.Component<
 }
 
 function App() {
+  const location = useLocation();
   const { session, user, loading: authLoading, orgId, userRole, signOut } = useAuth();
+
+  // Scroll to top on route change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
   const { showToast } = useToast();
