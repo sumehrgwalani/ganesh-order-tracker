@@ -80,11 +80,68 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     return null;
   };
 
+  // Step 1: Generate the PDF and show preview (no DB save yet)
   const handleSave = async () => {
     setSaving(true);
     try {
       const meta = getPOMeta();
+
+      // Build PDF with amended values
+      const amendedProduct = amendItems.map(li => li.product).filter(Boolean).join(', ');
+      const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
+      pdfData.isRevised = true;
+      pdfData.poDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      pdfData.orderProduct = amendedProduct;
+      pdfData.grandTotal = amendGrandTotal;
+      pdfData.totalKilos = amendTotalKilos;
+      pdfData.totalCases = amendTotalCases;
+      pdfData.items = amendItems;
+      const html = buildPOHtml(pdfData);
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      document.body.appendChild(container);
+
+      // Wait a tick for the browser to render the HTML before capturing
+      await new Promise(r => setTimeout(r, 200));
+
+      const blob = await (html2pdf() as any).set({
+        margin: [4, 5, 4, 5],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      }).from(container).output('blob');
+      document.body.removeChild(container);
+
+      // Show the PDF preview immediately
+      setPdfBlob(blob);
+      setPdfPreviewUrl(URL.createObjectURL(blob));
+      setShowPreview(true);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('Failed to generate revised PO PDF.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Step 2: Actually persist to DB + storage (called when user clicks Done or Email)
+  const commitSave = async () => {
+    try {
+      const meta = getPOMeta();
       const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
+
+      // Upload PDF to storage
+      if (pdfBlob) {
+        await supabase.storage.from('po-documents').upload(revisedFilename, pdfBlob, {
+          contentType: 'application/pdf', upsert: true,
+        });
+      }
+
+      const revisedPdfUrl = supabase.storage.from('po-documents').getPublicUrl(revisedFilename).data.publicUrl;
+
       const updatedHistory = {
         stage: 1,
         timestamp: new Date().toISOString(),
@@ -98,6 +155,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           meta: {
             ...(meta || {}),
             isRevised: true,
+            pdfUrl: revisedPdfUrl,
             totalCases: amendTotalCases,
             totalKilos: amendTotalKilos,
             grandTotal: amendGrandTotal,
@@ -111,9 +169,6 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         }]
       };
 
-      // Build the revised PDF URL for storage
-      const revisedPdfUrl = supabase.storage.from('po-documents').getPublicUrl(revisedFilename).data.publicUrl;
-
       await onUpdateOrder(order.id, {
         product: amendItems.map(li => li.product).filter(Boolean).join(', '),
         specs: amendItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(Boolean).join(', '),
@@ -123,47 +178,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         metadata: { ...order.metadata, revisedPdfUrl },
         history: [...(order.history || []), updatedHistory],
       });
-
-      // Generate revised PDF (separate from original) and show preview
-      try {
-        // Build PDF data with amended values — override everything that could be stale from order prop
-        const amendedProduct = amendItems.map(li => li.product).filter(Boolean).join(', ');
-        const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
-        pdfData.isRevised = true;
-        pdfData.poDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        pdfData.orderProduct = amendedProduct;
-        pdfData.grandTotal = amendGrandTotal;
-        pdfData.totalKilos = amendTotalKilos;
-        pdfData.totalCases = amendTotalCases;
-        pdfData.items = amendItems;
-        const html = buildPOHtml(pdfData);
-        const container = document.createElement('div');
-        container.innerHTML = html;
-        container.style.position = 'absolute';
-        container.style.left = '-9999px';
-        document.body.appendChild(container);
-        const blob = await (html2pdf() as any).set({
-          margin: [4, 5, 4, 5],
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        }).from(container).output('blob');
-        document.body.removeChild(container);
-        await supabase.storage.from('po-documents').upload(revisedFilename, blob, {
-          contentType: 'application/pdf', upsert: true,
-        });
-
-        // Show the PDF preview
-        setPdfBlob(blob);
-        setPdfPreviewUrl(URL.createObjectURL(blob));
-        setShowPreview(true);
-      } catch {
-        alert('Revised PO PDF could not be generated, but the order was saved.');
-        onClose();
-      }
-    } catch { alert('Failed to save amended order.'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error('Save failed:', err);
+      alert('Failed to save amended order.');
+    }
   };
 
   const inputClass = 'w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
@@ -297,7 +315,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">Review the revised PO below, then email or close</p>
               </div>
-              <button onClick={() => { setShowPreview(false); onClose(); }} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+              <button onClick={async () => { await commitSave(); setShowPreview(false); onClose(); }} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
                 <Icon name="X" size={20} className="text-gray-500" />
               </button>
             </div>
@@ -305,7 +323,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
             {/* PDF Viewer */}
             <div className="flex-1 overflow-hidden bg-gray-100 p-4" style={{ minHeight: 500 }}>
               <iframe
-                src={pdfPreviewUrl}
+                src={pdfPreviewUrl + '#toolbar=1'}
                 title="Revised PO Preview"
                 className="w-full h-full rounded-lg border border-gray-200 bg-white"
                 style={{ minHeight: 480 }}
@@ -315,13 +333,13 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
             {/* Preview Footer */}
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
               <button
-                onClick={() => { setShowPreview(false); onClose(); }}
+                onClick={async () => { await commitSave(); setShowPreview(false); onClose(); }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Done
               </button>
               <button
-                onClick={() => { setShowPreview(false); setShowEmailModal(true); }}
+                onClick={async () => { await commitSave(); setShowPreview(false); setShowEmailModal(true); }}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <Icon name="Send" size={16} /> Email Revised PO
