@@ -562,6 +562,18 @@ async function storeAttachmentInHistory(
   }
 }
 
+// Guess document classification from email subject to avoid expensive AI calls
+function guessClassificationFromSubject(subject: string): string | null {
+  const s = (subject || '').toUpperCase()
+  if (s.includes('PURCHASE ORDER') || s.includes('NEW PO') || /\bPO\s+\d{4}\b/.test(s)) return 'po'
+  if (s.includes('PROFORMA INVOICE') || s.includes('PROFORMA') || /\bPI\s+GI/i.test(subject || '')) return 'pi'
+  if (s.includes('ARTWORK APPROVAL') || s.includes('LABELS APPROVAL') || s.includes('LABEL') || s.includes('ARTWORK')) return 'artwork'
+  if (s.includes('HEALTH CERTIFICATE') || s.includes('CERTIFICATE OF') || s.includes('QUALITY CHECK') || s.includes('INSPECTION')) return 'certificate'
+  if (s.includes('BILL OF LADING') || s.includes('PACKING LIST') || s.includes('VESSEL') || s.includes('SHIPPING')) return 'shipping'
+  if (s.includes('HC DRAFT') || s.includes('DRAFT BL') || s.includes('DRAFT DOCUMENT')) return 'certificate'
+  return null
+}
+
 // Unified attachment processor: classify ALL attachments and store each in the correct stage
 async function processEmailAttachments(
   supabase: any, accessToken: string, email: any,
@@ -577,6 +589,9 @@ async function processEmailAttachments(
     if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return { filesStored: 0, noValidParts: true } }
     console.log(`[PROCESS] Found ${validParts.length} valid attachments for ${matchedOrderId}`)
 
+    // Try to guess classification from email subject (saves AI API calls)
+    const subjectGuess = guessClassificationFromSubject(email.subject)
+
     // Track what we found
     let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
     let foundPI = false
@@ -586,15 +601,29 @@ async function processEmailAttachments(
     for (const part of validParts) {
       try {
         const result = await downloadAndClassify(accessToken, email.gmail_id, part)
-        if (!result) continue
+        if (!result) { console.log(`[PROCESS] Download failed for ${part.filename}`); continue }
 
-        const stage = classificationToStage(result.classification)
+        // Use subject-based guess if AI classified as "other" or as a cheaper first pass
+        let classification = result.classification
+        if (classification === 'other' && subjectGuess) {
+          console.log(`[PROCESS] AI classified ${part.filename} as "other", using subject-based guess: ${subjectGuess}`)
+          classification = subjectGuess
+        } else if (!classification || classification === 'other') {
+          // If no subject guess either, for single-attachment emails just use the detected_stage
+          if (validParts.length === 1 && email.detected_stage) {
+            const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'certificate', 5: 'shipping' }
+            classification = stageToClass[email.detected_stage] || 'other'
+            console.log(`[PROCESS] Using detected_stage ${email.detected_stage} → ${classification} for ${part.filename}`)
+          }
+        }
+
+        const stage = classificationToStage(classification)
         if (!stage) {
-          console.log(`[PROCESS] Skipping ${part.filename} — classified as "${result.classification}" (no stage mapping)`)
+          console.log(`[PROCESS] Skipping ${part.filename} — classified as "${classification}" (no stage mapping)`)
           continue
         }
 
-        console.log(`[PROCESS] ${part.filename} → classified as "${result.classification}" → stage ${stage}`)
+        console.log(`[PROCESS] ${part.filename} → classified as "${classification}" → stage ${stage}`)
 
         // Upload to storage
         const publicUrl = await uploadToStorage(supabase, organizationId, matchedOrderId, part.filename, result.fileData, part.mimeType)
@@ -2235,19 +2264,22 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         if (orderUuid) {
           try {
             const result = await processEmailAttachments(supabase, gmailAccessToken, email, email.matched_order_id, orderUuid, organization_id, user_id, true)
-            if (result.filesStored > 0 || result.noValidParts) {
-              // Files were stored OR there were genuinely no valid attachments — mark as done
+            if (result.filesStored > 0) {
               status = 'ok'
-              shouldMarkProcessed = true
+            } else if (result.noValidParts) {
+              status = 'no_valid_parts'
             } else {
-              // Had valid parts but none were stored (download/classify/upload failed)
               status = 'no_files'
-              error = 'Attachments found but none were stored — will retry next sync'
+              error = 'Attachments found but none were stored (classified as other or download failed)'
             }
+            // Always mark as processed — prevents infinite retry loop
+            // If files genuinely need reprocessing, user can reset attachment_processed manually
+            shouldMarkProcessed = true
           } catch (err) {
             status = 'error'
             error = String(err)
-            // Don't mark as processed on error — will retry next sync
+            // Mark as processed even on error to prevent infinite retries
+            shouldMarkProcessed = true
           }
         } else {
           // Order doesn't exist (was deleted) — mark as processed so we skip it forever
