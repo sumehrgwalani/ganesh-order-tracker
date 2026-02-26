@@ -169,7 +169,10 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           );
         }
 
-        // App-created orders: show View PO (generated) + Amend PO
+        // Check if a revised PO exists
+        const revisedPdfUrl = order.metadata?.revisedPdfUrl;
+
+        // App-created orders: show View PO (generated) + Revised PO (if exists) + Amend PO
         return (
           <div className="space-y-3">
             <div className="flex items-stretch gap-2">
@@ -186,6 +189,15 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 <Icon name="FileText" size={15} />
                 View PO
               </button>
+              {revisedPdfUrl && (
+                <button
+                  onClick={() => setPdfModal({ open: true, url: revisedPdfUrl, title: `Revised PO - ${order.id}`, loading: false })}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                >
+                  <Icon name="FileText" size={15} />
+                  Revised PO
+                </button>
+              )}
               <button
                 onClick={() => {
                   setAmendModal(true);

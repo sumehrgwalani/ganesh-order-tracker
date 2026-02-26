@@ -145,6 +145,7 @@ export interface PdfData {
   totalKilos: number;
   totalCases: number;
   piNumber?: string;
+  isRevised?: boolean;
 }
 
 export function buildPOHtml(d: PdfData): string {
@@ -158,10 +159,12 @@ export function buildPOHtml(d: PdfData): string {
     <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
       ${companyHeader()}
 
+      ${d.isRevised ? `<div style="text-align:center;margin-bottom:6px;"><span style="background:#dc2626;color:#fff;padding:3px 14px;border-radius:4px;font-weight:700;font-size:13px;letter-spacing:1px;">REVISED</span></div>` : ''}
+
       <!-- Date and PO Number -->
       <table style="width:100%;margin-bottom:8px;"><tr>
         <td><strong>Date:</strong> ${d.poDate}</td>
-        <td style="text-align:right;"><strong>Purchase Order No:</strong> <span style="font-weight:700;">${d.orderId}</span></td>
+        <td style="text-align:right;"><strong>${d.isRevised ? 'Revised ' : ''}Purchase Order No:</strong> <span style="font-weight:700;">${d.orderId}</span></td>
       </tr></table>
 
       <!-- To Section -->
@@ -175,7 +178,7 @@ export function buildPOHtml(d: PdfData): string {
       <!-- Greeting -->
       <div style="margin-bottom:8px;line-height:1.35;">
         <p style="margin:0;">Dear Sirs,</p>
-        <p style="margin:2px 0 0;">We are pleased to confirm our Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${d.buyerName}</strong>${d.destination ? `, <strong>${d.destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
+        <p style="margin:2px 0 0;">We are pleased to confirm our ${d.isRevised ? 'Revised ' : ''}Purchase Order with you for the Export of <strong>${productDesc}</strong> to our Principals namely <strong>M/s.${d.buyerName}</strong>${d.destination ? `, <strong>${d.destination.toUpperCase()}</strong>` : ''} under the following terms &amp; conditions.</p>
       </div>
 
       <!-- Product Table -->

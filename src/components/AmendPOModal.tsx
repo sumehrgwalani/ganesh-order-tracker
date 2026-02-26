@@ -82,18 +82,20 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     setSaving(true);
     try {
       const meta = getPOMeta();
+      const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
       const updatedHistory = {
         stage: 1,
         timestamp: new Date().toISOString(),
         from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
         to: '',
-        subject: `AMENDED PO ${order.id}`,
-        body: `Purchase Order ${order.id} amended.\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos} Kg`,
+        subject: `REVISED PO ${order.id}`,
+        body: `Purchase Order ${order.id} revised.\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos} Kg`,
         hasAttachment: true,
         attachments: [{
-          name: `${order.id.replace(/\//g, '_')}.pdf`,
+          name: revisedFilename,
           meta: {
             ...(meta || {}),
+            isRevised: true,
             totalCases: amendTotalCases,
             totalKilos: amendTotalKilos,
             grandTotal: amendGrandTotal,
@@ -107,21 +109,25 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         }]
       };
 
+      // Build the revised PDF URL for storage
+      const revisedPdfUrl = supabase.storage.from('po-documents').getPublicUrl(revisedFilename).data.publicUrl;
+
       await onUpdateOrder(order.id, {
         product: amendItems.map(li => li.product).filter(Boolean).join(', '),
         specs: amendItems.map(li => `${li.size || ''} ${li.glaze ? `(${li.glaze})` : ''} ${li.packing || ''}`.trim()).filter(Boolean).join(', '),
         totalValue: String(amendGrandTotal),
         totalKilos: amendTotalKilos,
         lineItems: amendItems,
-        metadata: { pdfUrl: meta?.pdfUrl || order.metadata?.pdfUrl || '' },
+        metadata: { ...order.metadata, revisedPdfUrl },
         history: [...(order.history || []), updatedHistory],
       });
 
-      // Re-upload PDF and keep blob for email
+      // Generate revised PDF (separate from original) and keep blob for email
       let generatedBlob: Blob | null = null;
       try {
-        const filename = `${order.id.replace(/\//g, '_')}.pdf`;
         const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
+        pdfData.isRevised = true;
+        pdfData.poDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
         const html = buildPOHtml(pdfData);
         const container = document.createElement('div');
         container.innerHTML = html;
@@ -136,10 +142,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         }).from(container).output('blob');
         document.body.removeChild(container);
-        await supabase.storage.from('po-documents').upload(filename, generatedBlob!, {
+        await supabase.storage.from('po-documents').upload(revisedFilename, generatedBlob!, {
           contentType: 'application/pdf', upsert: true,
         });
-      } catch { alert('PO PDF could not be regenerated, but the order was saved.'); }
+      } catch { alert('Revised PO PDF could not be generated, but the order was saved.'); }
 
       if (andEmail && generatedBlob) {
         setPdfBlob(generatedBlob);
@@ -286,10 +292,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           isOpen={true}
           onClose={() => { setShowEmailModal(false); onClose(); }}
           orgId={orgId}
-          prefillSubject={`Amended PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
-          prefillBody={`Dear Sir/Madam,\n\nPlease find attached the amended Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
+          prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
+          prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
           attachmentBlobs={[{
-            filename: `${order.id.replace(/\//g, '_')}.pdf`,
+            filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
             blob: pdfBlob,
             mimeType: 'application/pdf',
           }]}
