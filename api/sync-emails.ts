@@ -1516,12 +1516,24 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
       let matchedCount = 0
       let advancedCount = 0
 
+      // Build set of existing order IDs for validation
+      const existingOrderIdSet = new Set(ordersList.map((o: any) => o.id))
+
       for (const email of aiEmails) {
         const ai = aiMap.get(email.gmail_id) || {}
-        const matchedOrderId = ai.matched_order_id || null
+        let matchedOrderId = ai.matched_order_id || null
         const detectedStage = ai.detected_stage || null
         const summary = ai.summary || null
         const aiProduct = ai.product || null
+
+        // Validate: if AI returned an order ID that doesn't exist, don't set it
+        // This lets Pass 4 (auto-create orders) handle creating the order instead
+        if (matchedOrderId && !existingOrderIdSet.has(matchedOrderId)) {
+          console.log(`[AI MATCH] AI returned non-existent order "${matchedOrderId}" for email "${email.subject}" — clearing match so auto-create can handle it`)
+          matchedOrderId = null
+          // Also clear in the aiMap so Pass 4 doesn't skip this email
+          if (ai) ai.matched_order_id = null
+        }
 
         if (!matchedOrderId) {
           // Still save the AI summary so this email won't be re-processed
