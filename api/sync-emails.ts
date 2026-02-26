@@ -433,14 +433,14 @@ Rules:
   }
 }
 
-// Classify a document using vision AI — returns 'po', 'pi', 'artwork', 'shipping', 'certificate', or 'other'
+// Classify a document using vision AI — returns classification and whether the API call actually succeeded
 async function classifyDocumentWithVision(
   base64Data: string, mimeType: string
-): Promise<string> {
+): Promise<{ classification: string; apiFailed: boolean }> {
   try {
     const isImage = mimeType.startsWith('image/')
     const isPdf = mimeType.includes('pdf')
-    if (!isImage && !isPdf) return 'other'
+    if (!isImage && !isPdf) return { classification: 'other', apiFailed: false }
 
     const contentBlock = isImage
       ? { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Data } }
@@ -475,24 +475,24 @@ Reply with ONLY the single word classification.` }
 
     if (!res.ok) {
       console.log(`[CLASSIFY] Vision API error: ${res.status}`)
-      return 'other'
+      return { classification: 'other', apiFailed: true }
     }
     const data = await res.json()
     const raw = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '')
     const valid = ['po', 'pi', 'artwork', 'shipping', 'certificate', 'other']
     const classification = valid.includes(raw) ? raw : 'other'
     console.log(`[CLASSIFY] Document classified as: ${classification}`)
-    return classification
+    return { classification, apiFailed: false }
   } catch (err) {
     console.error('[CLASSIFY] Error:', err)
-    return 'other'
+    return { classification: 'other', apiFailed: true }
   }
 }
 
 // Helper: download attachment and return base64 + classification
 async function downloadAndClassify(
   accessToken: string, gmailId: string, part: { filename: string; mimeType: string; attachmentId: string; size: number }
-): Promise<{ fileData: ArrayBuffer; base64: string; classification: string } | null> {
+): Promise<{ fileData: ArrayBuffer; base64: string; classification: string; apiFailed: boolean } | null> {
   const fileData = await downloadAttachment(accessToken, gmailId, part.attachmentId)
   if (!fileData) return null
 
@@ -505,8 +505,8 @@ async function downloadAndClassify(
     for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
   }
   const base64 = btoa(binary)
-  const classification = await classifyDocumentWithVision(base64, part.mimeType || 'application/pdf')
-  return { fileData, base64, classification }
+  const { classification, apiFailed } = await classifyDocumentWithVision(base64, part.mimeType || 'application/pdf')
+  return { fileData, base64, classification, apiFailed }
 }
 
 // Map AI document classification to order stage number
@@ -562,18 +562,6 @@ async function storeAttachmentInHistory(
   }
 }
 
-// Guess document classification from email subject to avoid expensive AI calls
-function guessClassificationFromSubject(subject: string): string | null {
-  const s = (subject || '').toUpperCase()
-  if (s.includes('PURCHASE ORDER') || s.includes('NEW PO') || /\bPO\s+\d{4}\b/.test(s)) return 'po'
-  if (s.includes('PROFORMA INVOICE') || s.includes('PROFORMA') || /\bPI\s+GI/i.test(subject || '')) return 'pi'
-  if (s.includes('ARTWORK APPROVAL') || s.includes('LABELS APPROVAL') || s.includes('LABEL') || s.includes('ARTWORK')) return 'artwork'
-  if (s.includes('HEALTH CERTIFICATE') || s.includes('CERTIFICATE OF') || s.includes('QUALITY CHECK') || s.includes('INSPECTION')) return 'certificate'
-  if (s.includes('BILL OF LADING') || s.includes('PACKING LIST') || s.includes('VESSEL') || s.includes('SHIPPING')) return 'shipping'
-  if (s.includes('HC DRAFT') || s.includes('DRAFT BL') || s.includes('DRAFT DOCUMENT')) return 'certificate'
-  return null
-}
-
 // Unified attachment processor: classify ALL attachments and store each in the correct stage
 async function processEmailAttachments(
   supabase: any, accessToken: string, email: any,
@@ -589,9 +577,6 @@ async function processEmailAttachments(
     if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return { filesStored: 0, noValidParts: true } }
     console.log(`[PROCESS] Found ${validParts.length} valid attachments for ${matchedOrderId}`)
 
-    // Try to guess classification from email subject (saves AI API calls)
-    const subjectGuess = guessClassificationFromSubject(email.subject)
-
     // Track what we found
     let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
     let foundPI = false
@@ -603,17 +588,16 @@ async function processEmailAttachments(
         const result = await downloadAndClassify(accessToken, email.gmail_id, part)
         if (!result) { console.log(`[PROCESS] Download failed for ${part.filename}`); continue }
 
-        // Use subject-based guess if AI classified as "other" or as a cheaper first pass
         let classification = result.classification
-        if (classification === 'other' && subjectGuess) {
-          console.log(`[PROCESS] AI classified ${part.filename} as "other", using subject-based guess: ${subjectGuess}`)
-          classification = subjectGuess
-        } else if (!classification || classification === 'other') {
-          // If no subject guess either, for single-attachment emails just use the detected_stage
-          if (validParts.length === 1 && email.detected_stage) {
-            const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'certificate', 5: 'shipping' }
-            classification = stageToClass[email.detected_stage] || 'other'
-            console.log(`[PROCESS] Using detected_stage ${email.detected_stage} → ${classification} for ${part.filename}`)
+
+        // If AI classification failed (returned 'other' due to API error/credits),
+        // fall back to the email's detected_stage so we still store the file
+        if (classification === 'other' && result.apiFailed && email.detected_stage) {
+          const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'certificate', 5: 'shipping' }
+          const fallback = stageToClass[email.detected_stage]
+          if (fallback) {
+            console.log(`[PROCESS] AI classification failed for ${part.filename}, using detected_stage ${email.detected_stage} → ${fallback}`)
+            classification = fallback
           }
         }
 
@@ -634,10 +618,10 @@ async function processEmailAttachments(
         filesStored++
 
         // Track PO attachment for later data extraction
-        if (result.classification === 'po') {
+        if (classification === 'po') {
           poAttachment = { url: publicUrl, filename: part.filename, base64: result.base64, mimeType: part.mimeType }
         }
-        if (result.classification === 'pi') {
+        if (classification === 'pi') {
           foundPI = true
         }
       } catch (partErr) {
