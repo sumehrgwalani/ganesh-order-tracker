@@ -21,8 +21,10 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
 
   const [amendItems, setAmendItems] = useState<any[]>(initialItems);
   const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
 
   // Get orgId from user's session
@@ -78,7 +80,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     return null;
   };
 
-  const handleSave = async (andEmail = false) => {
+  const handleSave = async () => {
     setSaving(true);
     try {
       const meta = getPOMeta();
@@ -122,8 +124,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         history: [...(order.history || []), updatedHistory],
       });
 
-      // Generate revised PDF (separate from original) and keep blob for email
-      let generatedBlob: Blob | null = null;
+      // Generate revised PDF (separate from original) and show preview
       try {
         const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
         pdfData.isRevised = true;
@@ -134,7 +135,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         container.style.position = 'absolute';
         container.style.left = '-9999px';
         document.body.appendChild(container);
-        generatedBlob = await (html2pdf() as any).set({
+        const blob = await (html2pdf() as any).set({
           margin: [4, 5, 4, 5],
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
@@ -142,15 +143,16 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         }).from(container).output('blob');
         document.body.removeChild(container);
-        await supabase.storage.from('po-documents').upload(revisedFilename, generatedBlob!, {
+        await supabase.storage.from('po-documents').upload(revisedFilename, blob, {
           contentType: 'application/pdf', upsert: true,
         });
-      } catch { alert('Revised PO PDF could not be generated, but the order was saved.'); }
 
-      if (andEmail && generatedBlob) {
-        setPdfBlob(generatedBlob);
-        setShowEmailModal(true);
-      } else {
+        // Show the PDF preview
+        setPdfBlob(blob);
+        setPdfPreviewUrl(URL.createObjectURL(blob));
+        setShowPreview(true);
+      } catch {
+        alert('Revised PO PDF could not be generated, but the order was saved.');
         onClose();
       }
     } catch { alert('Failed to save amended order.'); }
@@ -263,18 +265,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           </button>
           <button
             disabled={saving}
-            onClick={() => handleSave(true)}
-            className="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50 flex items-center gap-2"
-          >
-            {saving ? (
-              <><div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /> Saving...</>
-            ) : (
-              <><Icon name="Send" size={16} /> Save &amp; Email</>
-            )}
-          </button>
-          <button
-            disabled={saving}
-            onClick={() => handleSave(false)}
+            onClick={handleSave}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             {saving ? (
@@ -285,6 +276,53 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      {/* PDF Preview Modal */}
+      {showPreview && pdfPreviewUrl && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setShowPreview(false); onClose(); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Preview Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-bold">REVISED</span>
+                  Purchase Order - {order.id}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Review the revised PO below, then email or close</p>
+              </div>
+              <button onClick={() => { setShowPreview(false); onClose(); }} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                <Icon name="X" size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            {/* PDF Viewer */}
+            <div className="flex-1 overflow-hidden bg-gray-100 p-4" style={{ minHeight: 500 }}>
+              <iframe
+                src={pdfPreviewUrl}
+                title="Revised PO Preview"
+                className="w-full h-full rounded-lg border border-gray-200 bg-white"
+                style={{ minHeight: 480 }}
+              />
+            </div>
+
+            {/* Preview Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
+              <button
+                onClick={() => { setShowPreview(false); onClose(); }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Done
+              </button>
+              <button
+                onClick={() => { setShowPreview(false); setShowEmailModal(true); }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Icon name="Send" size={16} /> Email Revised PO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Email Modal */}
       {showEmailModal && pdfBlob && (
