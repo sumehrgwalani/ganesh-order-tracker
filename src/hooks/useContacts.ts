@@ -37,6 +37,7 @@ export function useContacts(orgId: string | null) {
           notes: row.notes || '',
           country: row.country || '',
           default_brand: row.default_brand || '',
+          lote_format: row.lote_format || '',
         }
       }
       setContacts(map)

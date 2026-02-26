@@ -12,6 +12,7 @@ export interface Contact {
   country: string;
   default_brand: string;
   default_packing: string;
+  lote_format: string;
 }
 
 export interface ContactFormData {

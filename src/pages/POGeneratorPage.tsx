@@ -399,7 +399,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
       buyerCode: buyerCode,
       buyerBank: buyer?.country || '',
       poNumber: newPONumber,
-      loteNumber: getNextLoteNumber(buyerCompany, orders),
+      loteNumber: (buyer as any)?.lote_format || getNextLoteNumber(buyerCompany, orders),
       destination: autoDestination || poData.destination,
       deliveryDate: autoDeliveryDate,
       commission: poData.commission || 'USD 0.05 per Kg',

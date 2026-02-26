@@ -107,7 +107,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
   const [isMerging, setIsMerging] = useState(false);
   // Edit company modal state
   const [editingCompany, setEditingCompany] = useState<string | null>(null);
-  const [companyForm, setCompanyForm] = useState({ name: '', address: '', brand: '', packing: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', address: '', brand: '', packing: '', loteFormat: '' });
   const [isSavingCompany, setIsSavingCompany] = useState(false);
 
   // Use a stable key (number of contacts) to detect when DB data actually changes
@@ -227,6 +227,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
       address: (first as any)?.address || '',
       brand: (first as any)?.default_brand || '',
       packing: (first as any)?.default_packing || '',
+      loteFormat: (first as any)?.lote_format || '',
     });
     setEditingCompany(company);
   };
@@ -242,6 +243,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
         if (companyForm.address !== ((contact as any).address || '')) updates.address = companyForm.address;
         if (companyForm.brand !== ((contact as any).default_brand || '')) updates.default_brand = companyForm.brand;
         if (companyForm.packing !== ((contact as any).default_packing || '')) updates.default_packing = companyForm.packing;
+        if (companyForm.loteFormat !== ((contact as any).lote_format || '')) updates.lote_format = companyForm.loteFormat;
         if (Object.keys(updates).length > 0) {
           await onUpdateContact(contact.email, updates);
         }
@@ -254,6 +256,7 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
           address: companyForm.address,
           default_brand: companyForm.brand,
           default_packing: companyForm.packing,
+          lote_format: companyForm.loteFormat,
         } : c
       ));
       setEditingCompany(null);
@@ -919,6 +922,17 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
                   placeholder="e.g. 10 x 1 kg, 6 x 2 kg"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">Lote Number Format</label>
+                <input
+                  type="text"
+                  value={companyForm.loteFormat}
+                  onChange={e => setCompanyForm({ ...companyForm, loteFormat: e.target.value })}
+                  placeholder="e.g. 0001/2025, L-001-2025"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Format used when generating PO lote numbers for this company</p>
               </div>
             </div>
             <div className="p-5 border-t border-gray-100 flex justify-end gap-3">
