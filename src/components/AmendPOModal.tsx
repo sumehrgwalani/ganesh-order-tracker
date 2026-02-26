@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import html2pdf from 'html2pdf.js';
 import Icon from './Icon';
 import ComposeEmailModal from './ComposeEmailModal';
-import { buildPOHtml, orderToPdfData } from '../utils/pdfBuilders';
+import PODocumentPreview from './PODocumentPreview';
 import { getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../types';
+// Note: buildPOHtml/orderToPdfData not needed — we use PODocumentPreview (same as PO generator)
 
 interface Props {
   order: Order;
@@ -24,8 +25,8 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
   const [showPreview, setShowPreview] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const revisedDocRef = useRef<HTMLDivElement>(null);
 
   // Get orgId from user's session
   useEffect(() => {
@@ -80,65 +81,55 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     return null;
   };
 
-  // Step 1: Generate the PDF and show preview (no DB save yet)
-  const handleSave = async () => {
-    setSaving(true);
+  // Build the poData object matching PODocumentPreview's expected format
+  const meta = getPOMeta();
+  const poData = {
+    supplier: meta?.supplier || order.supplier || '',
+    supplierAddress: meta?.supplierAddress || '',
+    supplierCountry: meta?.supplierCountry || order.from || 'India',
+    buyer: meta?.buyer || order.company || '',
+    buyerBank: meta?.buyerBank || '',
+    destination: meta?.destination || order.to || '',
+    deliveryTerms: meta?.deliveryTerms || order.delivery_terms || '',
+    deliveryDate: meta?.deliveryDate || order.shipment_date || '',
+    commission: meta?.commission || order.commission || '',
+    overseasCommission: meta?.overseasCommission || '',
+    overseasCommissionCompany: meta?.overseasCommissionCompany || '',
+    payment: meta?.payment || order.payment_terms || '',
+    loteNumber: meta?.loteNumber || '',
+    shippingMarks: meta?.shippingMarks || '',
+    date: meta?.date || order.date || '',
+  };
+  const signatureData = typeof window !== 'undefined' ? localStorage.getItem('gi_signature') || '' : '';
+  const displayDate = new Date().toISOString().split('T')[0];
+
+  // Step 1: Show the preview (render the component, then user reviews it)
+  const handleSave = () => {
+    setShowPreview(true);
+  };
+
+  // Step 2: Generate PDF from the rendered DOM and persist to DB + storage
+  const commitSave = async () => {
+    if (!revisedDocRef.current) return;
+
     try {
-      const meta = getPOMeta();
+      const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
 
-      // Build PDF with amended values
-      const amendedProduct = amendItems.map(li => li.product).filter(Boolean).join(', ');
-      const pdfData = orderToPdfData(order, { ...(meta || {}), totalCases: amendTotalCases, totalKilos: amendTotalKilos, grandTotal: amendGrandTotal, lineItems: amendItems }, amendItems);
-      pdfData.isRevised = true;
-      pdfData.poDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      pdfData.orderProduct = amendedProduct;
-      pdfData.grandTotal = amendGrandTotal;
-      pdfData.totalKilos = amendTotalKilos;
-      pdfData.totalCases = amendTotalCases;
-      pdfData.items = amendItems;
-      const html = buildPOHtml(pdfData);
-      const container = document.createElement('div');
-      container.innerHTML = html;
-      container.style.position = 'absolute';
-      container.style.left = '-9999px';
-      document.body.appendChild(container);
-
-      // Wait a tick for the browser to render the HTML before capturing
-      await new Promise(r => setTimeout(r, 200));
-
+      // Generate PDF from the rendered DOM element (same approach as PO generator)
       const blob = await (html2pdf() as any).set({
         margin: [4, 5, 4, 5],
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      }).from(container).output('blob');
-      document.body.removeChild(container);
+      }).from(revisedDocRef.current).output('blob');
 
-      // Show the PDF preview immediately
       setPdfBlob(blob);
-      setPdfPreviewUrl(URL.createObjectURL(blob));
-      setShowPreview(true);
-    } catch (err) {
-      console.error('PDF generation failed:', err);
-      alert('Failed to generate revised PO PDF.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Step 2: Actually persist to DB + storage (called when user clicks Done or Email)
-  const commitSave = async () => {
-    try {
-      const meta = getPOMeta();
-      const revisedFilename = `REVISED_${order.id.replace(/\//g, '_')}.pdf`;
 
       // Upload PDF to storage
-      if (pdfBlob) {
-        await supabase.storage.from('po-documents').upload(revisedFilename, pdfBlob, {
-          contentType: 'application/pdf', upsert: true,
-        });
-      }
+      await supabase.storage.from('po-documents').upload(revisedFilename, blob, {
+        contentType: 'application/pdf', upsert: true,
+      });
 
       const revisedPdfUrl = supabase.storage.from('po-documents').getPublicUrl(revisedFilename).data.publicUrl;
 
@@ -178,14 +169,122 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         metadata: { ...order.metadata, revisedPdfUrl },
         history: [...(order.history || []), updatedHistory],
       });
+
+      return blob;
     } catch (err) {
       console.error('Save failed:', err);
-      alert('Failed to save amended order.');
+      alert('Failed to save revised order.');
+      return null;
     }
   };
 
   const inputClass = 'w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
 
+  // If showing preview, render the preview modal with the actual PO document
+  if (showPreview) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowPreview(false); }}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* Preview Header */}
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-bold">REVISED</span>
+                Purchase Order - {order.id}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">Review the revised PO below, then save &amp; email or just save</p>
+            </div>
+            <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+              <Icon name="X" size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Live PO Document Preview (scrollable) */}
+          <div className="flex-1 overflow-auto bg-gray-100 p-4">
+            <div className="bg-white shadow-lg rounded-lg mx-auto" style={{ maxWidth: '850px' }}>
+              {/* REVISED banner — rendered above the PO content, captured by html2pdf */}
+              <div ref={revisedDocRef}>
+                <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+                  <span style={{ background: '#dc2626', color: '#fff', padding: '4px 16px', borderRadius: '4px', fontWeight: 700, fontSize: '14px', letterSpacing: '1px' }}>REVISED</span>
+                </div>
+                <PODocumentPreview
+                  poData={poData}
+                  lineItems={amendItems}
+                  grandTotal={amendGrandTotal.toFixed(2)}
+                  totalKilos={amendTotalKilos}
+                  totalCases={amendTotalCases}
+                  signatureData={signatureData}
+                  status="approved"
+                  currentPreviewPONumber={order.id}
+                  displayDate={displayDate}
+                  isRevised={true}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Preview Footer */}
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex justify-between shrink-0">
+            <button
+              onClick={() => setShowPreview(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Back to Edit
+            </button>
+            <div className="flex gap-3">
+              <button
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  await commitSave();
+                  setSaving(false);
+                  onClose();
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? <><div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" /> Saving...</> : <><Icon name="Check" size={16} /> Save</>}
+              </button>
+              <button
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  const blob = await commitSave();
+                  setSaving(false);
+                  if (blob) {
+                    setPdfBlob(blob);
+                    setShowPreview(false);
+                    setShowEmailModal(true);
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</> : <><Icon name="Send" size={16} /> Save &amp; Email</>}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Email Modal */}
+        {showEmailModal && pdfBlob && (
+          <ComposeEmailModal
+            isOpen={true}
+            onClose={() => { setShowEmailModal(false); onClose(); }}
+            orgId={orgId}
+            prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
+            prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
+            attachmentBlobs={[{
+              filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
+              blob: pdfBlob,
+              mimeType: 'application/pdf',
+            }]}
+            onSent={() => { setShowEmailModal(false); onClose(); }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Main editing view
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -289,82 +388,13 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
             Cancel
           </button>
           <button
-            disabled={saving}
             onClick={handleSave}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"
           >
-            {saving ? (
-              <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</>
-            ) : (
-              <><Icon name="Check" size={16} /> Save Changes</>
-            )}
+            <Icon name="Eye" size={16} /> Preview Revised PO
           </button>
         </div>
       </div>
-
-      {/* PDF Preview Modal */}
-      {showPreview && pdfPreviewUrl && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setShowPreview(false); onClose(); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-            {/* Preview Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                  <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-bold">REVISED</span>
-                  Purchase Order - {order.id}
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">Review the revised PO below, then email or close</p>
-              </div>
-              <button onClick={async () => { await commitSave(); setShowPreview(false); onClose(); }} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
-                <Icon name="X" size={20} className="text-gray-500" />
-              </button>
-            </div>
-
-            {/* PDF Viewer */}
-            <div className="flex-1 overflow-hidden bg-gray-100 p-4" style={{ minHeight: 500 }}>
-              <iframe
-                src={pdfPreviewUrl + '#toolbar=1'}
-                title="Revised PO Preview"
-                className="w-full h-full rounded-lg border border-gray-200 bg-white"
-                style={{ minHeight: 480 }}
-              />
-            </div>
-
-            {/* Preview Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
-              <button
-                onClick={async () => { await commitSave(); setShowPreview(false); onClose(); }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Done
-              </button>
-              <button
-                onClick={async () => { await commitSave(); setShowPreview(false); setShowEmailModal(true); }}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-              >
-                <Icon name="Send" size={16} /> Email Revised PO
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Email Modal */}
-      {showEmailModal && pdfBlob && (
-        <ComposeEmailModal
-          isOpen={true}
-          onClose={() => { setShowEmailModal(false); onClose(); }}
-          orgId={orgId}
-          prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
-          prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
-          attachmentBlobs={[{
-            filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
-            blob: pdfBlob,
-            mimeType: 'application/pdf',
-          }]}
-          onSent={() => { setShowEmailModal(false); onClose(); }}
-        />
-      )}
     </div>
   );
 }

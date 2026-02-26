@@ -45,11 +45,12 @@ interface Props {
   status: string;
   currentPreviewPONumber: string;
   displayDate: string;  // already resolved for bulk mode
+  isRevised?: boolean;
 }
 
 const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
   poData, lineItems, grandTotal, totalKilos, totalCases,
-  signatureData, status, currentPreviewPONumber, displayDate,
+  signatureData, status, currentPreviewPONumber, displayDate, isRevised,
 }, ref) => {
   // Determine which optional columns have data
   const hasBrand = lineItems.some(i => i.brand);
@@ -105,7 +106,7 @@ const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
           <p className="font-medium text-gray-700">Date: <span className="text-gray-900">{formatDate(displayDate)}</span></p>
         </div>
         <div>
-          <p className="font-medium text-gray-700">Purchase Order No: <span className="text-gray-900 font-bold">{currentPreviewPONumber}</span></p>
+          <p className="font-medium text-gray-700">{isRevised ? 'Revised Purchase Order No' : 'Purchase Order No'}: <span className="text-gray-900 font-bold">{currentPreviewPONumber}</span></p>
         </div>
       </div>
 
@@ -121,7 +122,7 @@ const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
       <div className="mb-2">
         <p className="text-gray-700">Dear Sirs,</p>
         <p className="text-gray-700 mt-0.5">
-          We are pleased to confirm our Purchase Order with you for the Export of{' '}
+          We are pleased to confirm our {isRevised ? 'Revised ' : ''}Purchase Order with you for the Export of{' '}
           <span className="font-medium">{productGreeting}</span>
           {' '}to our Principals namely <span className="font-medium">M/s.{poData.buyer || '______________________'}</span>
           {poData.destination && <>, <span className="font-medium">{poData.destination.toUpperCase()}</span></>}
