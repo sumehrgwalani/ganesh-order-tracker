@@ -656,11 +656,15 @@ async function processEmailAttachments(
           console.log(`[PROCESS] Skipping extraction for ${matchedOrderId} — already has ${existingItemCount} line items`)
         } else {
         let extractedData: any = null
-        if (poAttachment.mimeType.startsWith('image/')) {
+        // Try vision extraction for both images AND PDFs (not just images)
+        if (poAttachment.mimeType.startsWith('image/') || poAttachment.mimeType.includes('pdf')) {
           extractedData = await extractPODataFromImage(poAttachment.base64, poAttachment.mimeType, orderRow?.company || '', orderRow?.supplier || '')
         }
+        // DON'T fall back to email text extraction when we have a PO attachment.
+        // Email text produces unreliable data (wrong products, missing prices).
+        // Better to leave line items empty so bulk-extract can retry from the stored PDF later.
         if (!extractedData || extractedData.lineItems.length === 0) {
-          extractedData = await extractPODataFromEmail(email, orderRow?.company || '', orderRow?.supplier || '')
+          console.log(`[PROCESS] Vision extraction failed for ${matchedOrderId} — skipping email text fallback (stored PDF will be retried by bulk-extract)`)
         }
 
         if (extractedData && extractedData.lineItems.length > 0) {
