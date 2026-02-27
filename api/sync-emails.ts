@@ -1462,6 +1462,81 @@ If no purchase orders found, return: []`
         await supabase.from('order_history').insert(entry)
       }
 
+      // ===== THREAD-BASED MATCHING =====
+      // If another email in the same Gmail thread is already matched, link this one to the same order.
+      let threadMatchCount = 0
+      const threadMatched: any[] = []
+      const afterThreadMatch: any[] = []
+
+      for (const email of unmatchedEmails) {
+        if (!email.thread_id) { afterThreadMatch.push(email); continue }
+
+        // Find any email in the same thread that's already matched to an order
+        const { data: threadSibling } = await supabase
+          .from('synced_emails')
+          .select('matched_order_id, detected_stage')
+          .eq('organization_id', organization_id)
+          .eq('thread_id', email.thread_id)
+          .not('matched_order_id', 'is', null)
+          .limit(1)
+          .maybeSingle()
+
+        if (threadSibling?.matched_order_id) {
+          const detectedStage = detectStageFromSubject(email.subject) || threadSibling.detected_stage
+          await supabase
+            .from('synced_emails')
+            .update({
+              matched_order_id: threadSibling.matched_order_id,
+              detected_stage: detectedStage,
+              ai_summary: `Auto-matched by email thread (same conversation as a matched email)`,
+            })
+            .eq('id', email.id)
+
+          threadMatchCount++
+          threadMatched.push({ email, orderId: threadSibling.matched_order_id, stage: detectedStage })
+        } else {
+          afterThreadMatch.push(email)
+        }
+      }
+
+      if (threadMatchCount > 0) {
+        console.log(`[THREAD] Auto-matched ${threadMatchCount} emails by conversation thread`)
+      }
+
+      // Process thread-matched emails (stage advancement + history)
+      for (const { email, orderId, stage } of threadMatched) {
+        const order = ordersList.find((o: any) => o.id === orderId)
+        if (order && stage && stage > order.currentStage) {
+          const skipped: number[] = []
+          for (let s = order.currentStage + 1; s < stage; s++) {
+            if (!order.skippedStages.includes(s)) skipped.push(s)
+          }
+          await supabase
+            .from('orders')
+            .update({ current_stage: stage, skipped_stages: [...order.skippedStages, ...skipped] })
+            .eq('order_id', orderId)
+            .eq('organization_id', organization_id)
+          order.currentStage = stage
+          order.skippedStages = [...order.skippedStages, ...skipped]
+        }
+
+        // Add to order history
+        await insertHistoryIfNew({
+          order_id: order?.uuid,
+          organization_id,
+          stage: stage || order?.currentStage || 1,
+          timestamp: email.date ? new Date(email.date).toISOString() : new Date().toISOString(),
+          from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
+          subject: email.subject,
+          body: (email.body_text || '').substring(0, 2000),
+          has_attachment: email.has_attachment || false,
+          created_at: new Date().toISOString(),
+        })
+      }
+
+      // Continue with remaining unmatched emails (thread matching didn't catch them)
+      const unmatchedAfterThread = afterThreadMatch
+
       // ===== PRE-AI REGEX MATCHING =====
       // Match emails by PO number BEFORE calling AI. Runs on ALL unprocessed emails (not just the 5-email batch)
       // AND re-checks previously AI-processed-but-unmatched emails that now have matching orders.
@@ -1542,8 +1617,8 @@ If no purchase orders found, return: []`
         }
       }
 
-      // PASS 2: Regex-match the current batch of unprocessed emails
-      for (const email of unmatchedEmails) {
+      // PASS 2: Regex-match the current batch of unprocessed emails (after thread matching)
+      for (const email of unmatchedAfterThread) {
         const order = tryRegexMatch(email)
         if (order) {
           regexMatched.push({ email, order })
@@ -2628,6 +2703,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
           return {
             gmail_id: msgId,
+            thread_id: msg.threadId || null,
             from_email: extractEmail(getHeader(headers, 'From')),
             from_name: extractName(getHeader(headers, 'From')),
             to_email: extractEmail(getHeader(headers, 'To')),
@@ -2651,6 +2727,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         .upsert({
           organization_id,
           gmail_id: email.gmail_id,
+          thread_id: email.thread_id || null,
           from_email: email.from_email,
           from_name: email.from_name,
           to_email: email.to_email,
