@@ -21,6 +21,7 @@ export interface SyncedEmail {
   user_link_note: string | null;
   user_linked_at: string | null;
   dismissed: boolean;
+  reviewed: boolean;
 }
 
 export function useSyncedEmails(orgId: string | null) {
@@ -60,11 +61,15 @@ export function useSyncedEmails(orgId: string | null) {
     (e) => e.matched_order_id || e.user_linked_order_id
   );
   const unmatchedEmails = emails.filter(
-    (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed
+    (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && !e.reviewed
   );
   // Low-confidence suggestions: AI found a possible match but wasn't sure enough to link
   const suggestedEmails = emails.filter(
     (e) => !e.matched_order_id && !e.user_linked_order_id && e.ai_suggested_order_id
+  );
+  // Reviewed emails: user has looked at them but doesn't need them re-parsed
+  const reviewedEmails = emails.filter(
+    (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && e.reviewed
   );
 
   // Link an unmatched email to an order
@@ -164,6 +169,38 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
+  // Mark email as reviewed (user has seen it, skip during future syncs)
+  const markReviewed = async (emailId: string) => {
+    const { error: updateError } = await supabase
+      .from('synced_emails')
+      .update({ reviewed: true })
+      .eq('id', emailId);
+
+    if (updateError) throw updateError;
+
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === emailId ? { ...e, reviewed: true } : e
+      )
+    );
+  };
+
+  // Move email back from reviewed to unmatched
+  const unmarkReviewed = async (emailId: string) => {
+    const { error: updateError } = await supabase
+      .from('synced_emails')
+      .update({ reviewed: false })
+      .eq('id', emailId);
+
+    if (updateError) throw updateError;
+
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === emailId ? { ...e, reviewed: false } : e
+      )
+    );
+  };
+
   // Dismiss an email (mark as not order-related — newsletters, spam, etc.)
   const dismissEmail = async (emailId: string) => {
     const { error: updateError } = await supabase
@@ -185,11 +222,14 @@ export function useSyncedEmails(orgId: string | null) {
     matchedEmails,
     unmatchedEmails,
     suggestedEmails,
+    reviewedEmails,
     loading,
     error,
     linkEmailToOrder,
     unlinkEmail,
     dismissEmail,
+    markReviewed,
+    unmarkReviewed,
     refetch: fetchEmails,
   };
 }

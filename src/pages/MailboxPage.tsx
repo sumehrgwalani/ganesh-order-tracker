@@ -19,10 +19,10 @@ type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting'
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
-  const { matchedEmails, unmatchedEmails, suggestedEmails, loading, linkEmailToOrder, unlinkEmail, dismissEmail, refetch } = useSyncedEmails(orgId);
+  const { matchedEmails, unmatchedEmails, suggestedEmails, reviewedEmails, loading, linkEmailToOrder, unlinkEmail, dismissEmail, markReviewed, unmarkReviewed, refetch } = useSyncedEmails(orgId);
   const { showToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
+  const [activeTab, setActiveTab] = useState<'matched' | 'conversations' | 'reviewed'>('matched');
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -339,7 +339,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     return orderId;
   };
 
-  const tabEmails = activeTab === 'matched' ? matchedEmails : unmatchedEmails;
+  const tabEmails = activeTab === 'matched' ? matchedEmails : activeTab === 'conversations' ? unmatchedEmails : reviewedEmails;
   const currentEmails = searchTerm
     ? tabEmails.filter(e => {
         const q = searchTerm.toLowerCase();
@@ -505,6 +505,17 @@ function MailboxPage({ orgId, orders, userId }: Props) {
             {unmatchedEmails.length}
           </span>
         </button>
+        <button
+          onClick={() => setActiveTab('reviewed')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'reviewed' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Reviewed
+          <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+            {reviewedEmails.length}
+          </span>
+        </button>
       </div>
 
       {/* Search bar */}
@@ -528,14 +539,16 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       {currentEmails.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
           <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Icon name={activeTab === 'matched' ? 'FileText' : 'MessageSquare'} size={32} className="text-blue-400" />
+            <Icon name={activeTab === 'matched' ? 'FileText' : activeTab === 'reviewed' ? 'CheckCircle' : 'MessageSquare'} size={32} className="text-blue-400" />
           </div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
-            {activeTab === 'matched' ? 'No matched emails yet' : 'No conversations'}
+            {activeTab === 'matched' ? 'No matched emails yet' : activeTab === 'reviewed' ? 'No reviewed emails' : 'No conversations'}
           </h3>
           <p className="text-gray-500 text-sm">
             {activeTab === 'matched'
               ? 'Click "Full Sync" to pull emails from Gmail and match them to orders.'
+              : activeTab === 'reviewed'
+              ? 'Emails you\'ve reviewed will appear here and won\'t be re-parsed during sync.'
               : 'General emails that don\'t match any order will show up here.'}
           </p>
         </div>
@@ -600,7 +613,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                     </span>
                   )}
 
-                  {/* Link + Dismiss buttons (conversations tab) */}
+                  {/* Link + Reviewed + Dismiss buttons (conversations tab) */}
                   {activeTab === 'conversations' && (
                     <>
                       <button
@@ -616,6 +629,16 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          markReviewed(email.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed to mark reviewed', 'error'));
+                        }}
+                        className="text-xs px-2 py-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg flex-shrink-0 flex items-center gap-1"
+                        title="Mark as reviewed — won't be re-parsed during sync"
+                      >
+                        <Icon name="CheckCircle" size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleDismiss(email);
                         }}
                         className="text-xs px-2 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg flex-shrink-0 flex items-center gap-1"
@@ -624,6 +647,21 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                         <Icon name="X" size={12} />
                       </button>
                     </>
+                  )}
+
+                  {/* Move back button (reviewed tab) */}
+                  {activeTab === 'reviewed' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        unmarkReviewed(email.id).then(() => showToast('Moved back to Conversations', 'success')).catch(() => showToast('Failed', 'error'));
+                      }}
+                      className="text-xs px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 flex-shrink-0 flex items-center gap-1"
+                      title="Move back to Conversations"
+                    >
+                      <Icon name="Undo2" size={12} />
+                      Move back
+                    </button>
                   )}
 
                   {/* Date */}
@@ -685,6 +723,13 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                         >
                           <Icon name="Link" size={14} />
                           Link to Order
+                        </button>
+                        <button
+                          onClick={() => markReviewed(email.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed', 'error'))}
+                          className="text-sm px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 flex items-center gap-2"
+                        >
+                          <Icon name="CheckCircle" size={14} />
+                          Mark Reviewed
                         </button>
                         <button
                           onClick={() => handleDismiss(email)}

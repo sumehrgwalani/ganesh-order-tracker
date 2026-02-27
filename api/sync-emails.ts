@@ -1095,6 +1095,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .is('user_linked_order_id', null)
         .is('ai_summary', null)
         .neq('dismissed', true)
+        .neq('reviewed', true)
         .order('date', { ascending: true })
         .limit(15) // Larger batches — 300s timeout allows more per call
 
@@ -1914,7 +1915,7 @@ Return VALID JSON only, no markdown. One result per email:
       if (needsAI.length === 0) {
         const { count: totalCount } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id)
         const { count: matchedTotal } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).not('matched_order_id', 'is', null)
-        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null).neq('dismissed', true)
+        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null).neq('dismissed', true).neq('reviewed', true)
         setCors(res)
         return res.status(200).json({
           mode: 'match', done: (remaining || 0) === 0, matched: regexMatchCount, created: createdOrderCount,
@@ -2474,6 +2475,7 @@ If truly unknown, return "Unknown" for that field.` }],
         .is('user_linked_order_id', null)
         .is('ai_summary', null)
         .neq('dismissed', true)
+        .neq('reviewed', true)
 
       const { count: totalEmails } = await supabase
         .from('synced_emails')
