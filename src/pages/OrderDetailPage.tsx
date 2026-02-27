@@ -577,8 +577,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         }
       }
     }
-    // Fallback: if no specific pairing, use first uploaded reference
-    const fallbackRef = stage === 3 ? allAttachments.find(a => a.isManualUpload && a.pdfUrl) : null;
+    // No fallback — only show compare for explicitly paired files
 
     return (
       <div className="pt-3 border-t border-gray-100">
@@ -614,7 +613,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 </button>
                 {/* Compare button: for email artwork, compare against its paired reference */}
                 {stage === 3 && !att.isManualUpload && att.pdfUrl && (() => {
-                  const paired = referencePairMap.get(att.pdfUrl!) || (fallbackRef ? { url: fallbackRef.pdfUrl!, name: fallbackRef.name } : null);
+                  const paired = referencePairMap.get(att.pdfUrl!) || null;
                   return paired ? (
                     <button
                       onClick={() => setArtworkCompareModal({
