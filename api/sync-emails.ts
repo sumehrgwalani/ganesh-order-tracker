@@ -1305,10 +1305,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               const subj = e.subject || ''
               const m1 = subj.match(/PO\s*\d{4}\s*[-–]\s*(.+?)(?:\s*$)/i)
               if (m1 && m1[1].trim() !== `PO ${shortPO}`) { supplier = m1[1].trim(); break }
-              const m2 = subj.match(/(?:PI|proforma)[^-]*[-–]\s*(.+?)\s*[-–]\s*PO/i)
-              if (m2) { supplier = m2[1].trim(); break }
-              const m3 = subj.match(/[-–]\s*([A-Z][A-Z\s]+?)\s*[-–]\s*PO\s*\d{4}/i)
-              if (m3) { supplier = m3[1].trim(); break }
+              // Pattern 2: Extract supplier between last two dashes before "PO"
+              const m2 = subj.match(/[-–]\s*([A-Za-z][A-Za-z\s.&]+?)\s*[-–]\s*PO\s*\d{4}/i)
+              if (m2 && m2[1].trim().length > 1 && !m2[1].trim().match(/^PI\b/i)) { supplier = m2[1].trim(); break }
+              // Pattern 3: More flexible "COMPANY NAME - PO 3053"
+              const m3 = subj.match(/[-–]\s*([A-Za-z][A-Za-z\s.&]{2,}?)\s*[-–]?\s*PO\s*\d{4}/i)
+              if (m3 && m3[1].trim().length > 2 && !m3[1].trim().match(/^(?:PI|PO|NEW|RE)\b/i)) { supplier = m3[1].trim(); break }
             }
 
             // Extract product from email text using keyword scanning
@@ -2315,12 +2317,13 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             // Pattern 1: "PO 3046 - Raunaq" or "PO 3046 - JJ SEAFOODS"
             const m1 = subj.match(/PO\s*\d{4}\s*[-–]\s*(.+?)(?:\s*$)/i)
             if (m1 && m1[1].trim() !== `PO ${fullPO.split('/').pop()}`) { supplier = m1[1].trim(); break }
-            // Pattern 2: PI emails like "PI GI/PI/25-26/I02062 - SILVER SEAFOOD - PO 3053"
-            const m2 = subj.match(/(?:PI|proforma)[^-]*[-–]\s*(.+?)\s*[-–]\s*PO/i)
-            if (m2) { supplier = m2[1].trim(); break }
-            // Pattern 3: "SILVER SEAFOOD - PO 3053" at the end
-            const m3 = subj.match(/[-–]\s*([A-Z][A-Z\s]+?)\s*[-–]\s*PO\s*\d{4}/i)
-            if (m3) { supplier = m3[1].trim(); break }
+            // Pattern 2: PI emails — extract supplier name between last two dashes before "PO"
+            // e.g. "NEW PROFORMA INVOICE - PI/SSI/187/25-26 - SS INTERNATIONAL- PO 3055"
+            const m2 = subj.match(/[-–]\s*([A-Za-z][A-Za-z\s.&]+?)\s*[-–]\s*PO\s*\d{4}/i)
+            if (m2 && m2[1].trim().length > 1 && !m2[1].trim().match(/^PI\b/i)) { supplier = m2[1].trim(); break }
+            // Pattern 3: "COMPANY NAME - PO 3053" anywhere (more flexible)
+            const m3 = subj.match(/[-–]\s*([A-Za-z][A-Za-z\s.&]{2,}?)\s*[-–]?\s*PO\s*\d{4}/i)
+            if (m3 && m3[1].trim().length > 2 && !m3[1].trim().match(/^(?:PI|PO|NEW|RE)\b/i)) { supplier = m3[1].trim(); break }
           }
 
           // Extract company (buyer) - usually Pescados or the To address
