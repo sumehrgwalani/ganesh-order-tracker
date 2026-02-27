@@ -24,7 +24,7 @@ Stage 1 (PO Sent): Email is about sending a Purchase Order to a supplier. Subjec
 
 Stage 2 (Proforma Issued): Email contains a Proforma Invoice (PI). Subject contains "PROFORMA INVOICE" or "NEW PROFORMA INVOICE" + PI number + PO number + supplier name. Format example: "NEW PROFORMA INVOICE - PI GI/PI/25-26/I02013 - PO 3004 - JJ SEAFOODS". Body is often EMPTY — all PI info is in the attachment (PDF or scanned JPG). Sent BY Ganesh International. Has attachment with the PI document. PI numbers follow formats like GI/PI/25-26/IXXXXX, PEI/PI/XXX/2025-26, PI/SSI/XXX/25-26, or SLS-XXX.
 
-Stage 3 (Artwork Approved): Email is about artwork or label approval. Subject contains "NEED APPROVAL", "NEED ARTWORK APPROVAL", or "NEED LABELS APPROVAL" + PI number + PO number. These are typically FORWARDED approval chains where the buyer (E. Guillem / Pescados) confirms artwork is OK. Approval phrases: "The artworks are OK", "The labels are OK", "OK, thank you", "encornet is OK". Reply phrases: "Well noted & thanks". The email thread shows the request for approval and the supplier's confirmation.
+Stage 3 (Artwork in Progress): Email is about artwork, labels, or design review/approval. Subject contains "NEED APPROVAL", "NEED ARTWORK APPROVAL", "NEED LABELS APPROVAL", "REQUEST FOR ARTWORK", "label", "design", or "artwork" + PI number + PO number. These are typically back-and-forth approval chains where designs are sent, reviewed, revised, and approved. Approval phrases: "The artworks are OK", "The labels are OK", "OK, thank you", "encornet is OK". Reply phrases: "Well noted & thanks". Also includes initial artwork requests and revision emails.
 
 Stage 4 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate", "pre-shipment inspection". Often from inspectors like Hansel Fernandez or J B Boda.
 
@@ -1597,8 +1597,8 @@ If no purchase orders found, return: []`
         if (b.includes('attached p.i') || b.includes('attach pi') || b.includes('proforma') || /\bp\.i[\s\.]/i.test(b) || /\bpi\s+\w{2,}[\-\/]\d/i.test(b)) return 2
         // Stage 1 — purchase order
         if (s.includes('purchase order') || s.includes('new po') || s.includes('new purchase')) return 1
-        // Stage 3 — artwork/labels
-        if (s.includes('artwork') || s.includes('label')) return 3
+        // Stage 3 — artwork in progress (designs, labels, approval)
+        if (s.includes('artwork') || s.includes('label') || s.includes('design')) return 3
         // Stage 4 — quality
         if (s.includes('quality') || s.includes('inspection')) return 4
         // Stage 5 — shipping schedule
