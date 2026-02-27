@@ -1273,14 +1273,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,
           /(3\d{3})\s*(?:eguillem|guillem|label|artwork)/gi,
         ]
+        // Collect ALL emails per PO (not just the first match)
+        const discoveredPOEmails = new Map<string, any[]>()
         for (const email of (allEmails || [])) {
           const searchText = `${email.subject || ''} ${(email.body_text || '').substring(0, 2000)}`
           for (const pattern of poPatterns) {
             let match
             while ((match = pattern.exec(searchText)) !== null) {
-              if (!discoveredPOs.has(match[1])) {
-                discoveredPOs.set(match[1], { subject: email.subject || '', from_name: email.from_name || '', from_email: email.from_email || '' })
+              const shortPO = match[1]
+              if (!discoveredPOs.has(shortPO)) {
+                discoveredPOs.set(shortPO, { subject: email.subject || '', from_name: email.from_name || '', from_email: email.from_email || '' })
               }
+              if (!discoveredPOEmails.has(shortPO)) discoveredPOEmails.set(shortPO, [])
+              const emailList = discoveredPOEmails.get(shortPO)!
+              if (!emailList.some((e: any) => e.id === email.id)) emailList.push(email)
             }
           }
         }
@@ -1289,16 +1295,91 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log(`[REGEX DISCOVERY] Found ${discoveredPOs.size} unique PO numbers in emails`)
           for (const [shortPO, ref] of discoveredPOs) {
             const fullPO = `GI/PO/25-26/${shortPO}`
+            const emails = discoveredPOEmails.get(shortPO) || []
             // Guess company from sender
             const company = ref.from_name || ref.from_email?.split('@')[1]?.split('.')[0] || 'Unknown'
+
+            // Extract supplier from email subjects (same logic as email_sync_auto)
+            let supplier = 'Unknown'
+            for (const e of emails) {
+              const subj = e.subject || ''
+              const m1 = subj.match(/PO\s*\d{4}\s*[-–]\s*(.+?)(?:\s*$)/i)
+              if (m1 && m1[1].trim() !== `PO ${shortPO}`) { supplier = m1[1].trim(); break }
+              const m2 = subj.match(/(?:PI|proforma)[^-]*[-–]\s*(.+?)\s*[-–]\s*PO/i)
+              if (m2) { supplier = m2[1].trim(); break }
+              const m3 = subj.match(/[-–]\s*([A-Z][A-Z\s]+?)\s*[-–]\s*PO\s*\d{4}/i)
+              if (m3) { supplier = m3[1].trim(); break }
+            }
+
+            // Extract product from email text using keyword scanning
+            let product = 'Unknown'
+            const allEmailText = emails.map((e: any) => `${e.subject || ''} ${(e.body_text || '').substring(0, 1000)}`).join(' ').toUpperCase()
+            if (allEmailText.includes('SHRIMP') || allEmailText.includes('VANNAMEI') || allEmailText.includes('PDTO')) product = 'Frozen Shrimp'
+            else if (allEmailText.includes('SQUID') || allEmailText.includes('CALAMAR') || allEmailText.includes('POTA')) product = 'Frozen Squid'
+            else if (allEmailText.includes('CUTTLEFISH') || allEmailText.includes('SEPIA')) product = 'Frozen Cuttlefish'
+            else if (allEmailText.includes('OCTOPUS') || allEmailText.includes('PULPO')) product = 'Frozen Octopus'
+            else if (allEmailText.includes('FISH') || allEmailText.includes('SURIMI')) product = 'Frozen Fish'
+
+            // Detect highest stage from all emails
+            let highestStage = 1
+            for (const e of emails) {
+              const detected = detectStageFromSubject(e.subject, e.body_text)
+              if (detected) highestStage = Math.max(highestStage, detected)
+            }
+
+            // AI fallback: if supplier or product still Unknown, use Haiku to extract
+            if ((supplier === 'Unknown' || product === 'Unknown') && ANTHROPIC_API_KEY) {
+              try {
+                const emailSummary = emails.slice(0, 5).map((e: any) =>
+                  `From: ${e.from_name} <${e.from_email}>\nSubject: ${e.subject}\nBody: ${(e.body_text || '').substring(0, 1500)}`
+                ).join('\n---\n')
+                const aiExtractRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+                  body: JSON.stringify({
+                    model: 'claude-haiku-3-20240307',
+                    max_tokens: 300,
+                    messages: [{ role: 'user', content: `These emails are about frozen seafood order GI/PO/25-26/${shortPO} for Ganesh International (India-based trading company).
+Extract:
+- supplier: The supplier/factory name (NOT Ganesh International, NOT the buyer). Look at sender names, email signatures, and body text.
+- product: The main seafood product (e.g. "Frozen Squid", "Frozen Shrimp"). Look for words like squid, shrimp, calamar, pota, sepia, cuttlefish, octopus, fish, vannamei, surimi, PDTO etc.
+
+EMAILS:
+${emailSummary}
+
+Return ONLY valid JSON: {"supplier": "...", "product": "..."}
+If truly unknown, return "Unknown" for that field.` }],
+                  }),
+                })
+                if (aiExtractRes.ok) {
+                  const aiData = await aiExtractRes.json()
+                  const aiText = aiData.content?.[0]?.text || '{}'
+                  const jsonM = aiText.match(/\{[\s\S]*\}/)
+                  if (jsonM) {
+                    const extracted = JSON.parse(jsonM[0])
+                    if (supplier === 'Unknown' && extracted.supplier && extracted.supplier !== 'Unknown' && extracted.supplier !== 'Ganesh International') {
+                      supplier = extracted.supplier
+                      console.log(`[REGEX DISCOVERY AI] Supplier for GI/PO/25-26/${shortPO}: "${supplier}"`)
+                    }
+                    if (product === 'Unknown' && extracted.product && extracted.product !== 'Unknown') {
+                      product = extracted.product
+                      console.log(`[REGEX DISCOVERY AI] Product for GI/PO/25-26/${shortPO}: "${product}"`)
+                    }
+                  }
+                }
+              } catch (aiErr: any) {
+                console.log(`[REGEX DISCOVERY AI] Failed for ${shortPO}: ${aiErr.message}`)
+              }
+            }
+
             const { data: newOrder, error: createErr } = await supabase.from('orders').insert({
               organization_id,
               order_id: fullPO,
               po_number: fullPO,
               company,
-              supplier: 'Unknown',
-              product: 'Unknown',
-              current_stage: 1,
+              supplier,
+              product,
+              current_stage: highestStage,
               status: 'sent',
               order_date: new Date().toISOString().split('T')[0],
               metadata: { created_by: 'regex_discovery', needsReview: true },
@@ -1306,13 +1387,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             if (!createErr && newOrder) {
               createdOrderCount++
-              ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier: 'Unknown', product: 'Unknown', currentStage: 1, skippedStages: [] })
-              await supabase.from('order_history').insert({
-                order_id: newOrder.id, organization_id, stage: 1,
-                timestamp: new Date().toISOString(), from_address: 'System (Regex Discovery)',
-                subject: `Order ${fullPO} discovered from email subjects`,
-                body: `Found PO ${shortPO} referenced in: ${ref.subject}`,
-              })
+              ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier, product, currentStage: highestStage, skippedStages: [] })
+
+              // Log each email in order history with real details
+              for (const e of emails) {
+                const emailStage = detectStageFromSubject(e.subject, e.body_text)
+                // Link email to the new order
+                await supabase.from('synced_emails').update({
+                  matched_order_id: fullPO,
+                  ai_summary: `Matched to order ${fullPO} via regex discovery`,
+                  detected_stage: emailStage || highestStage,
+                }).eq('id', e.id)
+
+                await insertHistoryIfNew({
+                  order_id: newOrder.id,
+                  organization_id,
+                  stage: emailStage || highestStage,
+                  timestamp: e.date || new Date().toISOString(),
+                  from_address: e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email || 'Unknown',
+                  subject: e.subject || 'No subject',
+                  body: (e.body_text || '').substring(0, 5000),
+                  has_attachment: e.has_attachment || false,
+                })
+              }
+              console.log(`[REGEX DISCOVERY] Created order ${fullPO} — supplier: ${supplier}, product: ${product}, stage: ${highestStage}`)
             }
           }
           console.log(`[REGEX DISCOVERY] Created ${createdOrderCount} orders`)
@@ -2253,8 +2351,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             if (!hasEvidence) skippedStages.push(s)
           }
 
-          // Product will be extracted from the actual PO document by extractPODataFromImage later.
-          // Just do a basic keyword scan across ALL emails as a fallback.
+          // Product: basic keyword scan across ALL emails
           let product = 'Unknown'
           const allEmailText = emails.map((e: any) => `${e.subject || ''} ${(e.body_text || '').substring(0, 1000)}`).join(' ').toUpperCase()
           if (allEmailText.includes('SHRIMP') || allEmailText.includes('VANNAMEI') || allEmailText.includes('PDTO')) product = 'Frozen Shrimp'
@@ -2262,6 +2359,51 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           else if (allEmailText.includes('CUTTLEFISH') || allEmailText.includes('SEPIA')) product = 'Frozen Cuttlefish'
           else if (allEmailText.includes('OCTOPUS') || allEmailText.includes('PULPO')) product = 'Frozen Octopus'
           else if (allEmailText.includes('FISH') || allEmailText.includes('SURIMI')) product = 'Frozen Fish'
+
+          // AI fallback: if supplier or product still Unknown, use Haiku to extract
+          if ((supplier === 'Unknown' || product === 'Unknown') && ANTHROPIC_API_KEY) {
+            try {
+              const emailSummary = emails.slice(0, 5).map((e: any) =>
+                `From: ${e.from_name} <${e.from_email}>\nSubject: ${e.subject}\nBody: ${(e.body_text || '').substring(0, 1500)}`
+              ).join('\n---\n')
+              const aiExtractRes = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+                body: JSON.stringify({
+                  model: 'claude-haiku-3-20240307',
+                  max_tokens: 300,
+                  messages: [{ role: 'user', content: `These emails are about frozen seafood order ${fullPO} for Ganesh International (India-based trading company).
+Extract:
+- supplier: The supplier/factory name (NOT Ganesh International, NOT the buyer). Look at sender names, email signatures, and body text.
+- product: The main seafood product (e.g. "Frozen Squid", "Frozen Shrimp"). Look for words like squid, shrimp, calamar, pota, sepia, cuttlefish, octopus, fish, vannamei, surimi, PDTO etc.
+
+EMAILS:
+${emailSummary}
+
+Return ONLY valid JSON: {"supplier": "...", "product": "..."}
+If truly unknown, return "Unknown" for that field.` }],
+                }),
+              })
+              if (aiExtractRes.ok) {
+                const aiData = await aiExtractRes.json()
+                const aiText = aiData.content?.[0]?.text || '{}'
+                const jsonM = aiText.match(/\{[\s\S]*\}/)
+                if (jsonM) {
+                  const extracted = JSON.parse(jsonM[0])
+                  if (supplier === 'Unknown' && extracted.supplier && extracted.supplier !== 'Unknown' && extracted.supplier !== 'Ganesh International') {
+                    supplier = extracted.supplier
+                    console.log(`[AI EXTRACT] Supplier for ${fullPO}: "${supplier}"`)
+                  }
+                  if (product === 'Unknown' && extracted.product && extracted.product !== 'Unknown') {
+                    product = extracted.product
+                    console.log(`[AI EXTRACT] Product for ${fullPO}: "${product}"`)
+                  }
+                }
+              }
+            } catch (aiErr: any) {
+              console.log(`[AI EXTRACT] Failed for ${fullPO}: ${aiErr.message}`)
+            }
+          }
 
           const { data: newOrder, error: createErr } = await supabase
             .from('orders')
