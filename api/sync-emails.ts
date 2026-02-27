@@ -1086,6 +1086,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let gmailAccessToken: string | null = null
 
       // Get unprocessed emails (no matched_order_id, no user_linked_order_id, and no ai_summary yet)
+      // Skip dismissed emails (newsletters, non-order emails marked by user)
       const { data: unmatchedEmails, error: fetchErr } = await supabase
         .from('synced_emails')
         .select('*')
@@ -1093,6 +1094,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
         .is('ai_summary', null)
+        .neq('dismissed', true)
         .order('date', { ascending: true })
         .limit(15) // Larger batches — 300s timeout allows more per call
 
@@ -1768,7 +1770,7 @@ Return VALID JSON only, no markdown. One result per email:
       if (needsAI.length === 0) {
         const { count: totalCount } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id)
         const { count: matchedTotal } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).not('matched_order_id', 'is', null)
-        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null)
+        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null).neq('dismissed', true)
         setCors(res)
         return res.status(200).json({
           mode: 'match', done: (remaining || 0) === 0, matched: regexMatchCount, created: createdOrderCount,
@@ -2282,6 +2284,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
         .is('ai_summary', null)
+        .neq('dismissed', true)
 
       const { count: totalEmails } = await supabase
         .from('synced_emails')
@@ -2294,6 +2297,13 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         .eq('organization_id', organization_id)
         .not('matched_order_id', 'is', null)
 
+      // Count dismissed emails
+      const { count: dismissedCount } = await supabase
+        .from('synced_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization_id)
+        .eq('dismissed', true)
+
       setCors(res)
       return res.status(200).json({
         mode: 'match',
@@ -2302,9 +2312,12 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         advanced: advancedCount,
         created: createdOrderCount,
         regexMatched: regexMatchCount,
+        threadMatched: threadMatchCount,
+        aiMatched: matchedCount,
         remaining: remainingCount || 0,
         totalEmails: totalEmails || 0,
         totalMatched: totalMatched || 0,
+        dismissed: dismissedCount || 0,
       })
     }
 

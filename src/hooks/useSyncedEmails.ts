@@ -20,6 +20,7 @@ export interface SyncedEmail {
   user_linked_order_id: string | null;
   user_link_note: string | null;
   user_linked_at: string | null;
+  dismissed: boolean;
 }
 
 export function useSyncedEmails(orgId: string | null) {
@@ -59,7 +60,7 @@ export function useSyncedEmails(orgId: string | null) {
     (e) => e.matched_order_id || e.user_linked_order_id
   );
   const unmatchedEmails = emails.filter(
-    (e) => !e.matched_order_id && !e.user_linked_order_id
+    (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed
   );
   // Low-confidence suggestions: AI found a possible match but wasn't sure enough to link
   const suggestedEmails = emails.filter(
@@ -163,6 +164,22 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
+  // Dismiss an email (mark as not order-related — newsletters, spam, etc.)
+  const dismissEmail = async (emailId: string) => {
+    const { error: updateError } = await supabase
+      .from('synced_emails')
+      .update({ dismissed: true })
+      .eq('id', emailId);
+
+    if (updateError) throw updateError;
+
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === emailId ? { ...e, dismissed: true } : e
+      )
+    );
+  };
+
   return {
     emails,
     matchedEmails,
@@ -172,6 +189,7 @@ export function useSyncedEmails(orgId: string | null) {
     error,
     linkEmailToOrder,
     unlinkEmail,
+    dismissEmail,
     refetch: fetchEmails,
   };
 }

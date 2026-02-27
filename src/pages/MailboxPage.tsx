@@ -19,7 +19,7 @@ type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting'
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
-  const { matchedEmails, unmatchedEmails, suggestedEmails, loading, linkEmailToOrder, unlinkEmail, refetch } = useSyncedEmails(orgId);
+  const { matchedEmails, unmatchedEmails, suggestedEmails, loading, linkEmailToOrder, unlinkEmail, dismissEmail, refetch } = useSyncedEmails(orgId);
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
@@ -31,6 +31,19 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [syncPhase, setSyncPhase] = useState<SyncPhase>('idle');
   const [syncProgress, setSyncProgress] = useState('');
   const [matchProgress, setMatchProgress] = useState({ matched: 0, remaining: 0, total: 0 });
+  const [syncSummary, setSyncSummary] = useState<{
+    pulled: number; regexMatched: number; threadMatched: number; aiMatched: number;
+    created: number; totalMatched: number; totalEmails: number; dismissed: number;
+  } | null>(null);
+
+  const handleDismiss = async (email: SyncedEmail) => {
+    try {
+      await dismissEmail(email.id);
+      showToast('Email dismissed — it won\'t appear again', 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to dismiss email', 'error');
+    }
+  };
 
   const handleUnlink = async (email: SyncedEmail) => {
     try {
@@ -100,12 +113,19 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       let matchBatch = 0;
       let totalMatched = 0;
       let matchDone = false;
+      let sumRegex = 0, sumThread = 0, sumAI = 0, sumCreated = 0, sumTotalEmails = 0, sumDismissed = 0;
       while (!matchDone && matchBatch < 20) {
         matchBatch++;
         const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
         if (matchError) { console.error('Match error:', matchError); break; }
         const remaining = matchData?.remaining || 0;
         totalMatched = matchData?.totalMatched || 0;
+        sumRegex += matchData?.regexMatched || 0;
+        sumThread += matchData?.threadMatched || 0;
+        sumAI += matchData?.aiMatched || 0;
+        sumCreated += matchData?.created || 0;
+        sumTotalEmails = matchData?.totalEmails || sumTotalEmails;
+        sumDismissed = matchData?.dismissed || sumDismissed;
         setSyncProgress(remaining > 0 ? `Matching: ${remaining} emails remaining...` : `Matched ${totalMatched} emails`);
         setMatchProgress({ matched: totalMatched, remaining, total: matchData?.totalEmails || 0 });
         matchDone = matchData?.done === true || remaining === 0;
@@ -142,9 +162,12 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
       setSyncPhase('done');
       setSyncProgress(`Quick sync done — ${totalPulled} new emails processed`);
-      showToast(`Quick sync complete: ${totalPulled} new emails`, 'success');
+      setSyncSummary({
+        pulled: totalPulled, regexMatched: sumRegex, threadMatched: sumThread,
+        aiMatched: sumAI, created: sumCreated, totalMatched, totalEmails: sumTotalEmails, dismissed: sumDismissed,
+      });
       refetch();
-      setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 4000);
+      setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 15000);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Quick sync failed', 'error');
       setSyncPhase('idle');
@@ -182,6 +205,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       setSyncPhase('matching');
       let batchNum = 0;
       let isDone = false;
+      let fSumRegex = 0, fSumThread = 0, fSumAI = 0, fSumCreated = 0, fSumTotalEmails = 0, fSumTotalMatched = 0, fSumDismissed = 0;
 
       const MAX_BATCHES = 200; // Safety limit to prevent infinite loops
       while (!isDone && batchNum < MAX_BATCHES) {
@@ -193,6 +217,13 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         const totalEmails = matchData?.totalEmails || 0;
         const totalMatched = matchData?.totalMatched || 0;
         const created = matchData?.created || 0;
+        fSumRegex += matchData?.regexMatched || 0;
+        fSumThread += matchData?.threadMatched || 0;
+        fSumAI += matchData?.aiMatched || 0;
+        fSumCreated += created;
+        fSumTotalEmails = totalEmails;
+        fSumTotalMatched = totalMatched;
+        fSumDismissed = matchData?.dismissed || fSumDismissed;
 
         setMatchProgress({ matched: totalMatched, remaining, total: totalEmails });
         setSyncProgress(
@@ -266,14 +297,20 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       }
 
       setSyncPhase('done');
-      showToast('Full sync complete!', 'success');
+      setSyncProgress('Full sync complete!');
+      setSyncSummary({
+        pulled: totalPulled, regexMatched: fSumRegex, threadMatched: fSumThread,
+        aiMatched: fSumAI, created: fSumCreated, totalMatched: fSumTotalMatched,
+        totalEmails: fSumTotalEmails, dismissed: fSumDismissed,
+      });
       refetch();
 
-      // Reset after a few seconds
+      // Reset after 15 seconds (longer so user can read summary)
       setTimeout(() => {
         setSyncPhase('idle');
         setSyncProgress('');
-      }, 5000);
+        setSyncSummary(null);
+      }, 15000);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Sync failed', 'error');
       setSyncPhase('idle');
@@ -376,6 +413,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
             <p className={`text-sm font-medium ${syncPhase === 'done' ? 'text-green-800' : 'text-blue-800'}`}>
               {syncProgress}
             </p>
+            {/* Progress bar during matching */}
             {syncPhase === 'matching' && matchProgress.total > 0 && (
               <div className="mt-2">
                 <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
@@ -389,7 +427,57 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                 </p>
               </div>
             )}
+            {/* Sync results summary */}
+            {syncPhase === 'done' && syncSummary && (
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {syncSummary.pulled > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-green-700">{syncSummary.pulled}</p>
+                    <p className="text-xs text-gray-500">New emails</p>
+                  </div>
+                )}
+                {syncSummary.regexMatched > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-blue-700">{syncSummary.regexMatched}</p>
+                    <p className="text-xs text-gray-500">By PO number</p>
+                  </div>
+                )}
+                {syncSummary.threadMatched > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-purple-700">{syncSummary.threadMatched}</p>
+                    <p className="text-xs text-gray-500">By thread</p>
+                  </div>
+                )}
+                {syncSummary.aiMatched > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-amber-700">{syncSummary.aiMatched}</p>
+                    <p className="text-xs text-gray-500">By AI</p>
+                  </div>
+                )}
+                {syncSummary.created > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-green-600">{syncSummary.created}</p>
+                    <p className="text-xs text-gray-500">Orders created</p>
+                  </div>
+                )}
+                <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                  <p className="text-lg font-bold text-gray-700">{syncSummary.totalMatched}/{syncSummary.totalEmails}</p>
+                  <p className="text-xs text-gray-500">Total matched</p>
+                </div>
+                {syncSummary.dismissed > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-gray-400">{syncSummary.dismissed}</p>
+                    <p className="text-xs text-gray-500">Dismissed</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+          {syncPhase === 'done' && syncSummary && (
+            <button onClick={() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }} className="text-gray-400 hover:text-gray-600 flex-shrink-0 self-start mt-1">
+              <Icon name="X" size={16} />
+            </button>
+          )}
         </div>
       )}
 
@@ -512,18 +600,30 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                     </span>
                   )}
 
-                  {/* Link button (conversations tab) */}
+                  {/* Link + Dismiss buttons (conversations tab) */}
                   {activeTab === 'conversations' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setLinkingEmail(email);
-                      }}
-                      className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex-shrink-0 flex items-center gap-1"
-                    >
-                      <Icon name="Link" size={12} />
-                      Link to Order
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkingEmail(email);
+                        }}
+                        className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex-shrink-0 flex items-center gap-1"
+                      >
+                        <Icon name="Link" size={12} />
+                        Link
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDismiss(email);
+                        }}
+                        className="text-xs px-2 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg flex-shrink-0 flex items-center gap-1"
+                        title="Not an order email — dismiss"
+                      >
+                        <Icon name="X" size={12} />
+                      </button>
+                    </>
                   )}
 
                   {/* Date */}
@@ -578,6 +678,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
                       {/* Actions for conversations tab */}
                       {activeTab === 'conversations' && (
+                        <div className="flex items-center gap-2">
                         <button
                           onClick={() => setLinkingEmail(email)}
                           className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
@@ -585,6 +686,14 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                           <Icon name="Link" size={14} />
                           Link to Order
                         </button>
+                        <button
+                          onClick={() => handleDismiss(email)}
+                          className="text-sm px-4 py-2 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+                        >
+                          <Icon name="X" size={14} />
+                          Not an order
+                        </button>
+                        </div>
                       )}
 
                       {/* Actions for matched tab: View, Reassign, Delink */}
