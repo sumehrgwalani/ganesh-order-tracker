@@ -1600,10 +1600,49 @@ If no purchase orders found, return: []`
       // (needsAI already has the right emails, use them for the AI prompt below)
       const aiEmails = needsAI
 
+      // --- Pre-filter: narrow candidate orders per email batch ---
+      // Extract PO fragments and supplier/company names from emails, then
+      // only send the most relevant orders to the AI (saves tokens, improves accuracy)
+      const candidateIds = new Set<string>()
+      for (const email of aiEmails) {
+        const haystack = `${email.subject || ''} ${(email.body_text || '').substring(0, 4000)} ${email.from_name || ''} ${email.from_email || ''}`.toLowerCase()
+
+        for (const order of ordersList) {
+          // Check PO number fragments (e.g. "GI/PO/2024-045" → match on "2024-045", "045", or full PO)
+          const poId = (order.id || '').toLowerCase()
+          if (poId && haystack.includes(poId)) { candidateIds.add(order.id); continue }
+          // Try the numeric tail (e.g. "045" from "GI/PO/2024-045")
+          const poTail = poId.split(/[\/\-]/).pop() || ''
+          if (poTail.length >= 3 && haystack.includes(poTail)) { candidateIds.add(order.id); continue }
+
+          // Check supplier name
+          const supplier = (order.supplier || '').toLowerCase()
+          if (supplier && supplier.length > 3 && haystack.includes(supplier)) { candidateIds.add(order.id); continue }
+
+          // Check company/buyer name
+          const company = (order.company || '').toLowerCase()
+          if (company && company.length > 3 && haystack.includes(company)) { candidateIds.add(order.id); continue }
+
+          // Check product name
+          const product = (order.product || '').toLowerCase()
+          if (product && product.length > 4 && product !== 'unknown' && haystack.includes(product)) { candidateIds.add(order.id); continue }
+        }
+      }
+
+      // Use filtered list if we found candidates, otherwise fall back to all orders
+      let filteredOrders = ordersList
+      if (candidateIds.size > 0 && candidateIds.size < ordersList.length) {
+        filteredOrders = ordersList.filter((o: any) => candidateIds.has(o.id))
+        // Always include at least a few extra recent orders as context (in case pre-filter missed something)
+        const extras = ordersList.filter((o: any) => !candidateIds.has(o.id)).slice(0, 5)
+        filteredOrders = [...filteredOrders, ...extras]
+        console.log(`[AI PRE-FILTER] Narrowed ${ordersList.length} orders → ${filteredOrders.length} candidates for AI matching`)
+      }
+
       const aiPrompt = `You are an AI assistant for a frozen seafood trading company called Ganesh International. Match each email below to an existing purchase order.
 ${catalogSection}
 ACTIVE ORDERS:
-${JSON.stringify(ordersList, null, 2)}
+${JSON.stringify(filteredOrders, null, 2)}
 
 STAGE DEFINITIONS:
 ${STAGE_TRIGGERS}
