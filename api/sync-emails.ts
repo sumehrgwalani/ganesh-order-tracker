@@ -788,6 +788,24 @@ async function processEmailAttachments(
           if (extractedData.destination && !orderRow?.to_location) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0 && !orderRow?.total_kilos) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0 && !orderRow?.total_value) updates.total_value = String(Math.round(extractedData.totalValue * 100) / 100)
+          // Update product from PO extraction — replaces generic keyword guesses with the real name
+          if (extractedData.lineItems.length > 0) {
+            const mainProduct = extractedData.lineItems[0].product
+            if (mainProduct && mainProduct !== 'Unknown') {
+              const genericNames = ['Unknown', 'Frozen Shrimp', 'Frozen Squid', 'Frozen Cuttlefish', 'Frozen Octopus', 'Frozen Fish']
+              if (!orderRow?.product || genericNames.includes(orderRow.product)) {
+                updates.product = mainProduct
+                console.log(`[PROCESS] Updated product for ${matchedOrderId}: "${orderRow?.product}" → "${mainProduct}"`)
+              }
+            }
+          }
+          // Update supplier from PO extraction if currently unknown
+          if (extractedData.supplier && extractedData.supplier !== 'Unknown' && extractedData.supplier !== 'Ganesh International') {
+            if (!orderRow?.supplier || orderRow.supplier === 'Unknown') {
+              updates.supplier = extractedData.supplier
+              console.log(`[PROCESS] Updated supplier for ${matchedOrderId}: "${extractedData.supplier}"`)
+            }
+          }
           await supabase.from('orders').update(updates).eq('id', orderUuid)
 
           // Enrich stage 1 history with line item data
@@ -2257,13 +2275,14 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               console.log(`[BULK] Set supplier for ${order.order_id}: "${extractedData.supplier}"`)
             }
           }
-          // Only set product if order doesn't have one yet
+          // Update product from PO extraction — replaces generic keyword guesses with the real name
           if (extractedData.lineItems.length > 0) {
             const mainProduct = extractedData.lineItems[0].product
             if (mainProduct && mainProduct !== 'Unknown') {
-              if (!order.product || order.product === 'Unknown') {
+              const genericNames = ['Unknown', 'Frozen Shrimp', 'Frozen Squid', 'Frozen Cuttlefish', 'Frozen Octopus', 'Frozen Fish']
+              if (!order.product || genericNames.includes(order.product)) {
                 updates.product = mainProduct
-                console.log(`[BULK] Set product for ${order.order_id}: "${mainProduct}"`)
+                console.log(`[BULK] Updated product for ${order.order_id}: "${order.product}" → "${mainProduct}"`)
               }
             }
           }
