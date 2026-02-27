@@ -36,6 +36,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [contactModal, setContactModal] = useState<string | null>(null);
   const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ historyId: string; attName: string; stage: number; isDataSource: boolean } | null>(null);
+  const [artworkUploading, setArtworkUploading] = useState(false);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -315,6 +316,21 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               </div>
             </div>
             {renderAttachments(3)}
+            {/* Upload Corrected Artwork */}
+            <div className="flex items-center gap-3">
+              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${artworkUploading ? 'bg-gray-100 text-gray-400' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                <Icon name={artworkUploading ? 'Loader2' : 'Upload'} size={15} className={artworkUploading ? 'animate-spin' : ''} />
+                {artworkUploading ? 'Uploading...' : 'Upload Corrected Artwork'}
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={handleArtworkUpload}
+                  disabled={artworkUploading}
+                />
+              </label>
+              <span className="text-xs text-gray-400">PDF, JPG, PNG</span>
+            </div>
             {/* Artwork Reference & Comparison */}
             {artworkReference && currentArtworkUrl ? (
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
@@ -592,6 +608,55 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       setPdfModal(prev => ({ ...prev, url, loading: false }));
     } catch {
       setPdfModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  // Upload corrected artwork file
+  const handleArtworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setArtworkUploading(true);
+    try {
+      // 1. Look up DB UUID for this order
+      const { data: orderRow } = await supabase
+        .from('orders')
+        .select('id, org_id')
+        .eq('order_id', order.id)
+        .single();
+      if (!orderRow) throw new Error('Order not found in DB');
+
+      // 2. Upload file to Supabase storage
+      const safePo = order.id.replace(/\//g, '_');
+      const storagePath = `${orderRow.org_id}/${safePo}/artwork_${Date.now()}_${file.name}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('po-documents')
+        .upload(storagePath, file, { contentType: file.type, upsert: true });
+      if (uploadErr) throw uploadErr;
+
+      // 3. Get public URL
+      const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
+      const publicUrl = urlData?.publicUrl || '';
+
+      // 4. Create order_history entry at stage 3
+      const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
+      await supabase.from('order_history').insert({
+        order_id: orderRow.id,
+        stage: 3,
+        timestamp: new Date().toISOString(),
+        from_address: 'Manual Upload',
+        to_address: '',
+        subject: `Corrected Artwork — ${file.name}`,
+        body: 'Artwork uploaded manually via order detail page.',
+        has_attachment: true,
+        attachments: [attachment],
+      });
+
+      // 5. Refresh to show new attachment
+      window.location.reload();
+    } catch (err) {
+      console.error('Artwork upload failed:', err);
+      alert('Failed to upload artwork. Please try again.');
+      setArtworkUploading(false);
     }
   };
 
