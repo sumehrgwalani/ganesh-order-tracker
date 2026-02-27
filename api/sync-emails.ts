@@ -1099,6 +1099,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .limit(15) // Larger batches — 300s timeout allows more per call
 
       if (fetchErr) throw fetchErr
+
+      // ===== AUTO-DISMISS: learn from user dismissals =====
+      // If a sender has been dismissed 2+ times, auto-dismiss their future emails
+      if (unmatchedEmails && unmatchedEmails.length > 0) {
+        const { data: dismissedSenders } = await supabase
+          .from('synced_emails')
+          .select('from_email')
+          .eq('organization_id', organization_id)
+          .eq('dismissed', true)
+
+        if (dismissedSenders && dismissedSenders.length > 0) {
+          // Count dismissals per sender
+          const dismissCount = new Map<string, number>()
+          for (const d of dismissedSenders) {
+            const addr = (d.from_email || '').toLowerCase()
+            if (addr) dismissCount.set(addr, (dismissCount.get(addr) || 0) + 1)
+          }
+
+          // Build blocklist: senders with 2+ dismissals
+          const blocklist = new Set<string>()
+          for (const [addr, count] of dismissCount) {
+            if (count >= 2) blocklist.add(addr)
+          }
+
+          if (blocklist.size > 0) {
+            const toAutoDismiss = unmatchedEmails.filter(
+              (e: any) => blocklist.has((e.from_email || '').toLowerCase())
+            )
+            if (toAutoDismiss.length > 0) {
+              const ids = toAutoDismiss.map((e: any) => e.id)
+              await supabase
+                .from('synced_emails')
+                .update({ dismissed: true, ai_summary: 'Auto-dismissed: sender previously dismissed multiple times' })
+                .in('id', ids)
+              console.log(`[AUTO-DISMISS] Dismissed ${toAutoDismiss.length} emails from blocked senders: ${[...blocklist].join(', ')}`)
+
+              // Remove auto-dismissed from the batch
+              const dismissedIds = new Set(ids)
+              unmatchedEmails.splice(0, unmatchedEmails.length, ...unmatchedEmails.filter((e: any) => !dismissedIds.has(e.id)))
+            }
+          }
+        }
+      }
+
       if (!unmatchedEmails || unmatchedEmails.length === 0) {
         // Count total to report completion
         const { count: totalCount } = await supabase
