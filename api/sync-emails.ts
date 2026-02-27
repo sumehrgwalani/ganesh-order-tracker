@@ -1636,8 +1636,8 @@ If no purchase orders found, return: []`
       for (const email of aiEmails) {
         const haystack = `${email.subject || ''} ${(email.body_text || '').substring(0, 4000)} ${email.from_name || ''} ${email.from_email || ''}`.toLowerCase()
 
-        // Collect company/supplier names from CC'd and From email addresses via contacts
-        const emailAddresses = [email.from_email, ...(email.cc_emails || '').split(',').map((e: string) => e.trim())].filter(Boolean)
+        // Collect company/supplier names from ALL email addresses (From, To, CC) via contacts
+        const emailAddresses = [email.from_email, email.to_email, ...(email.cc_emails || '').split(',').map((e: string) => e.trim())].filter(Boolean)
         const contactCompanies = new Set<string>()
         for (const addr of emailAddresses) {
           const company = emailToCompany.get(addr.toLowerCase())
