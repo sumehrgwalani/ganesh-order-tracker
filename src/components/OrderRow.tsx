@@ -13,7 +13,7 @@ interface Props {
 function OrderRow({ order, onClick, onDelete }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const isCompleted = order.currentStage === 8;
+  const isCompleted = order.currentStage === 9;
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();

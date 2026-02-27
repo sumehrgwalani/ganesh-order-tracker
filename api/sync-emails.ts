@@ -26,15 +26,17 @@ Stage 2 (Proforma Issued): Email contains a Proforma Invoice (PI). Subject conta
 
 Stage 3 (Artwork in Progress): Email is about artwork, labels, or design review/approval. Subject contains "NEED APPROVAL", "NEED ARTWORK APPROVAL", "NEED LABELS APPROVAL", "REQUEST FOR ARTWORK", "label", "design", or "artwork" + PI number + PO number. These are typically back-and-forth approval chains where designs are sent, reviewed, revised, and approved. Approval phrases: "The artworks are OK", "The labels are OK", "OK, thank you", "encornet is OK". Reply phrases: "Well noted & thanks". Also includes initial artwork requests and revision emails.
 
-Stage 4 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate", "pre-shipment inspection". Often from inspectors like Hansel Fernandez or J B Boda.
+Stage 4 (Artwork Confirmed): Email confirms artwork/label approval by the buyer. Keywords: "artwork approved", "artwork confirmed", "labels approved", "artworks are OK", "labels are OK", "design approved", "artwork ok". This is the final approval — distinct from the back-and-forth in Stage 3.
 
-Stage 5 (Schedule Confirmed): Email confirms vessel/shipping schedule. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked", "sailing schedule".
+Stage 5 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate", "pre-shipment inspection". Often from inspectors like Hansel Fernandez or J B Boda.
 
-Stage 6 (Draft Documents): Email contains draft shipping documents for review. Keywords: "draft BL", "draft documents", "draft bill of lading", "documents for review", "please check documents".
+Stage 6 (Schedule Confirmed): Email confirms vessel/shipping schedule. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked", "sailing schedule".
 
-Stage 7 (Final Documents): Email confirms final/original documents sent. Keywords: "final documents", "original documents", "documents sent", "originals couriered", "BL released".
+Stage 7 (Draft Documents): Email contains draft shipping documents for review. Keywords: "draft BL", "draft documents", "draft bill of lading", "documents for review", "please check documents".
 
-Stage 8 (DHL Shipped): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill".
+Stage 8 (Final Documents): Email confirms final/original documents sent. Keywords: "final documents", "original documents", "documents sent", "originals couriered", "BL released".
+
+Stage 9 (DHL Shipped): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill".
 `
 
 // Decode base64url encoded Gmail message body
@@ -619,8 +621,8 @@ function classificationToStage(classification: string): number | null {
     case 'po': return 1
     case 'pi': return 2
     case 'artwork': return 3
-    case 'certificate': return 4
-    case 'shipping': return 5
+    case 'certificate': return 5
+    case 'shipping': return 6
     default: return null  // 'other' — don't store
   }
 }
@@ -712,7 +714,7 @@ async function processEmailAttachments(
         // If AI classification failed (returned 'other' due to API error/credits),
         // fall back to the email's detected_stage so we still store the file
         if (classification === 'other' && result.apiFailed && email.detected_stage) {
-          const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'certificate', 5: 'shipping' }
+          const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'artwork', 5: 'certificate', 6: 'shipping' }
           const fallback = stageToClass[email.detected_stage]
           if (fallback) {
             console.log(`[PROCESS] AI classification failed for ${part.filename}, using detected_stage ${email.detected_stage} → ${fallback}`)
@@ -1444,7 +1446,7 @@ For each distinct purchase order you can identify, extract:
 - supplier: The supplier/seller company name
 - product: The MAIN seafood product being traded (e.g. "Frozen Squid", "Frozen Shrimp", "Frozen Cuttlefish"). Look in email subjects, body text, PI references, and attachment names for product mentions like "squid", "shrimp", "cuttlefish", "octopus", "fish", "calamar", "pota", "sepia" etc. If the subject says something like "CALAMAR TROCEADO" that means squid. Use a short, clean English product name. NEVER return "Unknown" — if truly unclear, use the best guess from any product-related words in the emails.
 - from_location: Where goods ship FROM
-- highest_stage: The HIGHEST stage this order has reached based on ALL email evidence (1-8)
+- highest_stage: The HIGHEST stage this order has reached based on ALL email evidence (1-9)
 - skipped_stages: Array of stage numbers that were SKIPPED (no email evidence found for them). For example, if an order went from stage 1 directly to stage 3 with no evidence of stage 2, skipped_stages would be [2].
 - stage_reasoning: Brief explanation
 
@@ -1452,11 +1454,11 @@ STAGE DEFINITIONS:
 ${STAGE_TRIGGERS}
 
 Stage 1 = Order Confirmed (PO exists/was sent)
-Stage 8 = DHL Shipped (DHL tracking number shared)
+Stage 9 = DHL Shipped (DHL tracking number shared)
 
 IMPORTANT RULES FOR SKIPPED STAGES:
 - It's common for some stages to be skipped or happen without email evidence
-- If you see evidence of stage 5 but nothing for stages 3 and 4, set highest_stage to 5 and skipped_stages to [3, 4]
+- If you see evidence of stage 6 but nothing for stages 3-5, set highest_stage to 6 and skipped_stages to [3, 4, 5]
 - The order should be set to the HIGHEST confirmed stage, not limited to sequential advancement
 - Only include stages as "skipped" if they are BETWEEN stage 1 and the highest_stage
 
@@ -1583,28 +1585,30 @@ If no purchase orders found, return: []`
       const detectStageFromSubject = (subject: string | null, bodyText?: string | null): number | null => {
         const s = (subject || '').toLowerCase()
         const b = (bodyText || '').substring(0, 2000).toLowerCase()
-        // Stage 7 — check BEFORE stage 6 (otherwise "final document" matches "document" at stage 6)
-        if (s.includes('final doc') || s.includes('original document') || s.includes('telex')) return 7
-        // Stage 6 — draft documents
-        if (s.includes('draft') || s.includes('bl ') || s.includes('bill of lading')) return 6
-        // Stage 8 — courier/tracking
-        if (s.includes('dhl') || s.includes('courier') || s.includes('tracking')) return 8
+        // Stage 8 — check BEFORE stage 7 (otherwise "final document" matches "document" at stage 7)
+        if (s.includes('final doc') || s.includes('original document') || s.includes('telex')) return 8
+        // Stage 7 — draft documents
+        if (s.includes('draft') || s.includes('bl ') || s.includes('bill of lading')) return 7
+        // Stage 9 — courier/tracking
+        if (s.includes('dhl') || s.includes('courier') || s.includes('tracking')) return 9
         // Specific invoice types that are NOT proforma
-        if (s.includes('commercial invoice')) return 6
-        if (s.includes('freight invoice') || s.includes('shipping invoice')) return 5
+        if (s.includes('commercial invoice')) return 7
+        if (s.includes('freight invoice') || s.includes('shipping invoice')) return 6
         // Stage 2 — proforma invoice (check subject AND body for PI references)
         if (s.includes('proforma') || s.includes('pi ') || s.includes('pi-')) return 2
         if (b.includes('attached p.i') || b.includes('attach pi') || b.includes('proforma') || /\bp\.i[\s\.]/i.test(b) || /\bpi\s+\w{2,}[\-\/]\d/i.test(b)) return 2
         // Stage 1 — purchase order
         if (s.includes('purchase order') || s.includes('new po') || s.includes('new purchase')) return 1
+        // Stage 4 — artwork confirmed (approval keywords — check before general artwork)
+        if (s.includes('artwork approved') || s.includes('artwork confirmed') || s.includes('labels approved') || s.includes('design approved')) return 4
         // Stage 3 — artwork in progress (designs, labels, approval)
         if (s.includes('artwork') || s.includes('label') || s.includes('design')) return 3
-        // Stage 4 — quality
-        if (s.includes('quality') || s.includes('inspection')) return 4
-        // Stage 5 — shipping schedule
-        if (s.includes('schedule') || s.includes('vessel') || s.includes('shipment')) return 5
-        // Stage 6 — generic "document" (last resort, after all specific doc types checked)
-        if (s.includes('document')) return 6
+        // Stage 5 — quality
+        if (s.includes('quality') || s.includes('inspection')) return 5
+        // Stage 6 — shipping schedule
+        if (s.includes('schedule') || s.includes('vessel') || s.includes('shipment')) return 6
+        // Stage 7 — generic "document" (last resort, after all specific doc types checked)
+        if (s.includes('document')) return 7
         // Bare "invoice" as last resort — most likely proforma in this business
         if (s.includes('invoice')) return 2
         return null
@@ -2346,10 +2350,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               const subj = (e.subject || '').toUpperCase()
               if (s === 2) return subj.includes('PROFORMA')
               if (s === 3) return subj.includes('ARTWORK') || subj.includes('LABEL')
-              if (s === 4) return subj.includes('QUALITY') || subj.includes('INSPECTION')
-              if (s === 5) return subj.includes('SCHEDULE') || subj.includes('VESSEL')
-              if (s === 6) return subj.includes('DRAFT')
-              if (s === 7) return subj.includes('FINAL') || subj.includes('ORIGINAL')
+              if (s === 4) return subj.includes('ARTWORK APPROVED') || subj.includes('ARTWORK CONFIRMED') || subj.includes('LABELS APPROVED')
+              if (s === 5) return subj.includes('QUALITY') || subj.includes('INSPECTION')
+              if (s === 6) return subj.includes('SCHEDULE') || subj.includes('VESSEL')
+              if (s === 7) return subj.includes('DRAFT')
+              if (s === 8) return subj.includes('FINAL') || subj.includes('ORIGINAL')
               return false
             })
             if (!hasEvidence) skippedStages.push(s)

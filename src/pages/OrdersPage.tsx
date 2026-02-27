@@ -17,7 +17,7 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const activeOrders = orders.filter(o => o.currentStage < 8);
+  const activeOrders = orders.filter(o => o.currentStage < 9);
 
   // Get unique companies from active orders
   const companies = [...new Set(activeOrders.map(o => o.company))].sort();
@@ -112,7 +112,7 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
 
       {/* Clickable Stage Filter - same as dashboard */}
       <StageFilter
-        stages={ORDER_STAGES.slice(0, 7)}
+        stages={ORDER_STAGES.slice(0, 8)}
         orders={filterCompany === 'all' ? activeOrders : activeOrders.filter(o => o.company === filterCompany)}
         selectedStage={filterStage}
         onStageSelect={setFilterStage}

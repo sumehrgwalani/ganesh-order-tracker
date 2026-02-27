@@ -3,7 +3,7 @@ interface Props {
 }
 
 function OrderProgressBar({ currentStage }: Props) {
-  const totalStages = 8;
+  const totalStages = 9;
   const isComplete = currentStage >= totalStages;
   const progress = ((currentStage - 1) / (totalStages - 1)) * 100;
   const barColor = isComplete ? 'from-green-500 to-green-600' : 'from-blue-500 to-blue-600';

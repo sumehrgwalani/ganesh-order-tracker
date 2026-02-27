@@ -11,7 +11,7 @@ interface Props {
 function CompletedPage({ orders }: Props) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const completedOrders = orders.filter(o => o.currentStage === 8);
+  const completedOrders = orders.filter(o => o.currentStage === 9);
 
   const filteredOrders = completedOrders.filter(order => {
     return !searchTerm ||

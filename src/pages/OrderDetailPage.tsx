@@ -68,7 +68,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       o.product?.toLowerCase().trim() === currentOrder.product?.toLowerCase().trim() &&
       o.company?.toLowerCase().trim() === currentOrder.company?.toLowerCase().trim() &&
       (!currentOrder.brand || o.brand?.toLowerCase().trim() === currentOrder.brand?.toLowerCase().trim()) &&
-      o.currentStage > 3 // Past artwork stage = artwork was approved
+      o.currentStage > 4 // Past artwork confirmed stage = artwork was approved
     );
     candidates.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     for (const candidate of candidates) {
@@ -105,7 +105,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   }
 
   const currentStageName = ORDER_STAGES[order.currentStage - 1]?.name || 'Unknown';
-  const isCompleted = order.currentStage === 8;
+  const isCompleted = order.currentStage === 9;
 
   // Check which stages have history entries
   const hasStageData = (stage: number) => order.history.some(h => h.stage === stage);
@@ -115,11 +115,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     { id: 'purchaseOrder', title: 'Purchase Order', icon: 'FileText', color: 'blue', stage: 1, available: hasStageData(1) },
     { id: 'proformaInvoice', title: 'Proforma Invoice', icon: 'FileText', color: 'indigo', stage: 2, available: hasStageData(2) || !!order.piNumber },
     { id: 'artwork', title: 'Artwork in Progress', icon: 'Image', color: 'purple', stage: 3, available: hasStageData(3) || order.artworkStatus === 'approved' },
-    { id: 'inspection', title: 'Quality Check', icon: 'CheckCircle', color: 'pink', stage: 4, available: hasStageData(4) },
-    { id: 'schedule', title: 'Schedule Confirmed', icon: 'Calendar', color: 'teal', stage: 5, available: hasStageData(5) },
-    { id: 'draftDocuments', title: 'Draft Documents', icon: 'File', color: 'amber', stage: 6, available: hasStageData(6) },
-    { id: 'finalDocuments', title: 'Final Documents', icon: 'FileCheck', color: 'green', stage: 7, available: hasStageData(7) },
-    { id: 'dhlShipped', title: 'DHL Shipped', icon: 'Truck', color: 'emerald', stage: 8, available: hasStageData(8) },
+    { id: 'artworkConfirmed', title: 'Artwork Confirmed', icon: 'CheckSquare', color: 'violet', stage: 4, available: hasStageData(4) },
+    { id: 'inspection', title: 'Quality Check', icon: 'CheckCircle', color: 'pink', stage: 5, available: hasStageData(5) },
+    { id: 'schedule', title: 'Schedule Confirmed', icon: 'Calendar', color: 'teal', stage: 6, available: hasStageData(6) },
+    { id: 'draftDocuments', title: 'Draft Documents', icon: 'File', color: 'amber', stage: 7, available: hasStageData(7) },
+    { id: 'finalDocuments', title: 'Final Documents', icon: 'FileCheck', color: 'green', stage: 8, available: hasStageData(8) },
+    { id: 'dhlShipped', title: 'DHL Shipped', icon: 'Truck', color: 'emerald', stage: 9, available: hasStageData(9) },
   ];
 
   const formatDate = (ts: string) => {
@@ -353,6 +354,16 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         );
       }
 
+      case 'artworkConfirmed':
+        return (
+          <div className="space-y-4">
+            <div className="bg-violet-50 rounded-lg p-3">
+              <p className="text-sm text-violet-700">Artwork has been approved by the buyer. Production can proceed with confirmed designs.</p>
+            </div>
+            {renderAttachments(4)}
+          </div>
+        );
+
       case 'inspection':
         return (
           <div className="space-y-4">
@@ -369,7 +380,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             <div className="bg-pink-50 rounded-lg p-3">
               <p className="text-sm text-pink-700">Quality check documentation and inspection reports for this order.</p>
             </div>
-            {renderAttachments(4)}
+            {renderAttachments(5)}
           </div>
         );
 
@@ -386,7 +397,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 <p className="font-medium text-gray-800">{order.totalKilos ? `${Number(order.totalKilos).toLocaleString()} Kg` : '-'}</p>
               </div>
             </div>
-            {renderAttachments(5)}
+            {renderAttachments(6)}
           </div>
         );
 
@@ -406,7 +417,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             <div className="bg-amber-50 rounded-lg p-3">
               <p className="text-sm text-amber-700">Draft shipping documents for review before finalization. Check all details match the PO and PI.</p>
             </div>
-            {renderAttachments(6)}
+            {renderAttachments(7)}
           </div>
         );
 
@@ -436,12 +447,12 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             <div className="bg-green-50 rounded-lg p-3">
               <p className="text-sm text-green-700">Final shipping and export documents for this consignment.</p>
             </div>
-            {renderAttachments(7)}
+            {renderAttachments(8)}
           </div>
         );
 
       case 'dhlShipped': {
-        const dhlHistory = order.history.filter(h => h.stage === 8);
+        const dhlHistory = order.history.filter(h => h.stage === 9);
         const awb = order.awbNumber || dhlHistory.find(h => h.body?.match(/AWB\s*[\d]+/i))?.body?.match(/AWB\s*([\d]+)/i)?.[1] || '';
         return (
           <div className="space-y-4">
@@ -458,7 +469,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
-                <p className="font-medium text-emerald-700">{order.currentStage >= 8 ? 'Shipped' : 'Pending'}</p>
+                <p className="font-medium text-emerald-700">{order.currentStage >= 9 ? 'Shipped' : 'Pending'}</p>
               </div>
             </div>
             {awb && (
@@ -472,7 +483,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 Track on DHL
               </a>
             )}
-            {renderAttachments(8)}
+            {renderAttachments(9)}
           </div>
         );
       }
@@ -822,7 +833,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           <span className={`px-4 py-2 rounded-full text-sm font-medium ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
             {currentStageName}
           </span>
-          {onUpdateStage && order.currentStage < 8 && (
+          {onUpdateStage && order.currentStage < 9 && (
             <button
               onClick={() => onUpdateStage(order.id, order.currentStage + 1, order.currentStage)}
               className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

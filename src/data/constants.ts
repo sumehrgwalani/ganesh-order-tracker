@@ -4,11 +4,12 @@ export const ORDER_STAGES: OrderStage[] = [
   { id: 1, name: 'Order Confirmed', shortName: 'PO Sent', description: 'Purchase Order received/sent', color: 'blue' },
   { id: 2, name: 'Proforma Issued', shortName: 'PI Issued', description: 'Proforma Invoice issued', color: 'indigo' },
   { id: 3, name: 'Artwork in Progress', shortName: 'Artwork', description: 'Artwork and label designs being reviewed and approved', color: 'purple' },
-  { id: 4, name: 'Quality Check', shortName: 'QC Done', description: 'QC from Hansel Fernandez or J B Boda', color: 'pink' },
-  { id: 5, name: 'Schedule Confirmed', shortName: 'Scheduled', description: 'Vessel schedule confirmed', color: 'orange' },
-  { id: 6, name: 'Draft Documents', shortName: 'Docs OK', description: 'Complete when "DOCUMENTS OK" received', color: 'yellow' },
-  { id: 7, name: 'Final Documents', shortName: 'Final Docs', description: 'Final document copies sent', color: 'teal' },
-  { id: 8, name: 'DHL Shipped', shortName: 'DHL Sent', description: 'DHL tracking number shared', color: 'green' },
+  { id: 4, name: 'Artwork Confirmed', shortName: 'Art. OK', description: 'Artwork approved by buyer', color: 'violet' },
+  { id: 5, name: 'Quality Check', shortName: 'QC Done', description: 'QC from Hansel Fernandez or J B Boda', color: 'pink' },
+  { id: 6, name: 'Schedule Confirmed', shortName: 'Scheduled', description: 'Vessel schedule confirmed', color: 'orange' },
+  { id: 7, name: 'Draft Documents', shortName: 'Docs OK', description: 'Complete when "DOCUMENTS OK" received', color: 'yellow' },
+  { id: 8, name: 'Final Documents', shortName: 'Final Docs', description: 'Final document copies sent', color: 'teal' },
+  { id: 9, name: 'DHL Shipped', shortName: 'DHL Sent', description: 'DHL tracking number shared', color: 'green' },
 ];
 
 // Logos served from public/ directory via Vite base path

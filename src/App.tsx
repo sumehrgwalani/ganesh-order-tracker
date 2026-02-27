@@ -153,8 +153,8 @@ function App() {
   });
 
   const stats: Stats = {
-    active: orders.filter(o => o.currentStage < 8).length,
-    completed: orders.filter(o => o.currentStage === 8).length,
+    active: orders.filter(o => o.currentStage < 9).length,
+    completed: orders.filter(o => o.currentStage === 9).length,
     inquiries: productInquiries.length,
     contacts: Object.keys(contacts).length,
     products: dbProducts.length,
