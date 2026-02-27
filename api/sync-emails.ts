@@ -1731,7 +1731,7 @@ If no purchase orders found, return: []`
         const haystack = `${email.subject || ''} ${(email.body_text || '').substring(0, 4000)} ${email.from_name || ''} ${email.from_email || ''}`.toLowerCase()
 
         // Collect company/supplier names from ALL email addresses (To first priority, then From, then CC) via contacts
-        const emailAddresses = [email.to_email, email.from_email, ...(email.cc_emails || '').split(',').map((e: string) => e.trim())].filter(Boolean)
+        const emailAddresses = [...(email.to_email || '').split(',').map((e: string) => e.trim()), email.from_email, ...(email.cc_emails || '').split(',').map((e: string) => e.trim())].filter(Boolean)
         const contactCompanies = new Set<string>()
         for (const addr of emailAddresses) {
           const company = emailToCompany.get(addr.toLowerCase())
@@ -2734,7 +2734,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             thread_id: msg.threadId || null,
             from_email: extractEmail(getHeader(headers, 'From')),
             from_name: extractName(getHeader(headers, 'From')),
-            to_email: extractEmail(getHeader(headers, 'To')),
+            to_email: extractAllEmails(getHeader(headers, 'To')).join(', ') || extractEmail(getHeader(headers, 'To')),
             cc_emails: extractAllEmails(getHeader(headers, 'Cc')).join(', '),
             subject: getHeader(headers, 'Subject'),
             body_text: body.substring(0, 5000),
