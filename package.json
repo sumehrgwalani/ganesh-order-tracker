@@ -12,7 +12,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.95.3",
+    "@supabase/supabase-js": "^2.97.0",
     "html2pdf.js": "^0.14.0",
     "pdfjs-dist": "^5.4.624",
     "pixelmatch": "^7.1.0",
