@@ -34,7 +34,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [editModal, setEditModal] = useState(false);
   const [amendModal, setAmendModal] = useState(false);
   const [contactModal, setContactModal] = useState<string | null>(null);
-  const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string } | null>(null);
+  const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string; referenceUrl?: string; referenceLabel?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ historyId: string; attName: string; stage: number; isDataSource: boolean } | null>(null);
   const [artworkUploading, setArtworkUploading] = useState(false);
 
@@ -533,9 +533,14 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     const stageEmails = order.history.filter(h => h.stage === stage && h.hasAttachment && h.attachments?.length);
     const allAttachments = stageEmails.flatMap(h => (h.attachments || []).map(att => {
       const meta = getAttachmentMeta(att);
-      return { name: getAttachmentName(att), date: h.timestamp, pdfUrl: meta?.pdfUrl || null, historyId: h.id || '', meta };
+      const isManualUpload = h.from === 'Manual Upload';
+      return { name: getAttachmentName(att), date: h.timestamp, pdfUrl: meta?.pdfUrl || null, historyId: h.id || '', meta, isManualUpload };
     }));
     if (allAttachments.length === 0) return null;
+
+    // For stage 3: collect email artwork URLs for comparison with uploaded corrections
+    const emailArtworkUrls = stage === 3 ? allAttachments.filter(a => !a.isManualUpload && a.pdfUrl).map(a => ({ url: a.pdfUrl!, name: a.name })) : [];
+
     return (
       <div className="pt-3 border-t border-gray-100">
         <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Attachments</p>
@@ -545,6 +550,10 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             const isCurrentRef = stage === 3 && att.pdfUrl && order.metadata?.artworkReference === att.pdfUrl;
             // Check if this attachment is a data source (has lineItems or is the main PO used for extraction)
             const isDataSource = !!(att.meta?.lineItems?.length || (stage === 1 && att.pdfUrl && att.pdfUrl === order.metadata?.pdfUrl));
+            // Color coding: uploaded corrections get green tint, email attachments get default gray
+            const bgColor = stage === 3 && att.isManualUpload
+              ? 'bg-green-50 hover:bg-green-100 border border-green-200'
+              : 'bg-gray-50 hover:bg-blue-50';
             return (
               <div key={idx} className="flex items-center gap-1">
                 <button
@@ -555,14 +564,32 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                       handleAttachmentClick(att.name, stage);
                     }
                   }}
-                  className="flex-1 flex items-center gap-2 text-sm bg-gray-50 hover:bg-blue-50 rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer"
+                  className={`flex-1 flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer ${bgColor}`}
                 >
                   <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
                   <span className="font-medium text-gray-700 flex-1 group-hover:text-blue-700 transition-colors">{att.name}</span>
+                  {stage === 3 && att.isManualUpload && <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">Uploaded</span>}
+                  {stage === 3 && !att.isManualUpload && <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Email</span>}
                   {isCurrentRef && <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">Reference</span>}
                   {isPdf && !isCurrentRef && <span className="text-xs font-medium text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to preview</span>}
                   <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
                 </button>
+                {/* Compare button: for uploaded corrections, compare against first email artwork */}
+                {stage === 3 && att.isManualUpload && att.pdfUrl && emailArtworkUrls.length > 0 && (
+                  <button
+                    onClick={() => setArtworkCompareModal({
+                      open: true,
+                      newUrl: att.pdfUrl!,
+                      newLabel: `Corrected — ${att.name}`,
+                      referenceUrl: emailArtworkUrls[0].url,
+                      referenceLabel: `Original — ${emailArtworkUrls[0].name}`,
+                    })}
+                    title="Compare with original artwork"
+                    className="p-2 text-green-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                  >
+                    <Icon name="GitCompare" size={14} />
+                  </button>
+                )}
                 {stage === 3 && att.pdfUrl && !isCurrentRef && onUpdateOrder && (
                   <button
                     onClick={() => handleSetAsReference(att.pdfUrl!)}
@@ -1393,10 +1420,10 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       )}
 
       {/* Artwork Comparison Modal */}
-      {artworkCompareModal?.open && artworkReference && (
+      {artworkCompareModal?.open && (artworkCompareModal.referenceUrl || artworkReference) && (
         <ArtworkCompare
-          referenceUrl={artworkReference.url}
-          referenceLabel={`${artworkReference.orderId} — ${artworkReference.name}`}
+          referenceUrl={artworkCompareModal.referenceUrl || artworkReference!.url}
+          referenceLabel={artworkCompareModal.referenceLabel || `${artworkReference!.orderId} — ${artworkReference!.name}`}
           newUrl={artworkCompareModal.newUrl}
           newLabel={artworkCompareModal.newLabel}
           onClose={() => setArtworkCompareModal(null)}
