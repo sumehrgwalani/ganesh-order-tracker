@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 interface Props {
@@ -11,27 +11,86 @@ function LoginPage({ onAuthSuccess }: Props) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [connStatus, setConnStatus] = useState<'checking' | 'ok' | 'error'>('checking')
+  const [connDetail, setConnDetail] = useState('')
+
+  // Check Supabase connectivity on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const url = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+        if (!url || url === 'https://placeholder.supabase.co') {
+          setConnStatus('error')
+          setConnDetail('Supabase URL not configured. Contact your administrator.')
+          return
+        }
+        // Simple health check — just try to reach the auth endpoint
+        const res = await fetch(`${url}/auth/v1/health`, {
+          method: 'GET',
+          headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '' },
+        })
+        if (res.ok) {
+          setConnStatus('ok')
+        } else {
+          setConnStatus('error')
+          setConnDetail(`Database responded with status ${res.status}. It may be paused or misconfigured.`)
+        }
+      } catch (err) {
+        setConnStatus('error')
+        setConnDetail(`Cannot reach database server. Please check your internet connection and try again.`)
+      }
+    }
+    checkConnection()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
-    try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
-        setError('Check your email for a confirmation link!')
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
-        onAuthSuccess()
+    // Retry up to 2 times for network errors
+    let lastError: unknown = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (isSignUp) {
+          const { error } = await supabase.auth.signUp({ email, password })
+          if (error) throw error
+          setError('Check your email for a confirmation link!')
+          return
+        } else {
+          const { error } = await supabase.auth.signInWithPassword({ email, password })
+          if (error) throw error
+          onAuthSuccess()
+          return
+        }
+      } catch (err: unknown) {
+        lastError = err
+        const isNetworkError = err instanceof Error &&
+          (err.message === 'Failed to fetch' || err.message.includes('NetworkError') || err.message.includes('fetch'))
+        if (isNetworkError && attempt < 2) {
+          // Wait a moment and retry
+          await new Promise(r => setTimeout(r, 1500))
+          continue
+        }
+        break
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setLoading(false)
     }
+
+    // Show error after all retries
+    if (lastError instanceof Error) {
+      if (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError') || lastError.message.includes('fetch')) {
+        setError('Unable to connect to the authentication server. This can happen if: (1) Your internet connection is unstable, (2) The database is temporarily unavailable. Please wait a moment and try again.')
+      } else if (lastError.message === 'Invalid login credentials') {
+        setError('Incorrect email or password. Please try again, or sign up if you don\'t have an account yet.')
+      } else {
+        setError(lastError.message)
+      }
+    } else {
+      setError('An unexpected error occurred. Please try again.')
+    }
+
+    setLoading(false)
+    return
   }
 
   return (
@@ -47,6 +106,14 @@ function LoginPage({ onAuthSuccess }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">With The Tide</h1>
           <p className="text-gray-500 mt-1">Order Tracking & Management</p>
         </div>
+
+        {/* Connection Warning */}
+        {connStatus === 'error' && (
+          <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <p className="font-medium mb-1">Connection Issue</p>
+            <p>{connDetail}</p>
+          </div>
+        )}
 
         {/* Form Card */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
@@ -96,12 +163,21 @@ function LoginPage({ onAuthSuccess }: Props) {
             </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || connStatus === 'error'}
               className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? 'Please wait...' : isSignUp ? 'Create Account' : 'Sign In'}
+              {loading ? 'Please wait...' : connStatus === 'checking' ? 'Connecting...' : isSignUp ? 'Create Account' : 'Sign In'}
             </button>
           </form>
+
+          {connStatus === 'error' && (
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full mt-3 py-2 text-blue-600 text-sm hover:underline"
+            >
+              Retry connection
+            </button>
+          )}
 
           <div className="mt-6 text-center">
             <button
