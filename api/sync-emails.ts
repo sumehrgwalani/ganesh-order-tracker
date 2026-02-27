@@ -625,12 +625,27 @@ async function storeAttachmentInHistory(
   const attachmentEntry = JSON.stringify({ name: filename, meta })
 
   if (historyRows && historyRows.length > 0) {
-    // Update existing entry — append or replace attachments
+    const existing = historyRows[0].attachments || []
+
+    // Dedup check: skip if a file with the same name already exists on this entry
+    const alreadyExists = existing.some((entry: string) => {
+      try {
+        const parsed = JSON.parse(entry)
+        return parsed.name === filename
+      } catch { return false }
+    })
+    if (alreadyExists) {
+      console.log(`[STORE] Skipping ${filename} — already exists on stage ${stage} history`)
+      return
+    }
+
+    // Append to existing attachments instead of replacing
+    const updated = [...existing, attachmentEntry]
     await supabase.from('order_history').update({
-      attachments: [attachmentEntry],
+      attachments: updated,
       has_attachment: true,
     }).eq('id', historyRows[0].id)
-    console.log(`[STORE] Saved ${filename} to stage ${stage} history (updated existing)`)
+    console.log(`[STORE] Saved ${filename} to stage ${stage} history (appended to existing, now ${updated.length} files)`)
   } else {
     // No history entry for this stage yet — create one
     const { data: orderData } = await supabase.from('orders').select('organization_id').eq('id', orderUuid).single()
