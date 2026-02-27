@@ -2245,18 +2245,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier, product, currentStage: highestStage, skippedStages })
             existingPOs.add(fullPO)
 
-            // Log in order_history (dedup check)
-            await insertHistoryIfNew({
-              order_id: newOrder.id,
-              organization_id,
-              stage: highestStage,
-              timestamp: refEmail.date || new Date().toISOString(),
-              from_address: 'System (Email Sync)',
-              subject: `Order auto-created from email: ${subject}`,
-              body: `Order ${fullPO} (${supplier}) auto-created during email sync at stage ${highestStage}`,
-            })
-
-            // Match all emails for this PO to the new order — use shared detectStageFromSubject
+            // Match all emails for this PO to the new order and log each one in history
             for (const e of emails) {
               const emailStage = detectStageFromSubject(e.subject, e.body_text)
               const updateData: any = { matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` }
@@ -2266,6 +2255,18 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
                 .update(updateData)
                 .eq('id', e.id)
               matchedCount++
+
+              // Log actual email in order_history so user sees real email details
+              await insertHistoryIfNew({
+                order_id: newOrder.id,
+                organization_id,
+                stage: emailStage || highestStage,
+                timestamp: e.date || new Date().toISOString(),
+                from_address: e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email || 'Unknown',
+                subject: e.subject || 'No subject',
+                body: (e.body_text || '').substring(0, 5000),
+                has_attachment: e.has_attachment || false,
+              })
             }
           } else if (createErr) {
             console.error(`Failed to create order ${fullPO}:`, createErr.message)
