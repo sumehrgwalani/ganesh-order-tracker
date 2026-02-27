@@ -97,6 +97,23 @@ function extractEmail(emailStr: string): string {
   return match ? match[1] : emailStr
 }
 
+// Extract all email addresses from a header like CC (can have multiple comma-separated entries)
+function extractAllEmails(headerStr: string): string[] {
+  if (!headerStr) return []
+  const emails: string[] = []
+  // Match all <email> patterns
+  const angleMatches = headerStr.matchAll(/<([^>]+)>/g)
+  for (const m of angleMatches) emails.push(m[1].toLowerCase())
+  // If no angle brackets, try splitting by comma and trimming
+  if (emails.length === 0) {
+    for (const part of headerStr.split(',')) {
+      const trimmed = part.trim().toLowerCase()
+      if (trimmed.includes('@')) emails.push(trimmed)
+    }
+  }
+  return emails
+}
+
 // Extract PI number from email subject
 function extractPINumber(subject: string): string | null {
   const patterns = [
@@ -1601,11 +1618,31 @@ If no purchase orders found, return: []`
       const aiEmails = needsAI
 
       // --- Pre-filter: narrow candidate orders per email batch ---
-      // Extract PO fragments and supplier/company names from emails, then
-      // only send the most relevant orders to the AI (saves tokens, improves accuracy)
+      // Extract PO fragments, supplier/company names, and CC email addresses from emails,
+      // then only send the most relevant orders to the AI (saves tokens, improves accuracy)
+
+      // Build a map of contact email → company name for CC-based matching
+      const { data: contactRows } = await supabase
+        .from('contacts')
+        .select('email, name, company')
+        .eq('organization_id', organization_id)
+      const emailToCompany = new Map<string, string>()
+      for (const c of contactRows || []) {
+        if (c.email && c.company) emailToCompany.set(c.email.toLowerCase(), c.company.toLowerCase())
+        if (c.email && c.name) emailToCompany.set(c.email.toLowerCase(), c.name.toLowerCase())
+      }
+
       const candidateIds = new Set<string>()
       for (const email of aiEmails) {
         const haystack = `${email.subject || ''} ${(email.body_text || '').substring(0, 4000)} ${email.from_name || ''} ${email.from_email || ''}`.toLowerCase()
+
+        // Collect company/supplier names from CC'd and From email addresses via contacts
+        const emailAddresses = [email.from_email, ...(email.cc_emails || '').split(',').map((e: string) => e.trim())].filter(Boolean)
+        const contactCompanies = new Set<string>()
+        for (const addr of emailAddresses) {
+          const company = emailToCompany.get(addr.toLowerCase())
+          if (company) contactCompanies.add(company)
+        }
 
         for (const order of ordersList) {
           // Check PO number fragments (e.g. "GI/PO/2024-045" → match on "2024-045", "045", or full PO)
@@ -1615,15 +1652,22 @@ If no purchase orders found, return: []`
           const poTail = poId.split(/[\/\-]/).pop() || ''
           if (poTail.length >= 3 && haystack.includes(poTail)) { candidateIds.add(order.id); continue }
 
-          // Check supplier name
+          // Check if any CC'd/From contact matches this order's supplier or company
           const supplier = (order.supplier || '').toLowerCase()
+          const company = (order.company || '').toLowerCase()
+          for (const contactCo of contactCompanies) {
+            if (supplier && (contactCo.includes(supplier) || supplier.includes(contactCo))) { candidateIds.add(order.id); break }
+            if (company && (contactCo.includes(company) || company.includes(contactCo))) { candidateIds.add(order.id); break }
+          }
+          if (candidateIds.has(order.id)) continue
+
+          // Check supplier name in email text
           if (supplier && supplier.length > 3 && haystack.includes(supplier)) { candidateIds.add(order.id); continue }
 
-          // Check company/buyer name
-          const company = (order.company || '').toLowerCase()
+          // Check company/buyer name in email text
           if (company && company.length > 3 && haystack.includes(company)) { candidateIds.add(order.id); continue }
 
-          // Check product name
+          // Check product name in email text
           const product = (order.product || '').toLowerCase()
           if (product && product.length > 4 && product !== 'unknown' && haystack.includes(product)) { candidateIds.add(order.id); continue }
         }
@@ -1653,6 +1697,7 @@ ${aiEmails.map((e: any, i: number) => `
 GMAIL_ID: "${e.gmail_id}"
 From: ${e.from_name} <${e.from_email}>
 To: ${e.to_email}
+CC: ${e.cc_emails || 'none'}
 Subject: ${e.subject}
 Date: ${e.date}
 Has Attachment: ${e.has_attachment}
@@ -1662,7 +1707,7 @@ Body (first 4000 chars): ${(e.body_text || '').substring(0, 4000)}
 
 INSTRUCTIONS — Process each email ONE AT A TIME:
 For each email above, determine:
-1. Which order it matches (by PO number, company, supplier, or product references in the email body/subject). Use the order "id" field (PO number like "GI/PO/...").
+1. Which order it matches (by PO number, company, supplier, or product references in the email body/subject/CC addresses). CC addresses often belong to the supplier — match them to orders with that supplier. Use the order "id" field (PO number like "GI/PO/...").
 2. What stage this email represents (the stage the email is evidence of).
 3. A brief summary of what THIS specific email is about. The summary MUST describe the actual content of THIS email — its subject and body — not any other email.
 4. If the matched order has product "Unknown", extract the product name from this email (look in subject, body, attachment names for seafood names like squid, shrimp, cuttlefish, calamar, pota, sepia etc). Return it as "product" field. If order already has a real product name or you can't find one, omit this field.
@@ -2586,6 +2631,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             from_email: extractEmail(getHeader(headers, 'From')),
             from_name: extractName(getHeader(headers, 'From')),
             to_email: extractEmail(getHeader(headers, 'To')),
+            cc_emails: extractAllEmails(getHeader(headers, 'Cc')).join(', '),
             subject: getHeader(headers, 'Subject'),
             body_text: body.substring(0, 5000),
             date: getHeader(headers, 'Date'),
@@ -2608,6 +2654,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           from_email: email.from_email,
           from_name: email.from_name,
           to_email: email.to_email,
+          cc_emails: email.cc_emails || null,
           subject: email.subject,
           body_text: email.body_text,
           date: new Date(email.date).toISOString(),
