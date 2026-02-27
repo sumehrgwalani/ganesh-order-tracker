@@ -14,6 +14,8 @@ export interface SyncedEmail {
   matched_order_id: string | null;
   detected_stage: number | null;
   ai_summary: string | null;
+  ai_confidence: string | null;
+  ai_suggested_order_id: string | null;
   auto_advanced: boolean;
   user_linked_order_id: string | null;
   user_link_note: string | null;
@@ -58,6 +60,10 @@ export function useSyncedEmails(orgId: string | null) {
   );
   const unmatchedEmails = emails.filter(
     (e) => !e.matched_order_id && !e.user_linked_order_id
+  );
+  // Low-confidence suggestions: AI found a possible match but wasn't sure enough to link
+  const suggestedEmails = emails.filter(
+    (e) => !e.matched_order_id && !e.user_linked_order_id && e.ai_suggested_order_id
   );
 
   // Link an unmatched email to an order
@@ -161,6 +167,7 @@ export function useSyncedEmails(orgId: string | null) {
     emails,
     matchedEmails,
     unmatchedEmails,
+    suggestedEmails,
     loading,
     error,
     linkEmailToOrder,

@@ -1814,6 +1814,10 @@ For each email above, determine:
 2. What stage this email represents (the stage the email is evidence of).
 3. A brief summary of what THIS specific email is about. The summary MUST describe the actual content of THIS email — its subject and body — not any other email.
 4. If the matched order has product "Unknown", extract the product name from this email (look in subject, body, attachment names for seafood names like squid, shrimp, cuttlefish, calamar, pota, sepia etc). Return it as "product" field. If order already has a real product name or you can't find one, omit this field.
+5. Your CONFIDENCE in the match: "high", "medium", or "low".
+   - "high" = PO number found in email, or supplier + product clearly match a specific order
+   - "medium" = supplier or company name matches but no PO number, or multiple orders could fit
+   - "low" = weak match based on vague keywords, product type only, or best guess
 
 ACCURACY RULES — READ CAREFULLY:
 - You MUST copy the GMAIL_ID exactly from each email header above. Do NOT swap or mix up IDs between emails.
@@ -1822,13 +1826,14 @@ ACCURACY RULES — READ CAREFULLY:
 - If an email is about banking, compliance, or non-trade matters, set matched_order_id to null.
 - If no order matches, set matched_order_id to null.
 - If no stage is detected, set detected_stage to null.
+- Be HONEST about confidence. Do NOT say "high" unless you are very sure.
 
 STAGE RULES:
 - detected_stage is the stage this email provides EVIDENCE for — it can be ANY stage, not just current+1.
 - Sometimes steps get skipped in real trade — that's OK.
 
 Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} results, one per email, in the same order:
-[{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "summary": "What THIS specific email is about", "product": "Product name if order has Unknown product, omit otherwise" }]`
+[{ "gmail_id": "EXACT_ID_FROM_ABOVE", "matched_order_id": "PO-NUMBER or null", "detected_stage": 3 or null, "confidence": "high|medium|low", "summary": "What THIS specific email is about", "product": "Product name if order has Unknown product, omit otherwise" }]`
 
       let aiResults: any[] = []
       try {
@@ -1881,6 +1886,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
         const detectedStage = ai.detected_stage || null
         const summary = ai.summary || null
         const aiProduct = ai.product || null
+        const confidence = (ai.confidence || 'medium').toLowerCase()
 
         // Validate: if AI returned an order ID that doesn't exist, don't set it
         // This lets Pass 4 (auto-create orders) handle creating the order instead
@@ -1893,28 +1899,37 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
         if (!matchedOrderId) {
           // Still save the AI summary so this email won't be re-processed
-          if (summary) {
-            await supabase
-              .from('synced_emails')
-              .update({ ai_summary: summary })
-              .eq('id', email.id)
-          } else {
-            // Set a placeholder summary so we don't reprocess
-            await supabase
-              .from('synced_emails')
-              .update({ ai_summary: 'No order match found' })
-              .eq('id', email.id)
-          }
+          await supabase
+            .from('synced_emails')
+            .update({ ai_summary: summary || 'No order match found', ai_confidence: confidence })
+            .eq('id', email.id)
           continue
         }
 
-        // Update the synced_email with match info
+        // LOW confidence: don't link, just suggest — user must approve
+        if (confidence === 'low') {
+          console.log(`[AI MATCH] Low confidence for "${email.subject}" → ${matchedOrderId} — saving as suggestion`)
+          await supabase
+            .from('synced_emails')
+            .update({
+              ai_suggested_order_id: matchedOrderId,
+              detected_stage: detectedStage,
+              ai_summary: `[Low confidence] ${summary || ''}`,
+              ai_confidence: 'low',
+            })
+            .eq('id', email.id)
+          continue
+        }
+
+        // MEDIUM confidence: link but don't auto-advance stage
+        // HIGH confidence: link and auto-advance (original behavior)
         await supabase
           .from('synced_emails')
           .update({
             matched_order_id: matchedOrderId,
             detected_stage: detectedStage,
             ai_summary: summary,
+            ai_confidence: confidence,
           })
           .eq('id', email.id)
 
@@ -1933,8 +1948,26 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           }
         }
 
-        // Handle stage advancement with skip support
-        if (detectedStage) {
+        // Medium confidence: log in history but don't advance stage
+        if (confidence === 'medium') {
+          const order = ordersList.find((o: any) => o.id === matchedOrderId)
+          if (order) {
+            await insertHistoryIfNew({
+              organization_id,
+              order_id: order.uuid,
+              stage: detectedStage || order.currentStage,
+              from_address: `${email.from_name} <${email.from_email}>`,
+              subject: email.subject,
+              body: email.body_text || summary || `Email from ${email.from_name}`,
+              timestamp: email.date || new Date().toISOString(),
+              has_attachment: email.has_attachment || false,
+            })
+            console.log(`[AI MATCH] Medium confidence: linked "${email.subject}" → ${matchedOrderId} (no stage advance)`)
+          }
+        }
+
+        // Handle stage advancement with skip support (only for HIGH confidence)
+        if (detectedStage && confidence === 'high') {
           const order = ordersList.find((o: any) => o.id === matchedOrderId)
           if (order && detectedStage > order.currentStage) {
             // Calculate skipped stages

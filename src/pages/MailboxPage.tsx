@@ -19,7 +19,7 @@ type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting'
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
-  const { matchedEmails, unmatchedEmails, loading, linkEmailToOrder, unlinkEmail, refetch } = useSyncedEmails(orgId);
+  const { matchedEmails, unmatchedEmails, suggestedEmails, loading, linkEmailToOrder, unlinkEmail, refetch } = useSyncedEmails(orgId);
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations'>('matched');
@@ -487,13 +487,28 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
                   {/* Order badge (matched tab) */}
                   {orderLabel && (
-                    <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
-                      isUserLinked
-                        ? 'bg-green-50 text-green-700 border border-green-200'
-                        : 'bg-blue-50 text-blue-700 border border-blue-200'
-                    }`}>
-                      {isUserLinked && <Icon name="Link" size={10} className="inline mr-1" />}
-                      {orderLabel}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        isUserLinked
+                          ? 'bg-green-50 text-green-700 border border-green-200'
+                          : 'bg-blue-50 text-blue-700 border border-blue-200'
+                      }`}>
+                        {isUserLinked && <Icon name="Link" size={10} className="inline mr-1" />}
+                        {orderLabel}
+                      </span>
+                      {!isUserLinked && email.ai_confidence && (
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          email.ai_confidence === 'high' ? 'bg-green-500' :
+                          email.ai_confidence === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
+                        }`} title={`AI confidence: ${email.ai_confidence}`} />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Suggested match badge (low confidence, in conversations tab) */}
+                  {!orderLabel && email.ai_suggested_order_id && activeTab === 'conversations' && (
+                    <span className="text-xs px-2 py-1 rounded-full flex-shrink-0 bg-orange-50 text-orange-700 border border-orange-200">
+                      Suggested: {orders.find(o => o.id === email.ai_suggested_order_id)?.poNumber || email.ai_suggested_order_id}
                     </span>
                   )}
 
