@@ -316,11 +316,11 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               </div>
             </div>
             {renderAttachments(3)}
-            {/* Upload Corrected Artwork */}
+            {/* Upload Reference Artwork */}
             <div className="flex items-center gap-3">
               <label className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${artworkUploading ? 'bg-gray-100 text-gray-400' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
                 <Icon name={artworkUploading ? 'Loader2' : 'Upload'} size={15} className={artworkUploading ? 'animate-spin' : ''} />
-                {artworkUploading ? 'Uploading...' : 'Upload Corrected Artwork'}
+                {artworkUploading ? 'Uploading...' : 'Upload Reference Artwork'}
                 <input
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
@@ -538,8 +538,8 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     }));
     if (allAttachments.length === 0) return null;
 
-    // For stage 3: collect email artwork URLs for comparison with uploaded corrections
-    const emailArtworkUrls = stage === 3 ? allAttachments.filter(a => !a.isManualUpload && a.pdfUrl).map(a => ({ url: a.pdfUrl!, name: a.name })) : [];
+    // For stage 3: collect uploaded reference URLs for comparison with email artwork
+    const referenceArtworkUrls = stage === 3 ? allAttachments.filter(a => a.isManualUpload && a.pdfUrl).map(a => ({ url: a.pdfUrl!, name: a.name })) : [];
 
     return (
       <div className="pt-3 border-t border-gray-100">
@@ -550,9 +550,9 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             const isCurrentRef = stage === 3 && att.pdfUrl && order.metadata?.artworkReference === att.pdfUrl;
             // Check if this attachment is a data source (has lineItems or is the main PO used for extraction)
             const isDataSource = !!(att.meta?.lineItems?.length || (stage === 1 && att.pdfUrl && att.pdfUrl === order.metadata?.pdfUrl));
-            // Color coding: uploaded corrections get green tint, email attachments get default gray
+            // Color coding: uploaded references get purple tint, email attachments get default gray
             const bgColor = stage === 3 && att.isManualUpload
-              ? 'bg-green-50 hover:bg-green-100 border border-green-200'
+              ? 'bg-purple-50 hover:bg-purple-100 border border-purple-200'
               : 'bg-gray-50 hover:bg-blue-50';
             return (
               <div key={idx} className="flex items-center gap-1">
@@ -568,23 +568,23 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 >
                   <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={14} className={`shrink-0 ${isPdf ? 'text-red-500' : 'text-gray-400'}`} />
                   <span className="font-medium text-gray-700 truncate min-w-0 group-hover:text-blue-700 transition-colors" title={att.name}>{att.name}</span>
-                  {stage === 3 && att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full leading-none">Uploaded</span>}
+                  {stage === 3 && att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full leading-none">Reference</span>}
                   {stage === 3 && !att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full leading-none">Email</span>}
                   {isCurrentRef && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full leading-none">Ref</span>}
                   <span className="shrink-0 text-[10px] text-gray-400">{formatDate(att.date)}</span>
                 </button>
-                {/* Compare button: for uploaded corrections, compare against first email artwork */}
-                {stage === 3 && att.isManualUpload && att.pdfUrl && emailArtworkUrls.length > 0 && (
+                {/* Compare button: for email artwork, compare against uploaded reference */}
+                {stage === 3 && !att.isManualUpload && att.pdfUrl && referenceArtworkUrls.length > 0 && (
                   <button
                     onClick={() => setArtworkCompareModal({
                       open: true,
                       newUrl: att.pdfUrl!,
-                      newLabel: `Corrected — ${att.name}`,
-                      referenceUrl: emailArtworkUrls[0].url,
-                      referenceLabel: `Original — ${emailArtworkUrls[0].name}`,
+                      newLabel: `Email — ${att.name}`,
+                      referenceUrl: referenceArtworkUrls[0].url,
+                      referenceLabel: `Reference — ${referenceArtworkUrls[0].name}`,
                     })}
-                    title="Compare with original artwork"
-                    className="shrink-0 p-1.5 text-green-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    title="Compare with reference artwork"
+                    className="shrink-0 p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
                   >
                     <Icon name="GitCompare" size={13} />
                   </button>
@@ -671,8 +671,8 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         timestamp: new Date().toISOString(),
         from_address: 'Manual Upload',
         to_address: '',
-        subject: `Corrected Artwork — ${file.name}`,
-        body: 'Artwork uploaded manually via order detail page.',
+        subject: `Reference Artwork — ${file.name}`,
+        body: 'Reference artwork uploaded via order detail page.',
         has_attachment: true,
         attachments: [attachment],
       });
