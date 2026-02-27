@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import Icon from '../components/Icon';
@@ -39,7 +39,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [artworkUploading, setArtworkUploading] = useState(false);
   const [artworkPairPicker, setArtworkPairPicker] = useState<{ open: boolean; emailAttachments: { name: string; pdfUrl: string }[] } | null>(null);
   const [selectedPairTarget, setSelectedPairTarget] = useState<{ name: string; pdfUrl: string } | null>(null);
-  const artworkFileRef = { current: null as HTMLInputElement | null };
+  const artworkFileRef = useRef<HTMLInputElement>(null);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -330,7 +330,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 {artworkUploading ? 'Uploading...' : 'Upload Reference Artwork'}
               </button>
               <input
-                ref={el => { artworkFileRef.current = el; }}
+                ref={artworkFileRef}
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
                 className="hidden"
