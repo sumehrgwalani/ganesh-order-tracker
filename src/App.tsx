@@ -14,6 +14,7 @@ import ProductsPage from './pages/ProductsPage';
 import OrderDetailPage from './pages/OrderDetailPage';
 import TeamPage from './pages/TeamPage';
 import SettingsPage from './pages/SettingsPage';
+import ComparePage from './pages/ComparePage';
 import LoginPage from './pages/LoginPage';
 import { useAuth } from './hooks/useAuth';
 import { useContacts } from './hooks/useContacts';
@@ -298,6 +299,7 @@ function App() {
                 />
               } />
               <Route path="/products" element={<ProductsPage orgId={orgId} />} />
+              <Route path="/compare" element={<ComparePage />} />
               <Route path="/team" element={<TeamPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} />} />
               <Route path="/settings" element={<SettingsPage orgId={orgId} userRole={userRole} currentUserEmail={user?.email} signOut={signOut} />} />
               {/* Redirect any unknown routes to dashboard */}

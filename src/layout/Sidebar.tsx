@@ -20,6 +20,7 @@ function Sidebar({ onSettingsClick, unreadCount = 0, onBellClick }: SidebarProps
     { icon: 'FileText', label: 'Orders', path: '/orders' },
     { icon: 'Mail', label: 'Inquiries', path: '/inquiries' },
     { icon: 'Package', label: 'Products', path: '/products' },
+    { icon: 'GitCompare', label: 'Compare', path: '/compare' },
     { icon: 'Users', label: 'Contacts', path: '/contacts' },
     { icon: 'Building', label: 'Team', path: '/team' },
   ];
