@@ -1433,8 +1433,9 @@ If no purchase orders found, return: []`
 
       // Helper: detect order stage from email subject keywords
       // Ordered from most specific to most generic to avoid false matches
-      const detectStageFromSubject = (subject: string | null): number | null => {
+      const detectStageFromSubject = (subject: string | null, bodyText?: string | null): number | null => {
         const s = (subject || '').toLowerCase()
+        const b = (bodyText || '').substring(0, 2000).toLowerCase()
         // Stage 7 — check BEFORE stage 6 (otherwise "final document" matches "document" at stage 6)
         if (s.includes('final doc') || s.includes('original document') || s.includes('telex')) return 7
         // Stage 6 — draft documents
@@ -1444,8 +1445,9 @@ If no purchase orders found, return: []`
         // Specific invoice types that are NOT proforma
         if (s.includes('commercial invoice')) return 6
         if (s.includes('freight invoice') || s.includes('shipping invoice')) return 5
-        // Stage 2 — proforma invoice (without bare "invoice" which is too broad)
+        // Stage 2 — proforma invoice (check subject AND body for PI references)
         if (s.includes('proforma') || s.includes('pi ') || s.includes('pi-')) return 2
+        if (b.includes('attached p.i') || b.includes('attach pi') || b.includes('proforma') || /\bp\.i[\s\.]/i.test(b) || /\bpi\s+\w{2,}[\-\/]\d/i.test(b)) return 2
         // Stage 1 — purchase order
         if (s.includes('purchase order') || s.includes('new po') || s.includes('new purchase')) return 1
         // Stage 3 — artwork/labels
@@ -1501,7 +1503,7 @@ If no purchase orders found, return: []`
           .maybeSingle()
 
         if (threadSibling?.matched_order_id) {
-          const detectedStage = detectStageFromSubject(email.subject) || threadSibling.detected_stage
+          const detectedStage = detectStageFromSubject(email.subject, email.body_text) || threadSibling.detected_stage
           await supabase
             .from('synced_emails')
             .update({
@@ -1607,7 +1609,7 @@ If no purchase orders found, return: []`
           for (const email of prevUnmatched) {
             const order = tryRegexMatch(email)
             if (order) {
-              const detectedStage = detectStageFromSubject(email.subject)
+              const detectedStage = detectStageFromSubject(email.subject, email.body_text)
 
               await supabase.from('synced_emails').update({
                 matched_order_id: order.id,
@@ -1649,7 +1651,7 @@ If no purchase orders found, return: []`
       // Process regex-matched emails from Pass 2 (current batch)
       for (const { email, order } of regexMatched) {
         const summary = `Auto-matched by PO number in email subject/body`
-        const detectedStage = detectStageFromSubject(email.subject)
+        const detectedStage = detectStageFromSubject(email.subject, email.body_text)
 
         await supabase
           .from('synced_emails')
@@ -2117,7 +2119,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           // Detect highest stage from all emails — use the shared detectStageFromSubject helper
           let highestStage = 1
           for (const e of emails) {
-            const detected = detectStageFromSubject(e.subject)
+            const detected = detectStageFromSubject(e.subject, e.body_text)
             if (detected) highestStage = Math.max(highestStage, detected)
           }
 
@@ -2188,7 +2190,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
             // Match all emails for this PO to the new order — use shared detectStageFromSubject
             for (const e of emails) {
-              const emailStage = detectStageFromSubject(e.subject)
+              const emailStage = detectStageFromSubject(e.subject, e.body_text)
               const updateData: any = { matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` }
               if (emailStage) updateData.detected_stage = emailStage
               await supabase
