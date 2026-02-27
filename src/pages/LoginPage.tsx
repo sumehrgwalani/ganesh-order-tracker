@@ -18,16 +18,21 @@ function LoginPage({ onAuthSuccess }: Props) {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const url = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
-        if (!url || url === 'https://placeholder.supabase.co') {
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        // In production, use the proxy path to avoid ISP/firewall blocks on supabase.co
+        const isProduction = window.location.hostname.includes('vercel.app')
+        const healthUrl = isProduction
+          ? `${window.location.origin}/supabase/auth/v1/health`
+          : `${(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')}/auth/v1/health`
+        if (!anonKey) {
           setConnStatus('error')
-          setConnDetail('Supabase URL not configured. Contact your administrator.')
+          setConnDetail('Supabase not configured. Contact your administrator.')
           return
         }
         // Simple health check — just try to reach the auth endpoint
-        const res = await fetch(`${url}/auth/v1/health`, {
+        const res = await fetch(healthUrl, {
           method: 'GET',
-          headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '' },
+          headers: { 'apikey': anonKey },
         })
         if (res.ok) {
           setConnStatus('ok')

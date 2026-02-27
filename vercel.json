@@ -4,7 +4,11 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/supabase/auth/:path*", "destination": "https://xafpskaddcdrtfgbphqj.supabase.co/auth/:path*" },
+    { "source": "/supabase/rest/:path*", "destination": "https://xafpskaddcdrtfgbphqj.supabase.co/rest/:path*" },
+    { "source": "/supabase/storage/:path*", "destination": "https://xafpskaddcdrtfgbphqj.supabase.co/storage/:path*" },
+    { "source": "/supabase/realtime/:path*", "destination": "https://xafpskaddcdrtfgbphqj.supabase.co/realtime/:path*" },
+    { "source": "/((?!api/|supabase/).*)", "destination": "/index.html" }
   ],
   "functions": {
     "api/sync-emails.ts": {
