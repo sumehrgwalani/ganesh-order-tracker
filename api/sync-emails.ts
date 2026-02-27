@@ -1394,6 +1394,26 @@ If no purchase orders found, return: []`
         return null
       }
 
+      // Helper: insert order_history entry only if a duplicate doesn't already exist.
+      // Checks for matching order_id + subject + timestamp to prevent the same email
+      // being logged multiple times across sync runs.
+      const insertHistoryIfNew = async (entry: {
+        organization_id: string, order_id: string, stage: number | null,
+        from_address: string, subject: string, body: string,
+        timestamp: string, has_attachment?: boolean, attachments?: string[]
+      }) => {
+        // Check for existing entry with same order + subject + timestamp
+        const { count } = await supabase.from('order_history')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', entry.order_id)
+          .eq('subject', entry.subject)
+          .eq('timestamp', entry.timestamp)
+        if (count && count > 0) {
+          return // duplicate — skip
+        }
+        await supabase.from('order_history').insert(entry)
+      }
+
       // ===== PRE-AI REGEX MATCHING =====
       // Match emails by PO number BEFORE calling AI. Runs on ALL unprocessed emails (not just the 5-email batch)
       // AND re-checks previously AI-processed-but-unmatched emails that now have matching orders.
@@ -1453,8 +1473,8 @@ If no purchase orders found, return: []`
                 ai_summary: `Auto-matched by PO number (re-scan)`,
               }).eq('id', email.id)
 
-              // Create order_history entry so email shows on order detail page
-              await supabase.from('order_history').insert({
+              // Create order_history entry so email shows on order detail page (dedup check)
+              await insertHistoryIfNew({
                 organization_id,
                 order_id: order.uuid,
                 stage: detectedStage || 1,
@@ -1515,8 +1535,8 @@ If no purchase orders found, return: []`
           order.skippedStages = newSkipped
         }
 
-        // ALWAYS create order_history entry so email shows on order detail page
-        await supabase.from('order_history').insert({
+        // Create order_history entry so email shows on order detail page (dedup check)
+        await insertHistoryIfNew({
           organization_id,
           order_id: order.uuid,
           stage: detectedStage || 1,
@@ -1721,8 +1741,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               order.currentStage = detectedStage
               order.skippedStages = newSkipped
 
-              // Log in order_history
-              await supabase.from('order_history').insert({
+              // Log in order_history (dedup check)
+              await insertHistoryIfNew({
                 organization_id,
                 order_id: order.uuid,
                 stage: detectedStage,
@@ -1759,8 +1779,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               }
             }
           } else if (order) {
-            // Email matches an order but doesn't advance stage — still log in history
-            await supabase.from('order_history').insert({
+            // Email matches an order but doesn't advance stage — still log in history (dedup check)
+            await insertHistoryIfNew({
               organization_id,
               order_id: order.uuid,
               stage: detectedStage,
@@ -1911,8 +1931,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier, product, currentStage: highestStage, skippedStages })
             existingPOs.add(fullPO)
 
-            // Log in order_history
-            await supabase.from('order_history').insert({
+            // Log in order_history (dedup check)
+            await insertHistoryIfNew({
               order_id: newOrder.id,
               organization_id,
               stage: highestStage,
