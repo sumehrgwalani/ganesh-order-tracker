@@ -618,20 +618,20 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     setArtworkUploading(true);
     try {
       // 1. Look up DB UUID for this order
-      const { data: orderRow } = await supabase
+      const { data: orderRow, error: orderErr } = await supabase
         .from('orders')
-        .select('id, org_id')
+        .select('id')
         .eq('order_id', order.id)
         .single();
-      if (!orderRow) throw new Error('Order not found in DB');
+      if (orderErr || !orderRow) throw new Error(`Order lookup failed: ${orderErr?.message || 'not found'}`);
 
-      // 2. Upload file to Supabase storage
+      // 2. Upload file to Supabase storage (flat path like PO uploads)
       const safePo = order.id.replace(/\//g, '_');
-      const storagePath = `${orderRow.org_id}/${safePo}/artwork_${Date.now()}_${file.name}`;
+      const storagePath = `artwork_${safePo}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const { error: uploadErr } = await supabase.storage
         .from('po-documents')
         .upload(storagePath, file, { contentType: file.type, upsert: true });
-      if (uploadErr) throw uploadErr;
+      if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
 
       // 3. Get public URL
       const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
@@ -639,7 +639,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
 
       // 4. Create order_history entry at stage 3
       const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
-      await supabase.from('order_history').insert({
+      const { error: histErr } = await supabase.from('order_history').insert({
         order_id: orderRow.id,
         stage: 3,
         timestamp: new Date().toISOString(),
@@ -650,12 +650,13 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
         has_attachment: true,
         attachments: [attachment],
       });
+      if (histErr) throw new Error(`History insert failed: ${histErr.message}`);
 
       // 5. Refresh to show new attachment
       window.location.reload();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Artwork upload failed:', err);
-      alert('Failed to upload artwork. Please try again.');
+      alert(`Upload failed: ${err?.message || 'Unknown error'}`);
       setArtworkUploading(false);
     }
   };
