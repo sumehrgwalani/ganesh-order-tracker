@@ -37,6 +37,9 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [artworkCompareModal, setArtworkCompareModal] = useState<{ open: boolean; newUrl: string; newLabel: string; referenceUrl?: string; referenceLabel?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ historyId: string; attName: string; stage: number; isDataSource: boolean } | null>(null);
   const [artworkUploading, setArtworkUploading] = useState(false);
+  const [artworkPairPicker, setArtworkPairPicker] = useState<{ open: boolean; emailAttachments: { name: string; pdfUrl: string }[] } | null>(null);
+  const [selectedPairTarget, setSelectedPairTarget] = useState<{ name: string; pdfUrl: string } | null>(null);
+  const artworkFileRef = { current: null as HTMLInputElement | null };
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -318,19 +321,46 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
             {renderAttachments(3)}
             {/* Upload Reference Artwork */}
             <div className="flex items-center gap-3">
-              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${artworkUploading ? 'bg-gray-100 text-gray-400' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+              <button
+                onClick={handleStartReferenceUpload}
+                disabled={artworkUploading}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${artworkUploading ? 'bg-gray-100 text-gray-400' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+              >
                 <Icon name={artworkUploading ? 'Loader2' : 'Upload'} size={15} className={artworkUploading ? 'animate-spin' : ''} />
                 {artworkUploading ? 'Uploading...' : 'Upload Reference Artwork'}
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                  onChange={handleArtworkUpload}
-                  disabled={artworkUploading}
-                />
-              </label>
+              </button>
+              <input
+                ref={el => { artworkFileRef.current = el; }}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={handleArtworkUpload}
+              />
               <span className="text-xs text-gray-400">PDF, JPG, PNG</span>
             </div>
+            {/* Pair picker modal */}
+            {artworkPairPicker?.open && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-purple-800 mb-3">Which email attachment is this reference for?</p>
+                <div className="space-y-2">
+                  {artworkPairPicker.emailAttachments.map((ea, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setSelectedPairTarget(ea);
+                        setArtworkPairPicker(null);
+                        setTimeout(() => artworkFileRef.current?.click(), 50);
+                      }}
+                      className="w-full flex items-center gap-2 text-sm bg-white hover:bg-purple-100 border border-purple-200 rounded-lg px-3 py-2.5 text-left transition-colors"
+                    >
+                      <Icon name="FileText" size={14} className="text-red-500 shrink-0" />
+                      <span className="font-medium text-gray-700 truncate">{ea.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setArtworkPairPicker(null)} className="mt-2 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              </div>
+            )}
             {/* Artwork Reference & Comparison */}
             {artworkReference && currentArtworkUrl ? (
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
@@ -538,8 +568,17 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     }));
     if (allAttachments.length === 0) return null;
 
-    // For stage 3: collect uploaded reference URLs for comparison with email artwork
-    const referenceArtworkUrls = stage === 3 ? allAttachments.filter(a => a.isManualUpload && a.pdfUrl).map(a => ({ url: a.pdfUrl!, name: a.name })) : [];
+    // For stage 3: build a map of email attachment URL → its paired reference
+    const referencePairMap = new Map<string, { url: string; name: string }>();
+    if (stage === 3) {
+      for (const a of allAttachments) {
+        if (a.isManualUpload && a.pdfUrl && a.meta?.pairedWith) {
+          referencePairMap.set(a.meta.pairedWith, { url: a.pdfUrl!, name: a.name });
+        }
+      }
+    }
+    // Fallback: if no specific pairing, use first uploaded reference
+    const fallbackRef = stage === 3 ? allAttachments.find(a => a.isManualUpload && a.pdfUrl) : null;
 
     return (
       <div className="pt-3 border-t border-gray-100">
@@ -568,27 +607,30 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                 >
                   <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={14} className={`shrink-0 ${isPdf ? 'text-red-500' : 'text-gray-400'}`} />
                   <span className="font-medium text-gray-700 truncate min-w-0 group-hover:text-blue-700 transition-colors" title={att.name}>{att.name}</span>
-                  {stage === 3 && att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full leading-none">Reference</span>}
+                  {stage === 3 && att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full leading-none" title={att.meta?.pairedName ? `Reference for: ${att.meta.pairedName}` : 'Reference'}>Ref</span>}
                   {stage === 3 && !att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full leading-none">Email</span>}
                   {isCurrentRef && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full leading-none">Ref</span>}
                   <span className="shrink-0 text-[10px] text-gray-400">{formatDate(att.date)}</span>
                 </button>
-                {/* Compare button: for email artwork, compare against uploaded reference */}
-                {stage === 3 && !att.isManualUpload && att.pdfUrl && referenceArtworkUrls.length > 0 && (
-                  <button
-                    onClick={() => setArtworkCompareModal({
-                      open: true,
-                      newUrl: att.pdfUrl!,
-                      newLabel: `Email — ${att.name}`,
-                      referenceUrl: referenceArtworkUrls[0].url,
-                      referenceLabel: `Reference — ${referenceArtworkUrls[0].name}`,
-                    })}
-                    title="Compare with reference artwork"
-                    className="shrink-0 p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
-                  >
-                    <Icon name="GitCompare" size={13} />
-                  </button>
-                )}
+                {/* Compare button: for email artwork, compare against its paired reference */}
+                {stage === 3 && !att.isManualUpload && att.pdfUrl && (() => {
+                  const paired = referencePairMap.get(att.pdfUrl!) || (fallbackRef ? { url: fallbackRef.pdfUrl!, name: fallbackRef.name } : null);
+                  return paired ? (
+                    <button
+                      onClick={() => setArtworkCompareModal({
+                        open: true,
+                        newUrl: att.pdfUrl!,
+                        newLabel: `Email — ${att.name}`,
+                        referenceUrl: paired.url,
+                        referenceLabel: `Reference — ${paired.name}`,
+                      })}
+                      title={`Compare with ${paired.name}`}
+                      className="shrink-0 p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
+                    >
+                      <Icon name="GitCompare" size={13} />
+                    </button>
+                  ) : null;
+                })()}
                 {stage === 3 && att.pdfUrl && !isCurrentRef && onUpdateOrder && (
                   <button
                     onClick={() => handleSetAsReference(att.pdfUrl!)}
@@ -637,11 +679,36 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     }
   };
 
-  // Upload corrected artwork file
+  // Step 1: User clicks "Upload Reference" → show picker to choose which email attachment to pair with
+  const handleStartReferenceUpload = () => {
+    const emailAtts = order.history
+      .filter(h => h.stage === 3 && h.hasAttachment && h.attachments?.length && h.from !== 'Manual Upload')
+      .flatMap(h => (h.attachments || []).map(att => {
+        const meta = getAttachmentMeta(att);
+        return { name: getAttachmentName(att), pdfUrl: meta?.pdfUrl || '' };
+      }))
+      .filter(a => a.pdfUrl);
+
+    if (emailAtts.length === 0) {
+      // No email attachments yet — just open file picker without pairing
+      setSelectedPairTarget(null);
+      artworkFileRef.current?.click();
+    } else if (emailAtts.length === 1) {
+      // Only one email attachment — auto-pair and open file picker
+      setSelectedPairTarget(emailAtts[0]);
+      setTimeout(() => artworkFileRef.current?.click(), 50);
+    } else {
+      // Multiple email attachments — show picker
+      setArtworkPairPicker({ open: true, emailAttachments: emailAtts });
+    }
+  };
+
+  // Step 2: After picking a pair target (or from picker), handle the file upload
   const handleArtworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setArtworkUploading(true);
+    setArtworkPairPicker(null);
     try {
       // 1. Look up DB UUID for this order
       const { data: orderRow, error: orderErr } = await supabase
@@ -663,27 +730,34 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
       const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
       const publicUrl = urlData?.publicUrl || '';
 
-      // 4. Create order_history entry at stage 3
-      const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
+      // 4. Create order_history entry at stage 3 with pairing info
+      const metaObj: Record<string, any> = { pdfUrl: publicUrl };
+      if (selectedPairTarget) {
+        metaObj.pairedWith = selectedPairTarget.pdfUrl;
+        metaObj.pairedName = selectedPairTarget.name;
+      }
+      const attachment = JSON.stringify({ name: file.name, meta: metaObj });
       const { error: histErr } = await supabase.from('order_history').insert({
         order_id: orderRow.id,
         stage: 3,
         timestamp: new Date().toISOString(),
         from_address: 'Manual Upload',
         to_address: '',
-        subject: `Reference Artwork — ${file.name}`,
+        subject: `Reference Artwork — ${file.name}${selectedPairTarget ? ` (for ${selectedPairTarget.name})` : ''}`,
         body: 'Reference artwork uploaded via order detail page.',
         has_attachment: true,
         attachments: [attachment],
       });
       if (histErr) throw new Error(`History insert failed: ${histErr.message}`);
 
+      setSelectedPairTarget(null);
       // 5. Refresh to show new attachment
       window.location.reload();
     } catch (err: any) {
       console.error('Artwork upload failed:', err);
       alert(`Upload failed: ${err?.message || 'Unknown error'}`);
       setArtworkUploading(false);
+      setSelectedPairTarget(null);
     }
   };
 
