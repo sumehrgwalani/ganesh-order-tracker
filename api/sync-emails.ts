@@ -300,7 +300,7 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences.
 STEP 1 - Find the SUPPLIER name:
 - Look at the TOP of the document for the supplier/seller/vendor name
 - It is usually the company the PO is addressed TO (not Ganesh International who is the buyer)
-- Common supplier names: JJ SEAFOODS, RAUNAQ, AMULYA, J.L. INTERNATIONAL, etc.
+- Common supplier names: JJ SEAFOODS, RAUNAQ, AMULYA, J.L. INTERNATIONAL, SILVER SEAFOOD, etc.
 - The supplier address block is usually on the left side, often labeled "To:" or "M/s" or just the first company name that isn't Ganesh International
 
 STEP 2 - Scan the document for these fields (typically BELOW the product table):
@@ -310,12 +310,37 @@ STEP 2 - Scan the document for these fields (typically BELOW the product table):
 4. Destination - the port/city from delivery terms
 5. Delivery/Shipment date - e.g. "Before 10/03/2026"
 
-STEP 3 - Extract EVERY row from the product table. For each row read ALL columns carefully:
-- The table typically has columns: Product Description, Size, Cases/Ctns, Qty(Kgs)/Weight, Rate/Price, Amount/Total
-- CRITICAL: You MUST read the numeric values for Cases, Kilos, Price, and Total from EACH row. Never return 0 for these.
-- If a column header says "Cajas" that means Cases. "Unidades" means Units. "Precio" means Price. "Importe" means Amount/Total.
-- Calculate: if you have cases and packing (e.g. "6x1kg"), you can derive kilos = cases * kg_per_case
-- Calculate: total = kilos * pricePerKg (verify against the Amount column)
+STEP 3 - Extract EVERY row from the product table. For each row read ALL columns carefully.
+
+DOCUMENT FORMATS — the document may use different table layouts:
+
+FORMAT A (explicit columns): Table has columns like Product, Size, Cases/Ctns, Qty(Kgs), Rate/Price, Amount/Total.
+Read each column directly to get cases, kilos, price, and total.
+
+FORMAT B (grouped product with size rows): A product header with packing info, followed by size rows:
+  Product: Frozen Squid Whole Cleaned, IQF
+  Packing: 6 x 1 Kg with 25% Glaze, Printed Bag
+  Size      Quantity     Price/kg
+  10/20     900          6.00
+  20/40     500          4.60
+Each size row is a SEPARATE line item. They all share the same product name, packing, and glaze from the header above.
+
+AMBIGUOUS QUANTITY COLUMNS — CRITICAL:
+Columns labeled "Assortment", "Quantity", "Qty", or unlabeled numeric columns can mean EITHER cartons OR kilos.
+When the meaning is unclear, you MUST determine which by using this rule:
+- A standard 40ft container holds 17,000–22,000 kg of frozen seafood.
+- Try BOTH interpretations for the quantity column:
+  Interpretation A (cartons): kilos = quantity × kg_per_case from packing (e.g. "6x1kg" = 6 kg/case)
+  Interpretation B (kilos directly): kilos = quantity as-is
+- Sum total kilos across ALL line items for each interpretation.
+- Pick the interpretation where the grand total kilos falls closest to the 17,000–22,000 kg range.
+- Example: packing is "6x1kg", quantities are 900, 500, 1500, 400 = 3,300 total
+  As cartons: 3,300 × 6 = 19,800 kg (in container range) ← CORRECT
+  As kilos: 3,300 kg (way too low) ← WRONG
+
+Calculate for each line item:
+- If quantity = cartons: kilos = cases × kg_per_case, total = kilos × pricePerKg
+- If quantity = kilos: cases = kilos / kg_per_case (round to nearest whole number), total = kilos × pricePerKg
 
 Known context:
 - Buyer: ${orderCompany || 'Unknown'}
@@ -323,6 +348,7 @@ Known context:
 Return this JSON structure:
 {
   "supplier": "The supplier/seller company name from the document",
+  "quantityInterpretation": "cartons or kilos — which interpretation you chose and why (brief)",
   "lineItems": [
     {
       "product": "full product name, start with 'Frozen'",
@@ -347,12 +373,12 @@ Return this JSON structure:
 
 Field notes:
 - supplier: The company this PO is sent TO (not Ganesh International). Read from document header.
-- product: full product name, always start with "Frozen"
-- cases: MUST be a number > 0. Read from Cases/Cartons/Ctns/Cajas/c/s column. If the table shows "Unidades" (units) with packing like "6x1kg", then cases = units.
-- kilos: total weight in kg. If MT given, multiply by 1000. If you see "6x1kg" packing with 800 cases, kilos = 800 * 6 = 4800
+- product: full product name, always start with "Frozen". Include the processing style (e.g. "Whole Cleaned", "PDTO", "Rings and Tentacles").
+- cases: MUST be a number > 0. Read from Cases/Cartons/Ctns/Cajas/c/s/Assortment column.
+- kilos: total weight in kg. If MT given, multiply by 1000. Derive from cases × kg_per_case if not explicit.
 - pricePerKg: price per kilogram. MUST be a number > 0. Read from Rate/Price/Precio column.
-- total: line total amount. MUST be a number > 0. Read from Amount/Total/Importe column. If missing, calculate as kilos * pricePerKg
-- "Cases" and "Cartons" and "Ctns" and "c/s" and "Cajas" all mean the same thing
+- total: line total amount. MUST be a number > 0. Read from Amount/Total/Importe column. If missing, calculate as kilos × pricePerKg.
+- "Cases", "Cartons", "Ctns", "c/s", "Cajas", "Assortment" can all mean carton counts — use the container sanity check above.
 - freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
 - currency: 'USD' or 'EUR'. Default 'USD'
 
@@ -362,7 +388,8 @@ Rules:
 - NEVER return 0 for cases, kilos, pricePerKg, or total — read these numbers from the document
 - If you cannot read the document clearly, return empty lineItems array
 - Spanish terms: calamar=Squid, sepia=Cuttlefish, pulpo=Octopus, gamba=Shrimp, cajas=Cases/Cartons
-- CRITICAL: Do NOT return empty string for commission if a Commission field exists in the document.`
+- CRITICAL: Do NOT return empty string for commission if a Commission field exists in the document.
+- When a product header has multiple size rows, create one line item PER size row, all sharing the same product name, packing, and glaze.`
 
     const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -416,7 +443,66 @@ Rules:
       total: typeof item.total === 'number' ? item.total : (parseFloat(item.total) || 0),
     })) : []
 
-    const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+    // --- Container sanity check ---
+    // A 40ft container holds ~17,000-22,000 kg of frozen seafood.
+    // If total kilos is way off, the AI likely misinterpreted cartons vs kilos.
+
+    // Extract kg_per_case from packing (e.g. "6 x 1 Kg" = 6, "10 x 1kg" = 10, "6x2kg" = 12)
+    const extractKgPerCase = (packing: string): number => {
+      const m = packing.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*kg/i)
+      if (m) return parseInt(m[1]) * parseFloat(m[2])
+      return 0
+    }
+
+    let totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+    const hasPackingInfo = lineItems.some((li: any) => extractKgPerCase(li.packing) > 0)
+
+    // Check if kilos seem too low (AI treated carton counts as kilos)
+    if (totalKilos > 0 && totalKilos < 5000 && hasPackingInfo) {
+      const recalcItems = lineItems.map((li: any) => {
+        const kgPerCase = extractKgPerCase(li.packing)
+        if (kgPerCase > 0 && li.kilos < 5000) {
+          return li.kilos * kgPerCase // treat current "kilos" as carton count
+        }
+        return li.kilos
+      })
+      const recalcTotal = recalcItems.reduce((s: number, k: number) => s + k, 0)
+      if (recalcTotal >= 10000 && recalcTotal <= 30000) {
+        console.log(`[PO-VISION] Container sanity check: total ${totalKilos}kg too low, recalculating as cartons → ${recalcTotal}kg`)
+        lineItems.forEach((li: any) => {
+          const kgPerCase = extractKgPerCase(li.packing)
+          if (kgPerCase > 0 && li.kilos < 5000) {
+            li.cases = li.kilos // the "kilos" were actually carton counts
+            li.kilos = li.cases * kgPerCase
+            li.total = li.kilos * li.pricePerKg
+          }
+        })
+        totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+      }
+    }
+
+    // Check if kilos seem too high (AI multiplied by packing when quantity was already kilos)
+    if (totalKilos > 50000 && hasPackingInfo) {
+      const recalcItems = lineItems.map((li: any) => {
+        const kgPerCase = extractKgPerCase(li.packing)
+        if (kgPerCase > 0) return li.kilos / kgPerCase
+        return li.kilos
+      })
+      const recalcTotal = recalcItems.reduce((s: number, k: number) => s + k, 0)
+      if (recalcTotal >= 10000 && recalcTotal <= 30000) {
+        console.log(`[PO-VISION] Container sanity check: total ${totalKilos}kg too high, dividing by packing → ${recalcTotal}kg`)
+        lineItems.forEach((li: any) => {
+          const kgPerCase = extractKgPerCase(li.packing)
+          if (kgPerCase > 0) {
+            li.kilos = Math.round(li.kilos / kgPerCase)
+            li.cases = Math.round(li.kilos / kgPerCase)
+            li.total = li.kilos * li.pricePerKg
+          }
+        })
+        totalKilos = lineItems.reduce((sum: number, li: any) => sum + (li.kilos || 0), 0)
+      }
+    }
+
     const totalValue = lineItems.reduce((sum: number, li: any) => sum + ((li.kilos || 0) * (li.pricePerKg || 0)), 0)
 
     let commission = String(parsed.commission || '')
@@ -424,8 +510,9 @@ Rules:
     const payment = String(parsed.payment || '')
     const destination = String(parsed.destination || '')
 
+    const quantityNote = parsed.quantityInterpretation ? String(parsed.quantityInterpretation) : ''
     const supplier = String(parsed.supplier || '')
-    console.log(`[PO-VISION] Final fields: supplier="${supplier}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
+    console.log(`[PO-VISION] Final: supplier="${supplier}", totalKilos=${totalKilos}, quantityInterpretation="${quantityNote}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
     return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, supplier }
   } catch (err) {
     console.error('PO vision extraction error:', err)
@@ -1768,14 +1855,15 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
             if (!hasEvidence) skippedStages.push(s)
           }
 
-          // Extract product from body if available
+          // Product will be extracted from the actual PO document by extractPODataFromImage later.
+          // Just do a basic keyword scan across ALL emails as a fallback.
           let product = 'Unknown'
-          const bodyText = (refEmail.body_text || '').substring(0, 500).toUpperCase()
-          if (bodyText.includes('SHRIMP') || bodyText.includes('VANNAMEI') || bodyText.includes('PDTO')) product = 'Frozen Shrimp'
-          else if (bodyText.includes('SQUID') || bodyText.includes('CALAMAR')) product = 'Frozen Squid'
-          else if (bodyText.includes('CUTTLEFISH')) product = 'Frozen Cuttlefish'
-          else if (bodyText.includes('OCTOPUS')) product = 'Frozen Octopus'
-          else if (bodyText.includes('FISH')) product = 'Frozen Fish'
+          const allEmailText = emails.map((e: any) => `${e.subject || ''} ${(e.body_text || '').substring(0, 1000)}`).join(' ').toUpperCase()
+          if (allEmailText.includes('SHRIMP') || allEmailText.includes('VANNAMEI') || allEmailText.includes('PDTO')) product = 'Frozen Shrimp'
+          else if (allEmailText.includes('SQUID') || allEmailText.includes('CALAMAR') || allEmailText.includes('POTA')) product = 'Frozen Squid'
+          else if (allEmailText.includes('CUTTLEFISH') || allEmailText.includes('SEPIA')) product = 'Frozen Cuttlefish'
+          else if (allEmailText.includes('OCTOPUS') || allEmailText.includes('PULPO')) product = 'Frozen Octopus'
+          else if (allEmailText.includes('FISH') || allEmailText.includes('SURIMI')) product = 'Frozen Fish'
 
           const { data: newOrder, error: createErr } = await supabase
             .from('orders')
