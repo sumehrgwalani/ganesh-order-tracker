@@ -12,8 +12,9 @@ export default function ComparePage() {
 
   const accept = '.pdf,.jpg,.jpeg,.png';
 
-  const refUrl = refFile ? URL.createObjectURL(refFile) : null;
-  const newUrl = newFile ? URL.createObjectURL(newFile) : null;
+  // Append filename as hash so ArtworkCompare can detect PDFs from blob URLs
+  const refUrl = refFile ? URL.createObjectURL(refFile) + '#' + refFile.name : null;
+  const newUrl = newFile ? URL.createObjectURL(newFile) + '#' + newFile.name : null;
 
   return (
     <div className="max-w-2xl mx-auto">
