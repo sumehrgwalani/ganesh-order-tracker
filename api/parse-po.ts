@@ -35,11 +35,11 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
       "packing": "string - packing format (e.g., '6 X 1 KG Printed Bag', '6 X 1 KG Bag', '10 KG Bulk'). Use 'Printed Bag' when brand/header card mentioned, 'Bag' for plain/unbranded. Or empty string",
       "brand": "string - brand name or empty string",
       "freezing": "string - freezing method: 'IQF', 'Semi IQF', 'Blast', 'Block', 'Plate'. Default to 'IQF' if not specified",
-      "cases": "",
-      "kilos": "number - total kilograms (if MT given, multiply by 1000)",
+      "cases": "number if carton-based input (use container sanity check), or empty string if kilo-based",
+      "kilos": "number - total kilograms. If input is carton-based: kilos = cases × kg_per_case. If MT given, multiply by 1000",
       "pricePerKg": "number - price per kilogram",
       "currency": "string - 'USD' or 'EUR' based on $ or euro symbols. Default 'USD'",
-      "total": ""
+      "total": "number if carton-based input (kilos × pricePerKg), or empty string if kilo-based"
     }
   ],
   "detectedSupplier": "string - matched supplier company name from the provided list, or empty string",
@@ -100,6 +100,33 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - "3.30 $" or "$3.30" or "3.30 USD" = price per kg of $3.30
 - "euro 4.50" or "4.50 EUR" = price of 4.50 EUR
 
+### CARTON-BASED vs KILO-BASED quantities — CRITICAL
+Input may use EITHER carton counts or kilo quantities. Columns labeled "Assortment", "Quantity", "Qty", or unlabeled numbers can mean EITHER.
+
+When the meaning is ambiguous, determine which by using this container sanity check:
+- A standard 40ft container holds 17,000–22,000 kg of frozen seafood.
+- Try BOTH interpretations:
+  A) quantity = cartons → kilos = quantity × kg_per_case from packing (e.g., "6 x 1 KG" = 6 kg/case)
+  B) quantity = kilos directly
+- Sum total kilos across ALL items for each interpretation.
+- Pick the one closest to 17,000–22,000 kg.
+
+EXAMPLE:
+  Packing: 6 x 1 Kg
+  Quantities: 900, 500, 1500, 400 = 3,300 total
+  As cartons: 3,300 × 6 = 19,800 kg (in container range) ← CORRECT
+  As kilos: 3,300 kg (way too low) ← WRONG
+  → Treat 900, 500, etc. as CARTON counts, calculate kilos = cartons × 6
+
+When quantity is determined to be cartons:
+- Set "cases" to the carton count (as a number, NOT empty string)
+- Set "kilos" to cases × kg_per_case
+- Set "total" to kilos × pricePerKg
+
+When quantity is determined to be kilos:
+- Set "kilos" to the quantity
+- Leave "cases" and "total" as empty strings (frontend will calculate)
+
 ### Size Formats
 - "20/40", "40/60", "80/UP", "U/1", "1/3", "3/5"
 - Ranges like "20-40" should become "20/40"
@@ -123,7 +150,9 @@ CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. J
 - Products sharing the same packing/glaze should each get those values
 
 ### Important
-- Leave "cases" and "total" as empty strings - these are calculated by the frontend
+- For kilo-based input: leave "cases" and "total" as empty strings — the frontend will calculate them from kilos and packing
+- For carton-based input: set "cases" as a number, calculate "kilos" = cases × kg_per_case, and "total" = kilos × pricePerKg
+- Use the container sanity check (17,000–22,000 kg per container) to determine which format the input uses
 - "kilos" and "pricePerKg" should be numbers, not strings
 - If glaze is mentioned with "marked as" or "marked", put in glazeMarked
 - If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`;
@@ -246,7 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'AI returned invalid data. Please try again.', raw: content })
     }
 
-    const lineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: any) => ({
+    let lineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: any) => ({
       product: String(item.product || ''),
       size: String(item.size || ''),
       glaze: String(item.glaze || ''),
@@ -254,12 +283,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       packing: String(item.packing || ''),
       brand: String(item.brand || ''),
       freezing: String(item.freezing || 'IQF'),
-      cases: '',
+      cases: item.cases && typeof item.cases === 'number' ? item.cases : (parseInt(item.cases) || ''),
       kilos: typeof item.kilos === 'number' ? item.kilos : (parseFloat(item.kilos) || ''),
       pricePerKg: typeof item.pricePerKg === 'number' ? item.pricePerKg : (parseFloat(item.pricePerKg) || ''),
       currency: String(item.currency || 'USD'),
-      total: '',
+      total: item.total && typeof item.total === 'number' ? item.total : (parseFloat(item.total) || ''),
     })) : []
+
+    // Container sanity check — if AI got the cartons/kilos interpretation wrong, fix it
+    const extractKgPerCase = (packing: string): number => {
+      const m = packing.match(/(\d+)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*(?:kg|kilo)?/i)
+      if (m) return parseInt(m[1]) * parseFloat(m[2])
+      return 0
+    }
+
+    const totalKilos = lineItems.reduce((sum: number, li: any) => sum + (parseFloat(li.kilos) || 0), 0)
+    const hasPackingInfo = lineItems.some((li: any) => extractKgPerCase(li.packing) > 0)
+
+    // If total kilos too low and packing info exists, quantities were probably cartons
+    if (totalKilos > 0 && totalKilos < 5000 && hasPackingInfo) {
+      const recalcTotal = lineItems.reduce((sum: number, li: any) => {
+        const kgPerCase = extractKgPerCase(li.packing)
+        const k = parseFloat(li.kilos) || 0
+        return sum + (kgPerCase > 0 && k < 5000 ? k * kgPerCase : k)
+      }, 0)
+      if (recalcTotal >= 10000 && recalcTotal <= 30000) {
+        console.log(`[PARSE-PO] Container sanity fix: ${totalKilos}kg → ${recalcTotal}kg (treating as cartons)`)
+        lineItems = lineItems.map((li: any) => {
+          const kgPerCase = extractKgPerCase(li.packing)
+          const k = parseFloat(li.kilos) || 0
+          if (kgPerCase > 0 && k < 5000) {
+            const cases = k
+            const kilos = cases * kgPerCase
+            const price = parseFloat(li.pricePerKg) || 0
+            return { ...li, cases, kilos, total: (kilos * price).toFixed(2) }
+          }
+          return li
+        })
+      }
+    }
+
+    // If total kilos too high, AI may have double-multiplied
+    if (totalKilos > 50000 && hasPackingInfo) {
+      const recalcTotal = lineItems.reduce((sum: number, li: any) => {
+        const kgPerCase = extractKgPerCase(li.packing)
+        const k = parseFloat(li.kilos) || 0
+        return sum + (kgPerCase > 0 ? k / kgPerCase : k)
+      }, 0)
+      if (recalcTotal >= 10000 && recalcTotal <= 30000) {
+        console.log(`[PARSE-PO] Container sanity fix: ${totalKilos}kg → ${recalcTotal}kg (undoing double multiply)`)
+        lineItems = lineItems.map((li: any) => {
+          const kgPerCase = extractKgPerCase(li.packing)
+          const k = parseFloat(li.kilos) || 0
+          if (kgPerCase > 0) {
+            const kilos = Math.round(k / kgPerCase)
+            const cases = Math.round(kilos / kgPerCase)
+            const price = parseFloat(li.pricePerKg) || 0
+            return { ...li, cases, kilos, total: (kilos * price).toFixed(2) }
+          }
+          return li
+        })
+      }
+    }
 
     let detectedSupplierEmail = parsed.detectedSupplierEmail || ''
     if (parsed.detectedSupplier && !detectedSupplierEmail && suppliers) {

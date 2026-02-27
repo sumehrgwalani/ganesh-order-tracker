@@ -22,14 +22,21 @@ export const calculateLineItem = (item: any) => {
   const inputKilos = parseFloat(item.kilos) || 0;
   const price = parseFloat(item.pricePerKg) || 0;
   const kgPerCarton = parsePackingKg(item.packing);
+  const inputCases = item.cases ? parseInt(item.cases as string) : 0;
 
-  let cases = item.cases ? parseInt(item.cases as string) : 0;
+  let cases = inputCases;
   let adjustedKilos = inputKilos;
 
-  // If we have packing info and kilos, calculate cases and adjust kilos
   if (kgPerCarton && inputKilos > 0) {
-    cases = Math.ceil(inputKilos / kgPerCarton);
-    adjustedKilos = cases * kgPerCarton;
+    if (inputCases > 0) {
+      // Cases already provided (e.g., from carton-based AI parsing) — use them directly
+      cases = inputCases;
+      adjustedKilos = cases * kgPerCarton;
+    } else {
+      // No cases provided — calculate from kilos
+      cases = Math.ceil(inputKilos / kgPerCarton);
+      adjustedKilos = cases * kgPerCarton;
+    }
   }
 
   const total = (adjustedKilos * price).toFixed(2);
