@@ -1463,6 +1463,60 @@ If no purchase orders found, return: []`
         return null
       }
 
+      // AI-based stage detection: send a batch of emails to AI to determine their stage
+      // Much more accurate than keyword matching — reads the full email context
+      const detectStagesWithAI = async (emailsToDetect: { id: string, subject: string, body_text: string, from_name: string, has_attachment: boolean }[]): Promise<Map<string, number>> => {
+        const stageMap = new Map<string, number>()
+        if (emailsToDetect.length === 0) return stageMap
+
+        const stagePrompt = `You are classifying emails for a frozen seafood trading company (Ganesh International). For each email, determine what STAGE of the trade process it represents.
+
+${STAGE_TRIGGERS}
+
+IMPORTANT: Look at the FULL email content (subject AND body), not just the subject. Suppliers often reply with "Re: NEW PO..." but the body is about something completely different like a PI, artwork, or shipping docs.
+
+EMAILS:
+${emailsToDetect.map((e, i) => `
+EMAIL #${i + 1} (ID: "${e.id}"):
+From: ${e.from_name}
+Subject: ${e.subject}
+Has Attachment: ${e.has_attachment}
+Body (first 1500 chars): ${(e.body_text || '').substring(0, 1500)}
+`).join('\n')}
+
+Return VALID JSON only, no markdown. One result per email:
+[{ "id": "EMAIL_ID", "stage": 2, "reason": "brief reason" }]`
+
+        try {
+          const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-3-20240307',
+              max_tokens: 1000,
+              messages: [{ role: 'user', content: stagePrompt }],
+            }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const text = data.content?.[0]?.text || '[]'
+            const jsonMatch = text.match(/\[[\s\S]*\]/)
+            const results = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+            for (const r of results) {
+              if (r.id && r.stage) stageMap.set(r.id, r.stage)
+            }
+            console.log(`[AI STAGE] Detected stages for ${stageMap.size}/${emailsToDetect.length} emails`)
+          }
+        } catch (err) {
+          console.error('[AI STAGE] Error:', err)
+        }
+        return stageMap
+      }
+
       // Helper: insert order_history entry only if a duplicate doesn't already exist.
       // Checks for matching order_id + subject + timestamp to prevent the same email
       // being logged multiple times across sync runs.
@@ -1503,18 +1557,19 @@ If no purchase orders found, return: []`
           .maybeSingle()
 
         if (threadSibling?.matched_order_id) {
-          const detectedStage = detectStageFromSubject(email.subject, email.body_text) || threadSibling.detected_stage
+          // Stage will be detected by AI later — use keyword as temporary placeholder
+          const keywordStage = detectStageFromSubject(email.subject, email.body_text) || threadSibling.detected_stage
           await supabase
             .from('synced_emails')
             .update({
               matched_order_id: threadSibling.matched_order_id,
-              detected_stage: detectedStage,
+              detected_stage: keywordStage,
               ai_summary: `Auto-matched by email thread (same conversation as a matched email)`,
             })
             .eq('id', email.id)
 
           threadMatchCount++
-          threadMatched.push({ email, orderId: threadSibling.matched_order_id, stage: detectedStage })
+          threadMatched.push({ email, orderId: threadSibling.matched_order_id, stage: keywordStage })
         } else {
           afterThreadMatch.push(email)
         }
@@ -1524,36 +1579,7 @@ If no purchase orders found, return: []`
         console.log(`[THREAD] Auto-matched ${threadMatchCount} emails by conversation thread`)
       }
 
-      // Process thread-matched emails (stage advancement + history)
-      for (const { email, orderId, stage } of threadMatched) {
-        const order = ordersList.find((o: any) => o.id === orderId)
-        if (order && stage && stage > order.currentStage) {
-          const skipped: number[] = []
-          for (let s = order.currentStage + 1; s < stage; s++) {
-            if (!order.skippedStages.includes(s)) skipped.push(s)
-          }
-          await supabase
-            .from('orders')
-            .update({ current_stage: stage, skipped_stages: [...order.skippedStages, ...skipped] })
-            .eq('order_id', orderId)
-            .eq('organization_id', organization_id)
-          order.currentStage = stage
-          order.skippedStages = [...order.skippedStages, ...skipped]
-        }
-
-        // Add to order history
-        await insertHistoryIfNew({
-          order_id: order?.uuid,
-          organization_id,
-          stage: stage || order?.currentStage || 1,
-          timestamp: email.date ? new Date(email.date).toISOString() : new Date().toISOString(),
-          from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
-          subject: email.subject,
-          body: (email.body_text || '').substring(0, 2000),
-          has_attachment: email.has_attachment || false,
-          created_at: new Date().toISOString(),
-        })
-      }
+      // NOTE: Thread-matched email processing is deferred until after AI stage detection (below regex matching)
 
       // Continue with remaining unmatched emails (thread matching didn't catch them)
       const unmatchedAfterThread = afterThreadMatch
@@ -1648,10 +1674,18 @@ If no purchase orders found, return: []`
         }
       }
 
+      // Use AI to detect stages for regex-matched and thread-matched emails (much more accurate than keywords)
+      const allNonAIMatched = [
+        ...regexMatched.map(r => r.email),
+        ...threadMatched.map(t => t.email),
+      ]
+      const aiStageMap = await detectStagesWithAI(allNonAIMatched)
+
       // Process regex-matched emails from Pass 2 (current batch)
       for (const { email, order } of regexMatched) {
         const summary = `Auto-matched by PO number in email subject/body`
-        const detectedStage = detectStageFromSubject(email.subject, email.body_text)
+        // Use AI-detected stage, fall back to keyword detection
+        const detectedStage = aiStageMap.get(email.id) || detectStageFromSubject(email.subject, email.body_text)
 
         await supabase
           .from('synced_emails')
@@ -1689,6 +1723,40 @@ If no purchase orders found, return: []`
           body: (email.body_text || '').substring(0, 5000),
           timestamp: email.date || new Date().toISOString(),
           has_attachment: email.has_attachment || false,
+        })
+      }
+
+      // Process thread-matched emails (now with AI-detected stages)
+      for (const { email, orderId, stage: keywordStage } of threadMatched) {
+        const stage = aiStageMap.get(email.id) || keywordStage
+        // Update stored stage if AI detected something different from keyword
+        if (aiStageMap.has(email.id) && aiStageMap.get(email.id) !== keywordStage) {
+          await supabase.from('synced_emails').update({ detected_stage: stage }).eq('id', email.id)
+        }
+        const order = ordersList.find((o: any) => o.id === orderId)
+        if (order && stage && stage > order.currentStage) {
+          const skipped: number[] = []
+          for (let s = order.currentStage + 1; s < stage; s++) {
+            if (!order.skippedStages.includes(s)) skipped.push(s)
+          }
+          await supabase
+            .from('orders')
+            .update({ current_stage: stage, skipped_stages: [...order.skippedStages, ...skipped] })
+            .eq('order_id', orderId)
+            .eq('organization_id', organization_id)
+          order.currentStage = stage
+          order.skippedStages = [...order.skippedStages, ...skipped]
+        }
+        await insertHistoryIfNew({
+          order_id: order?.uuid,
+          organization_id,
+          stage: stage || order?.currentStage || 1,
+          timestamp: email.date ? new Date(email.date).toISOString() : new Date().toISOString(),
+          from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
+          subject: email.subject,
+          body: (email.body_text || '').substring(0, 2000),
+          has_attachment: email.has_attachment || false,
+          created_at: new Date().toISOString(),
         })
       }
 
