@@ -1381,16 +1381,32 @@ If no purchase orders found, return: []`
       }
 
       // Helper: detect order stage from email subject keywords
+      // Ordered from most specific to most generic to avoid false matches
       const detectStageFromSubject = (subject: string | null): number | null => {
         const s = (subject || '').toLowerCase()
-        if (s.includes('artwork') || s.includes('label')) return 3
-        if (s.includes('proforma') || s.includes('pi ') || s.includes('invoice')) return 2
+        // Stage 7 — check BEFORE stage 6 (otherwise "final document" matches "document" at stage 6)
+        if (s.includes('final doc') || s.includes('original document') || s.includes('telex')) return 7
+        // Stage 6 — draft documents
+        if (s.includes('draft') || s.includes('bl ') || s.includes('bill of lading')) return 6
+        // Stage 8 — courier/tracking
+        if (s.includes('dhl') || s.includes('courier') || s.includes('tracking')) return 8
+        // Specific invoice types that are NOT proforma
+        if (s.includes('commercial invoice')) return 6
+        if (s.includes('freight invoice') || s.includes('shipping invoice')) return 5
+        // Stage 2 — proforma invoice (without bare "invoice" which is too broad)
+        if (s.includes('proforma') || s.includes('pi ') || s.includes('pi-')) return 2
+        // Stage 1 — purchase order
         if (s.includes('purchase order') || s.includes('new po') || s.includes('new purchase')) return 1
+        // Stage 3 — artwork/labels
+        if (s.includes('artwork') || s.includes('label')) return 3
+        // Stage 4 — quality
         if (s.includes('quality') || s.includes('inspection')) return 4
+        // Stage 5 — shipping schedule
         if (s.includes('schedule') || s.includes('vessel') || s.includes('shipment')) return 5
-        if (s.includes('draft') || s.includes('document') || s.includes('bl ') || s.includes('bill of lading')) return 6
-        if (s.includes('final doc') || s.includes('telex')) return 7
-        if (s.includes('dhl') || s.includes('courier') || s.includes('shipped')) return 8
+        // Stage 6 — generic "document" (last resort, after all specific doc types checked)
+        if (s.includes('document')) return 6
+        // Bare "invoice" as last resort — most likely proforma in this business
+        if (s.includes('invoice')) return 2
         return null
       }
 
@@ -1863,18 +1879,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
           let company = 'Pescados E. Guillem S.L.'
           if (toEmail.includes('eguillem')) company = 'Pescados E. Guillem S.L.'
 
-          // Detect highest stage from all emails for this PO
+          // Detect highest stage from all emails — use the shared detectStageFromSubject helper
           let highestStage = 1
           for (const e of emails) {
-            const subj = (e.subject || '').toUpperCase()
-            if (subj.includes('ARTWORK APPROVAL') || subj.includes('LABELS APPROVAL')) highestStage = Math.max(highestStage, 3)
-            else if (subj.includes('PROFORMA INVOICE')) highestStage = Math.max(highestStage, 2)
-            else if (subj.includes('PURCHASE ORDER') || subj.includes('NEW PO')) highestStage = Math.max(highestStage, 1)
-            else if (subj.includes('QUALITY CHECK') || subj.includes('INSPECTION')) highestStage = Math.max(highestStage, 4)
-            else if (subj.includes('SCHEDULE') || subj.includes('VESSEL')) highestStage = Math.max(highestStage, 5)
-            else if (subj.includes('DRAFT DOCUMENT') || subj.includes('DRAFT BL') || subj.includes('HC DRAFT')) highestStage = Math.max(highestStage, 6)
-            else if (subj.includes('FINAL DOCUMENT') || subj.includes('ORIGINAL DOCUMENT')) highestStage = Math.max(highestStage, 7)
-            else if (subj.includes('DHL') || subj.includes('TRACKING')) highestStage = Math.max(highestStage, 8)
+            const detected = detectStageFromSubject(e.subject)
+            if (detected) highestStage = Math.max(highestStage, detected)
           }
 
           // Calculate skipped stages
@@ -1942,18 +1951,9 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               body: `Order ${fullPO} (${supplier}) auto-created during email sync at stage ${highestStage}`,
             })
 
-            // Match all emails for this PO to the new order (include detected_stage)
+            // Match all emails for this PO to the new order — use shared detectStageFromSubject
             for (const e of emails) {
-              const subj = (e.subject || '').toUpperCase()
-              let emailStage: number | null = null
-              if (subj.includes('PURCHASE ORDER') || subj.includes('NEW PO')) emailStage = 1
-              else if (subj.includes('PROFORMA INVOICE')) emailStage = 2
-              else if (subj.includes('ARTWORK APPROVAL') || subj.includes('LABELS APPROVAL')) emailStage = 3
-              else if (subj.includes('QUALITY CHECK') || subj.includes('INSPECTION')) emailStage = 4
-              else if (subj.includes('SCHEDULE') || subj.includes('VESSEL')) emailStage = 5
-              else if (subj.includes('DRAFT DOCUMENT') || subj.includes('DRAFT BL') || subj.includes('HC DRAFT')) emailStage = 6
-              else if (subj.includes('FINAL DOCUMENT') || subj.includes('ORIGINAL DOCUMENT')) emailStage = 7
-              else if (subj.includes('DHL') || subj.includes('TRACKING')) emailStage = 8
+              const emailStage = detectStageFromSubject(e.subject)
               const updateData: any = { matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` }
               if (emailStage) updateData.detected_stage = emailStage
               await supabase
