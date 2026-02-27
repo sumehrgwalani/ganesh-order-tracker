@@ -1167,26 +1167,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Fetch user corrections for AI learning
       let correctionExamples = ''
+      const correctionBoosts = new Map<string, string>() // sender email → correct order_id
       try {
         const { data: corrections } = await supabase
           .from('synced_emails')
-          .select('subject, from_email, user_linked_order_id')
+          .select('subject, from_email, user_linked_order_id, ai_original_order_id, matched_order_id')
           .eq('organization_id', organization_id)
           .not('user_linked_at', 'is', null)
           .order('user_linked_at', { ascending: false })
-          .limit(10)
+          .limit(15)
 
         if (corrections && corrections.length > 0) {
-          const linkedOrderIds = corrections.map((c: any) => c.user_linked_order_id).filter(Boolean)
-          const { data: linkedOrders } = await supabase.from('orders').select('id, order_id, company, product').in('id', linkedOrderIds)
+          // Collect all order IDs we need to look up (both correct and wrong ones)
+          const allOrderIds = corrections.flatMap((c: any) => [c.user_linked_order_id, c.ai_original_order_id, c.matched_order_id]).filter(Boolean)
+          const uniqueIds = [...new Set(allOrderIds)]
+          const { data: linkedOrders } = await supabase.from('orders').select('id, order_id, company, supplier, product').in('id', uniqueIds)
           const orderMap: Record<string, any> = {}
           for (const o of linkedOrders || []) orderMap[o.id] = o
+
           const examples = corrections.map((c: any) => {
-            const order = orderMap[c.user_linked_order_id]
-            const orderLabel = order ? `${order.order_id} (${order.company} - ${order.product})` : c.user_linked_order_id
-            return `- Email from "${c.from_email}" with subject "${c.subject}" was manually linked to order ${orderLabel}`
+            const correctOrder = orderMap[c.user_linked_order_id]
+            const correctLabel = correctOrder ? `${correctOrder.order_id} (${correctOrder.supplier} - ${correctOrder.product})` : c.user_linked_order_id
+            const wrongId = c.ai_original_order_id || c.matched_order_id
+            const wrongOrder = wrongId ? orderMap[wrongId] : null
+            if (wrongOrder) {
+              return `- Email from "${c.from_email}" subject "${c.subject}" → AI wrongly matched to ${wrongOrder.order_id} (${wrongOrder.supplier}), user corrected to ${correctLabel}`
+            }
+            return `- Email from "${c.from_email}" subject "${c.subject}" → user linked to ${correctLabel}`
           }).join('\n')
-          correctionExamples = `\nRECENT USER CORRECTIONS (learn from these):\n${examples}\n`
+          correctionExamples = `\nRECENT USER CORRECTIONS — LEARN FROM THESE MISTAKES:\nWhen you see similar emails from the same sender, match them to the CORRECT order the user chose, NOT the wrong one.\n${examples}\n`
+
+          // Also build sender→order correction map for pre-filter boosting
+          for (const c of corrections) {
+            if (c.from_email && c.user_linked_order_id) {
+              const correctOrder = orderMap[c.user_linked_order_id]
+              if (correctOrder) {
+                correctionBoosts.set(c.from_email.toLowerCase(), correctOrder.id)
+              }
+            }
+          }
         }
       } catch (err) { console.error('Failed to fetch corrections:', err) }
 
@@ -1717,6 +1736,15 @@ If no purchase orders found, return: []`
         for (const addr of emailAddresses) {
           const company = emailToCompany.get(addr.toLowerCase())
           if (company) contactCompanies.add(company)
+        }
+
+        // Boost: if user has previously corrected emails from this sender, include that order
+        for (const addr of emailAddresses) {
+          const boostedOrderId = correctionBoosts.get(addr.toLowerCase())
+          if (boostedOrderId) {
+            candidateIds.add(boostedOrderId)
+            console.log(`[CORRECTION BOOST] Sender ${addr} → boosting order ${boostedOrderId} based on past user correction`)
+          }
         }
 
         for (const order of ordersList) {

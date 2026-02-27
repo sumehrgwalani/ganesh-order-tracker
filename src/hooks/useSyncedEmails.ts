@@ -65,16 +65,21 @@ export function useSyncedEmails(orgId: string | null) {
     emailId: string,
     orderId: string,
     orderPoNumber: string,
-    note?: string
+    note?: string,
+    originalAiMatch?: string | null
   ) => {
-    // 1. Update synced_emails with user's link
+    // 1. Update synced_emails with user's link (and save original AI match if this is a correction)
+    const updateData: Record<string, unknown> = {
+      user_linked_order_id: orderId,
+      user_link_note: note || null,
+      user_linked_at: new Date().toISOString(),
+    };
+    if (originalAiMatch) {
+      updateData.ai_original_order_id = originalAiMatch;
+    }
     const { error: updateError } = await supabase
       .from('synced_emails')
-      .update({
-        user_linked_order_id: orderId,
-        user_link_note: note || null,
-        user_linked_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', emailId);
 
     if (updateError) throw updateError;

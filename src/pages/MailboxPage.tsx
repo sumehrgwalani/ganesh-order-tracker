@@ -52,11 +52,12 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const handleLink = async (orderId: string, orderPoNumber: string, note: string) => {
     if (!linkingEmail) return;
     try {
+      const originalAiMatch = linkingEmail.matched_order_id || null;
       // If reassigning, clear old AI match first
       if (linkingEmail.matched_order_id) {
         await unlinkEmail(linkingEmail.id);
       }
-      await linkEmailToOrder(linkingEmail.id, orderId, orderPoNumber, note);
+      await linkEmailToOrder(linkingEmail.id, orderId, orderPoNumber, note, originalAiMatch);
       showToast('Email linked to order', 'success');
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Failed to link email', 'error');
