@@ -564,15 +564,14 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                       handleAttachmentClick(att.name, stage);
                     }
                   }}
-                  className={`flex-1 flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 transition-colors text-left group cursor-pointer ${bgColor}`}
+                  className={`flex-1 flex items-center gap-2 text-sm rounded-lg px-3 py-2 transition-colors text-left group cursor-pointer min-w-0 ${bgColor}`}
                 >
-                  <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={16} className={isPdf ? 'text-red-500' : 'text-gray-400'} />
-                  <span className="font-medium text-gray-700 flex-1 group-hover:text-blue-700 transition-colors">{att.name}</span>
-                  {stage === 3 && att.isManualUpload && <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">Uploaded</span>}
-                  {stage === 3 && !att.isManualUpload && <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Email</span>}
-                  {isCurrentRef && <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">Reference</span>}
-                  {isPdf && !isCurrentRef && <span className="text-xs font-medium text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to preview</span>}
-                  <span className="text-xs text-gray-400">{formatDate(att.date)}</span>
+                  <Icon name={isPdf ? 'FileText' : 'Paperclip'} size={14} className={`shrink-0 ${isPdf ? 'text-red-500' : 'text-gray-400'}`} />
+                  <span className="font-medium text-gray-700 truncate min-w-0 group-hover:text-blue-700 transition-colors" title={att.name}>{att.name}</span>
+                  {stage === 3 && att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full leading-none">Uploaded</span>}
+                  {stage === 3 && !att.isManualUpload && <span className="shrink-0 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full leading-none">Email</span>}
+                  {isCurrentRef && <span className="shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full leading-none">Ref</span>}
+                  <span className="shrink-0 text-[10px] text-gray-400">{formatDate(att.date)}</span>
                 </button>
                 {/* Compare button: for uploaded corrections, compare against first email artwork */}
                 {stage === 3 && att.isManualUpload && att.pdfUrl && emailArtworkUrls.length > 0 && (
@@ -585,27 +584,27 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
                       referenceLabel: `Original — ${emailArtworkUrls[0].name}`,
                     })}
                     title="Compare with original artwork"
-                    className="p-2 text-green-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    className="shrink-0 p-1.5 text-green-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                   >
-                    <Icon name="GitCompare" size={14} />
+                    <Icon name="GitCompare" size={13} />
                   </button>
                 )}
                 {stage === 3 && att.pdfUrl && !isCurrentRef && onUpdateOrder && (
                   <button
                     onClick={() => handleSetAsReference(att.pdfUrl!)}
                     title="Set as reference for comparison"
-                    className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    className="shrink-0 p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                   >
-                    <Icon name="Bookmark" size={14} />
+                    <Icon name="Bookmark" size={13} />
                   </button>
                 )}
                 {onUpdateOrder && (
                   <button
                     onClick={() => setDeleteConfirm({ historyId: att.historyId, attName: att.name, stage, isDataSource })}
                     title="Delete attachment"
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
-                    <Icon name="Trash2" size={14} />
+                    <Icon name="Trash2" size={13} />
                   </button>
                 )}
               </div>
