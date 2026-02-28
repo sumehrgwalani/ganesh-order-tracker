@@ -17,6 +17,7 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'po-asc' | 'po-desc' | 'stage-asc' | 'stage-desc' | 'date-desc' | 'date-asc'>('po-desc');
   const activeOrders = orders.filter(o => o.currentStage < 9);
 
   // Get unique companies from active orders
@@ -31,6 +32,24 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
     const matchesCompany = filterCompany === 'all' || order.company === filterCompany;
     return matchesSearch && matchesStage && matchesCompany;
   });
+
+  // Extract numeric PO number for sorting (e.g. "3027" from "GI/PO/25-26/3027")
+  const getPoNum = (id: string) => {
+    const m = id.match(/(\d{4,})/)
+    return m ? parseInt(m[1]) : 0
+  }
+
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
+    switch (sortBy) {
+      case 'po-asc': return getPoNum(a.id) - getPoNum(b.id)
+      case 'po-desc': return getPoNum(b.id) - getPoNum(a.id)
+      case 'stage-asc': return a.currentStage - b.currentStage
+      case 'stage-desc': return b.currentStage - a.currentStage
+      case 'date-asc': return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
+      case 'date-desc': return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+      default: return 0
+    }
+  })
 
   const hasActiveFilters = filterStage !== null || filterCompany !== 'all' || searchTerm;
 
@@ -47,17 +66,31 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
         }
       />
 
-      {/* Search Bar */}
+      {/* Search Bar + Sort */}
       <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-        <div className="relative">
-          <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by PO number, company, or product..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search by PO number, company, or product..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="po-desc">PO # (Newest)</option>
+            <option value="po-asc">PO # (Oldest)</option>
+            <option value="stage-asc">Stage (Earliest)</option>
+            <option value="stage-desc">Stage (Latest)</option>
+            <option value="date-desc">Date (Newest)</option>
+            <option value="date-asc">Date (Oldest)</option>
+          </select>
         </div>
       </div>
 
@@ -121,8 +154,8 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
       {/* Orders List */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="space-y-0">
-          {filteredOrders.length > 0 ? (
-            filteredOrders.map(order => (
+          {sortedOrders.length > 0 ? (
+            sortedOrders.map(order => (
               <OrderRow
                 key={order.id}
                 order={order}
