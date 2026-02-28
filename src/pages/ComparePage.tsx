@@ -32,7 +32,7 @@ export default function ComparePage() {
             <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
               <Icon name="Image" size={18} className="text-purple-500 shrink-0" />
               <span className="text-sm text-purple-700 truncate flex-1">{refFile.name}</span>
-              <button onClick={() => { setRefFile(null); setComparing(false); }} className="text-purple-400 hover:text-purple-600"><Icon name="X" size={16} /></button>
+              <button onClick={() => { setRefFile(null); setComparing(false); if (refInputRef.current) refInputRef.current.value = ''; }} className="text-purple-400 hover:text-purple-600"><Icon name="X" size={16} /></button>
             </div>
           ) : (
             <button onClick={() => refInputRef.current?.click()} className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors text-center">
@@ -51,7 +51,7 @@ export default function ComparePage() {
             <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <Icon name="Image" size={18} className="text-blue-500 shrink-0" />
               <span className="text-sm text-blue-700 truncate flex-1">{newFile.name}</span>
-              <button onClick={() => { setNewFile(null); setComparing(false); }} className="text-blue-400 hover:text-blue-600"><Icon name="X" size={16} /></button>
+              <button onClick={() => { setNewFile(null); setComparing(false); if (newInputRef.current) newInputRef.current.value = ''; }} className="text-blue-400 hover:text-blue-600"><Icon name="X" size={16} /></button>
             </div>
           ) : (
             <button onClick={() => newInputRef.current?.click()} className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors text-center">
@@ -73,7 +73,7 @@ export default function ComparePage() {
             Compare
           </button>
           {(refFile || newFile) && (
-            <button onClick={() => { setRefFile(null); setNewFile(null); setComparing(false); }} className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700">
+            <button onClick={() => { setRefFile(null); setNewFile(null); setComparing(false); if (refInputRef.current) refInputRef.current.value = ''; if (newInputRef.current) newInputRef.current.value = ''; }} className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700">
               Clear All
             </button>
           )}
