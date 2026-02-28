@@ -572,6 +572,7 @@ async function classifyDocumentWithVision(
 - "commission" if it is a Commission Invoice (invoice for brokerage/commission fees, mentions "commission", IGST on commission, or agent fees — NOT a product invoice)
 - "artwork" if it is product packaging artwork, label designs, branding materials, box designs
 - "shipping" if it is a shipping document, bill of lading, packing list
+- "finaldoc" if it is a final/original trade document: code list, boxes declaration, packing list with container/seal numbers, health certificate for export, or bill of lading copy
 - "certificate" if it is a certificate of analysis, quality certificate, health certificate
 - "other" if none of the above
 Reply with ONLY the single word classification.` }
@@ -586,7 +587,7 @@ Reply with ONLY the single word classification.` }
     }
     const data = await res.json()
     const raw = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '')
-    const valid = ['po', 'pi', 'commission', 'artwork', 'shipping', 'certificate', 'other']
+    const valid = ['po', 'pi', 'commission', 'artwork', 'shipping', 'finaldoc', 'certificate', 'other']
     const classification = valid.includes(raw) ? raw : 'other'
     console.log(`[CLASSIFY] Document classified as: ${classification}`)
     return { classification, apiFailed: false }
@@ -624,7 +625,8 @@ function classificationToStage(classification: string): number | null {
     case 'artwork': return 3
     case 'certificate': return 5
     case 'shipping': return 6
-    default: return null  // 'other' — don't store
+    case 'finaldoc': return 8
+    default: return null  // 'other', 'commission' — don't store
   }
 }
 
@@ -715,7 +717,7 @@ async function processEmailAttachments(
         // If AI classification failed (returned 'other' due to API error/credits),
         // fall back to the email's detected_stage so we still store the file
         if (classification === 'other' && result.apiFailed && email.detected_stage) {
-          const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'artwork', 5: 'certificate', 6: 'shipping' }
+          const stageToClass: Record<number, string> = { 1: 'po', 2: 'pi', 3: 'artwork', 4: 'artwork', 5: 'certificate', 6: 'shipping', 7: 'finaldoc', 8: 'finaldoc' }
           const fallback = stageToClass[email.detected_stage]
           if (fallback) {
             console.log(`[PROCESS] AI classification failed for ${part.filename}, using detected_stage ${email.detected_stage} → ${fallback}`)
@@ -728,6 +730,15 @@ async function processEmailAttachments(
         if ((fnLower.includes('commission') || fnLower.includes('brokerage')) && classification !== 'commission') {
           console.log(`[PROCESS] Overriding "${classification}" → "commission" for ${part.filename} (filename match)`)
           classification = 'commission'
+        }
+
+        // If email is detected as stage 8 (Final Documents) from subject keywords like
+        // "ORIGINAL DOCUMENTS COPIES", force all attachments to finaldoc regardless of AI classification
+        if (email.detected_stage === 8 && classification !== 'commission') {
+          if (classification !== 'finaldoc') {
+            console.log(`[PROCESS] Overriding "${classification}" → "finaldoc" for ${part.filename} (email is stage 8 Final Documents)`)
+            classification = 'finaldoc'
+          }
         }
 
         const stage = classificationToStage(classification)
@@ -2976,7 +2987,8 @@ If truly unknown, return "Unknown" for that field.` }],
               // Detect stage from subject
               const subjectUpper = subject.toUpperCase()
               let detectedStage = 0
-              if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) detectedStage = 1
+              if (subjectUpper.includes('ORIGINAL DOCUMENT') || subjectUpper.includes('FINAL DOC')) detectedStage = 8
+              else if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) detectedStage = 1
               else if (subjectUpper.includes('PROFORMA') || subjectUpper.includes('NEW PROFORMA')) detectedStage = 2
               else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL') || subjectUpper.includes('APPROVAL')) detectedStage = 3
 
