@@ -113,11 +113,18 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
     );
   }
 
-  const currentStageName = ORDER_STAGES[order.currentStage - 1]?.name || 'Unknown';
-  const isCompleted = order.currentStage === 9;
-
   // Check which stages have history entries
   const hasStageData = (stage: number) => order.history.some(h => h.stage === stage);
+
+  // Compute effective stage: highest stage that has data, or stored currentStage — whichever is higher
+  const highestDataStage = [1,2,3,4,5,6,7,8,9].reduce((max, s) => hasStageData(s) ? s : max, 0);
+  const hasDhl = !!order.awbNumber;
+  const effectiveStage = Math.max(order.currentStage, highestDataStage, hasDhl ? 9 : 0);
+  const currentStageName = ORDER_STAGES[effectiveStage - 1]?.name || 'Unknown';
+  const isCompleted = effectiveStage === 9;
+
+  // Skipped stages: between 1 and effectiveStage with no data
+  const skippedStages = [1,2,3,4,5,6,7,8,9].filter(s => s < effectiveStage && !hasStageData(s) && s !== effectiveStage);
 
   // Document sections mapped to stages
   const docSections = [
@@ -1217,7 +1224,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         {/* Progress Bar */}
         <div className="mt-6 pt-6 border-t border-gray-100">
           <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Order Progress</p>
-          <OrderProgressBar currentStage={order.currentStage} />
+          <OrderProgressBar currentStage={effectiveStage} skippedStages={skippedStages} />
         </div>
 
         {/* Additional Info */}
@@ -1260,38 +1267,40 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Documents</h2>
         <div className="grid grid-cols-3 gap-4">
           {docSections.map(section => {
-            const hasDocuments = section.available || order.currentStage >= section.stage;
-            const isPast = order.currentStage > section.stage;
-            const isCurrent = order.currentStage === section.stage;
+            const hasDocuments = section.available || effectiveStage >= section.stage;
+            const isPast = effectiveStage > section.stage && hasDocuments;
+            const isCurrent = effectiveStage === section.stage;
+            const isSkipped = !section.available && section.stage < effectiveStage;
+            // Skipped stages get red styling
             const bgColors: Record<string, string> = {
-              blue: hasDocuments ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200',
-              indigo: hasDocuments ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 border-gray-200',
-              purple: hasDocuments ? 'bg-purple-50 border-purple-200 hover:bg-purple-100' : 'bg-gray-50 border-gray-200',
-              pink: hasDocuments ? 'bg-pink-50 border-pink-200 hover:bg-pink-100' : 'bg-gray-50 border-gray-200',
-              teal: hasDocuments ? 'bg-teal-50 border-teal-200 hover:bg-teal-100' : 'bg-gray-50 border-gray-200',
-              amber: hasDocuments ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : 'bg-gray-50 border-gray-200',
-              green: hasDocuments ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200',
-              emerald: hasDocuments ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' : 'bg-gray-50 border-gray-200',
+              blue: hasDocuments ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              indigo: hasDocuments ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              purple: hasDocuments ? 'bg-purple-50 border-purple-200 hover:bg-purple-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              pink: hasDocuments ? 'bg-pink-50 border-pink-200 hover:bg-pink-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              teal: hasDocuments ? 'bg-teal-50 border-teal-200 hover:bg-teal-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              amber: hasDocuments ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              green: hasDocuments ? 'bg-green-50 border-green-200 hover:bg-green-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
+              emerald: hasDocuments ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' : isSkipped ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200',
             };
             const textColors: Record<string, string> = {
-              blue: hasDocuments ? 'text-blue-700' : 'text-gray-400',
-              indigo: hasDocuments ? 'text-indigo-700' : 'text-gray-400',
-              purple: hasDocuments ? 'text-purple-700' : 'text-gray-400',
-              pink: hasDocuments ? 'text-pink-700' : 'text-gray-400',
-              teal: hasDocuments ? 'text-teal-700' : 'text-gray-400',
-              amber: hasDocuments ? 'text-amber-700' : 'text-gray-400',
-              green: hasDocuments ? 'text-green-700' : 'text-gray-400',
-              emerald: hasDocuments ? 'text-emerald-700' : 'text-gray-400',
+              blue: hasDocuments ? 'text-blue-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              indigo: hasDocuments ? 'text-indigo-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              purple: hasDocuments ? 'text-purple-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              pink: hasDocuments ? 'text-pink-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              teal: hasDocuments ? 'text-teal-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              amber: hasDocuments ? 'text-amber-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              green: hasDocuments ? 'text-green-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
+              emerald: hasDocuments ? 'text-emerald-700' : isSkipped ? 'text-red-600' : 'text-gray-400',
             };
             const iconColors: Record<string, string> = {
-              blue: hasDocuments ? 'text-blue-500' : 'text-gray-300',
-              indigo: hasDocuments ? 'text-indigo-500' : 'text-gray-300',
-              purple: hasDocuments ? 'text-purple-500' : 'text-gray-300',
-              pink: hasDocuments ? 'text-pink-500' : 'text-gray-300',
-              teal: hasDocuments ? 'text-teal-500' : 'text-gray-300',
-              amber: hasDocuments ? 'text-amber-500' : 'text-gray-300',
-              green: hasDocuments ? 'text-green-500' : 'text-gray-300',
-              emerald: hasDocuments ? 'text-emerald-500' : 'text-gray-300',
+              blue: hasDocuments ? 'text-blue-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              indigo: hasDocuments ? 'text-indigo-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              purple: hasDocuments ? 'text-purple-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              pink: hasDocuments ? 'text-pink-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              teal: hasDocuments ? 'text-teal-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              amber: hasDocuments ? 'text-amber-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              green: hasDocuments ? 'text-green-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
+              emerald: hasDocuments ? 'text-emerald-500' : isSkipped ? 'text-red-400' : 'text-gray-300',
             };
 
             return (
@@ -1306,8 +1315,8 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
                       <Icon name={section.icon as any} size={22} className={iconColors[section.color]} />
                       <div>
                         <p className={`font-medium text-sm ${textColors[section.color]}`}>{section.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {isPast ? 'Completed' : isCurrent ? 'Current stage' : hasDocuments ? 'Available' : 'Upcoming'}
+                        <p className={`text-xs mt-0.5 ${isSkipped ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
+                          {isSkipped ? 'Missing' : isPast ? 'Completed' : isCurrent ? 'Current stage' : hasDocuments ? 'Available' : 'Upcoming'}
                         </p>
                       </div>
                     </div>

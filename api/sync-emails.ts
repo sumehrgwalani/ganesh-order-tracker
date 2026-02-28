@@ -3128,6 +3128,25 @@ If truly unknown, return "Unknown" for that field.` }],
           }
           console.log(`[RECOVER] Synced ${syncedCount} new emails for ${order.order_id} (query: "${usedQuery}")`)
 
+          // Advance current_stage to the highest detected stage across all emails for this order
+          const { data: allOrderEmails } = await supabase
+            .from('synced_emails')
+            .select('detected_stage')
+            .eq('organization_id', organization_id)
+            .eq('matched_order_id', order.order_id)
+          const highestDetected = (allOrderEmails || []).reduce((max: number, e: any) => Math.max(max, e.detected_stage || 0), 0)
+          if (highestDetected > (order.current_stage || 0)) {
+            const newSkipped: number[] = [...(order.skipped_stages || [])]
+            for (let s = (order.current_stage || 1) + 1; s < highestDetected; s++) {
+              if (!newSkipped.includes(s)) newSkipped.push(s)
+            }
+            await supabase.from('orders')
+              .update({ current_stage: highestDetected, skipped_stages: newSkipped })
+              .eq('order_id', order.order_id)
+              .eq('organization_id', organization_id)
+            console.log(`[RECOVER] Advanced ${order.order_id} from stage ${order.current_stage} to ${highestDetected}`)
+          }
+
           // Now find all emails for this order that might have attachments
           // Note: has_attachment might be wrong for older emails, so also include
           // emails with Final Doc subjects (they almost always have attachments)
