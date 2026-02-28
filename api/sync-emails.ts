@@ -2161,7 +2161,8 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
       for (const email of aiEmails) {
         const ai = aiMap.get(email.gmail_id) || {}
         let matchedOrderId = ai.matched_order_id || null
-        const detectedStage = ai.detected_stage || null
+        // Use AI stage, but fall back to subject-based detection if AI returned null
+        const detectedStage = ai.detected_stage || detectStageFromSubject(email.subject, email.body_text) || null
         const summary = ai.summary || null
         const aiProduct = ai.product || null
         const confidence = (ai.confidence || 'medium').toLowerCase()
@@ -2240,6 +2241,10 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               timestamp: email.date || new Date().toISOString(),
               has_attachment: email.has_attachment || false,
             })
+            // Extract DHL number even for medium confidence
+            if (detectedStage === 9) {
+              await saveDhlNumber(supabase, matchedOrderId, organization_id, email.subject, email.body_text)
+            }
             console.log(`[AI MATCH] Medium confidence: linked "${email.subject}" → ${matchedOrderId} (no stage advance)`)
           }
         }
