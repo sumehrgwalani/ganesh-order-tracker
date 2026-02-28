@@ -622,11 +622,15 @@ function buildHighlightOverlay(
   const d2 = ctx2.getImageData(0, 0, W, H).data;
   const t = threshold * 255;
 
-  const blockSize = 8;
+  const blockSize = 12; // Larger blocks = less noise from anti-aliasing
   const cols = Math.ceil(W / blockSize);
   const rows = Math.ceil(H / blockSize);
   const diffGrid: boolean[][] = [];
   let totalDiffPixels = 0;
+
+  // Higher threshold = need more different pixels in a block to flag it
+  // Scale block threshold with sensitivity: low sensitivity needs 30%+ of block to differ
+  const blockThreshold = 0.25;
 
   for (let by = 0; by < rows; by++) {
     diffGrid[by] = [];
@@ -649,7 +653,7 @@ function buildHighlightOverlay(
           if (maxDiff > t) blockDiff++;
         }
       }
-      const isDiff = blockDiff > blockPixels * 0.15;
+      const isDiff = blockDiff > blockPixels * blockThreshold;
       diffGrid[by][bx] = isDiff;
       if (isDiff) totalDiffPixels += blockDiff;
     }
@@ -704,6 +708,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
   const [diffPercent, setDiffPercent] = useState<number | null>(null);
   const [showHighlights, setShowHighlights] = useState(true);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [sensitivity, setSensitivity] = useState(0.2); // 0.05 (very sensitive) to 0.5 (only big changes)
 
   const [refDataUrl, setRefDataUrl] = useState<string | null>(null);
   const [newDataUrl, setNewDataUrl] = useState<string | null>(null);
@@ -749,7 +754,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     return () => { cancelled = true; };
   }, [referenceUrl, newUrl]);
 
-  // Build highlight overlay
+  // Build highlight overlay (reacts to sensitivity changes)
   useEffect(() => {
     if (!refDataUrl || !newDataUrl) return;
     const img1 = new Image();
@@ -759,7 +764,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       loaded++;
       if (loaded === 2) {
         try {
-          const result = buildHighlightOverlay(img1, img2, 0.1);
+          const result = buildHighlightOverlay(img1, img2, sensitivity);
           setOverlayUrl(result.overlayUrl);
           setDiffPercent(result.diffPercent);
         } catch { /* ignore */ }
@@ -769,7 +774,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     img2.onload = check;
     img1.src = refDataUrl;
     img2.src = newDataUrl;
-  }, [refDataUrl, newDataUrl]);
+  }, [refDataUrl, newDataUrl, sensitivity]);
 
   // Generate report
   const handleGenerateReport = useCallback(async () => {
@@ -797,11 +802,10 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
         loadImg(refData.dataUrl),
         loadImg(newData.dataUrl),
       ]);
-      const threshold = 0.1;
-      const { regions } = describeDiffRegions(img1, img2, threshold);
+      const { regions } = describeDiffRegions(img1, img2, sensitivity);
 
       // Build the highlight overlay and composite it onto the new artwork
-      const overlay = buildHighlightOverlay(img1, img2, threshold);
+      const overlay = buildHighlightOverlay(img1, img2, sensitivity);
       const compositeUrl = await buildCompositeImage(
         newData.dataUrl,
         overlay.overlayUrl,
@@ -814,7 +818,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       alert('Failed to generate report: ' + (err.message || 'Unknown error'));
     }
     setGeneratingReport(false);
-  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf]);
+  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf, sensitivity]);
 
   // Pan handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -945,6 +949,21 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
             <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: showHighlights ? 'rgba(255,220,0,0.6)' : '#ccc' }} />
             Highlights {showHighlights ? 'On' : 'Off'}
           </button>
+
+          {/* Sensitivity slider */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Sensitivity</span>
+            <input
+              type="range"
+              min="0.05"
+              max="0.5"
+              step="0.01"
+              value={sensitivity}
+              onChange={e => setSensitivity(parseFloat(e.target.value))}
+              className="w-24 accent-yellow-500"
+            />
+            <span className="text-xs text-gray-600 w-8">{Math.round((1 - (sensitivity - 0.05) / 0.45) * 100)}%</span>
+          </div>
 
           {/* Generate Report button (only for PDFs) */}
           {bothPdf && (
