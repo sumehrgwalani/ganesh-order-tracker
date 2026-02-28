@@ -2918,10 +2918,7 @@ If truly unknown, return "Unknown" for that field.` }],
           const poMatch = order.order_id.match(/(\d{4,})/)
           const poNum = poMatch ? poMatch[1] : ''
 
-          // Tiered Gmail search: most specific first, broadening if nothing found
-          // Tier 1: "PURCHASE ORDER" + PO number with attachments (the actual PO email)
-          // Tier 2: PO number with attachments (PI, artwork, etc.)
-          // Tier 3: PO number in any email (for email body extraction)
+          // Gmail search: collect results from ALL tiers to find PO emails, Final Docs, etc.
           const searchQueries = [
             `"purchase order" "${poNum}" has:attachment`,
             `"${poNum}" has:attachment`,
@@ -2929,20 +2926,21 @@ If truly unknown, return "Unknown" for that field.` }],
             poNum ? `"${poNum}"` : '',
           ].filter(Boolean)
 
-          let foundIds: string[] = []
-          let usedQuery = ''
+          const foundIdSet = new Set<string>()
+          const usedQueries: string[] = []
           for (const query of searchQueries) {
             const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
             const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${recAccessToken}` } })
             const searchData = await searchRes.json()
             const ids = (searchData.messages || []).map((m: any) => m.id)
             if (ids.length > 0) {
-              foundIds = ids
-              usedQuery = query
-              console.log(`[RECOVER] Gmail search hit for ${order.order_id}: "${query}" → ${ids.length} results`)
-              break
+              for (const id of ids) foundIdSet.add(id)
+              usedQueries.push(`"${query}" → ${ids.length}`)
+              console.log(`[RECOVER] Gmail search for ${order.order_id}: "${query}" → ${ids.length} results (total unique: ${foundIdSet.size})`)
             }
           }
+          const foundIds = [...foundIdSet]
+          const usedQuery = usedQueries.join(', ')
 
           if (foundIds.length === 0) {
             recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails found in Gmail for PO number ' + poNum })
