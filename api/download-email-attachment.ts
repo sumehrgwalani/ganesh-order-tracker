@@ -150,16 +150,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: settings } = await supabase
       .from('organization_settings')
-      .select('gmail_client_id, gmail_client_secret')
+      .select('gmail_client_id')
       .eq('organization_id', organization_id)
       .single()
 
-    if (!settings?.gmail_client_id) {
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
+    if (!settings?.gmail_client_id || !clientSecret) {
       return res.status(400).json({ error: 'Gmail not configured for this organization.' })
     }
 
     // 5. Refresh Gmail token
-    const accessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, settings.gmail_client_secret)
+    const accessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
     if (!accessToken) return res.status(500).json({ error: 'Failed to refresh Gmail token' })
 
     // 6. Get attachment parts from the Gmail message
