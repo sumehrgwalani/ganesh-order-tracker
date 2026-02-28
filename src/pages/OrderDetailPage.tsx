@@ -864,6 +864,20 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
     product: o.product,
   }));
 
+  // Helper: log a correction to the correction_log table so AI can learn
+  const logCorrection = async (data: {
+    correction_type: string, order_id?: string, filename?: string,
+    from_stage?: number, to_stage?: number, from_order?: string,
+    to_order?: string, subject?: string, note?: string
+  }) => {
+    if (!orgId) return
+    try {
+      await supabase.from('correction_log').insert({ organization_id: orgId, ...data })
+    } catch (err) {
+      console.log('Failed to log correction:', err)
+    }
+  }
+
   // Handle reassigning an email to a different order
   const handleReassignEmail = async (historyEntryId: string, newOrderId: string, note: string) => {
     try {
@@ -898,6 +912,16 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           })
           .eq('subject', entry.subject)
           .eq('from_address', entry.from);
+
+        // Log correction so AI can learn
+        await logCorrection({
+          correction_type: 'order_reassign',
+          order_id: order.id,
+          from_order: order.id,
+          to_order: newOrderId,
+          subject: entry.subject,
+          note: note || `Moved from ${order.id} to ${newOrderId}`,
+        })
       }
 
       // Refresh orders data
@@ -928,6 +952,14 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           })
           .eq('subject', entry.subject)
           .eq('from_address', entry.from);
+
+        // Log correction so AI can learn
+        await logCorrection({
+          correction_type: 'email_remove',
+          order_id: order.id,
+          subject: entry.subject,
+          note: note || `Removed from ${order.id}`,
+        })
       }
 
       window.location.reload();
@@ -965,6 +997,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
       // 5. Update the existing history entry: set stage, add attachment
       const entry = order.history.find(h => h.id === historyEntryId);
       const existingAtts = entry?.attachments || [];
+      const oldStage = entry?.stage;
       const { error: updateErr } = await supabase
         .from('order_history')
         .update({
@@ -975,6 +1008,19 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         .eq('id', historyEntryId);
       if (updateErr) throw new Error(`History update failed: ${updateErr.message}`);
 
+      // Log correction so AI can learn
+      if (oldStage && oldStage !== stage) {
+        await logCorrection({
+          correction_type: 'stage_assign',
+          order_id: order.id,
+          filename: file.name,
+          from_stage: oldStage,
+          to_stage: stage,
+          subject: entry?.subject,
+          note: `User assigned attachment to stage ${stage}`,
+        })
+      }
+
       // 6. Refresh to show changes
       window.location.reload();
     } catch (err: any) {
@@ -984,6 +1030,8 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
   };
 
   const handleDownloadAttachment = async (historyEntryId: string, targetStage: number) => {
+    const entry = order.history.find(h => h.id === historyEntryId);
+    const oldStage = entry?.stage;
     const { data, error } = await apiCall('/api/download-email-attachment', {
       history_entry_id: historyEntryId,
       target_stage: targetStage,
@@ -991,6 +1039,19 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
     });
     if (error) throw error;
     if (data?.downloaded === 0) throw new Error('No attachments could be downloaded');
+
+    // Log correction if stage changed
+    if (oldStage && oldStage !== targetStage) {
+      await logCorrection({
+        correction_type: 'stage_assign',
+        order_id: order.id,
+        from_stage: oldStage,
+        to_stage: targetStage,
+        subject: entry?.subject,
+        note: `User downloaded and assigned attachment to stage ${targetStage}`,
+      })
+    }
+
     window.location.reload();
   };
 
@@ -1053,6 +1114,16 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         const { revisedPdfUrl, ...restMetadata } = order.metadata;
         await onUpdateOrder(order.id, { metadata: restMetadata } as any);
       }
+
+      // Log correction so AI can learn
+      await logCorrection({
+        correction_type: 'attachment_delete',
+        order_id: order.id,
+        filename: attName,
+        from_stage: entry.stage,
+        subject: entry.subject,
+        note: `User deleted attachment from stage ${entry.stage}`,
+      })
 
       // Also try deleting the file from storage (best effort)
       const storageName = attName.replace(/\//g, '_');

@@ -134,6 +134,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     results.push({ filename, moved: `stage ${from_stage} → stage ${to_stage}` })
+
+    // Log correction so AI can learn from this move
+    try {
+      await supabase.from('correction_log').insert({
+        organization_id,
+        order_id,
+        correction_type: 'stage_move',
+        filename,
+        from_stage,
+        to_stage,
+        note: `Attachment moved from stage ${from_stage} to stage ${to_stage}`,
+      })
+    } catch (logErr) {
+      console.log('Failed to log correction:', logErr)
+    }
   }
 
   return res.status(200).json({ success: true, results })

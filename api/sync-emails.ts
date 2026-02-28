@@ -562,9 +562,116 @@ async function saveDhlNumber(supabase: any, orderId: string, orgId: string, subj
   }
 }
 
+// ==================== CORRECTION LOG ====================
+// Ensures correction_log table exists (creates if missing), then inserts
+async function ensureCorrectionTable(supabase: any): Promise<boolean> {
+  const { error } = await supabase.from('correction_log').select('id').limit(1)
+  if (error && error.code === 'PGRST205') {
+    // Table doesn't exist — create it via raw SQL
+    const { error: createErr } = await supabase.rpc('exec_sql', {
+      sql: `CREATE TABLE IF NOT EXISTS public.correction_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        organization_id UUID NOT NULL,
+        order_id TEXT,
+        correction_type TEXT NOT NULL,
+        filename TEXT,
+        from_stage SMALLINT,
+        to_stage SMALLINT,
+        from_order TEXT,
+        to_order TEXT,
+        subject TEXT,
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      ); CREATE INDEX IF NOT EXISTS idx_correction_log_org_recent ON public.correction_log (organization_id, created_at DESC);`
+    })
+    if (createErr) {
+      console.log('[CORRECTION] Could not auto-create correction_log table:', createErr.message)
+      return false
+    }
+    console.log('[CORRECTION] Created correction_log table')
+  }
+  return true
+}
+
+async function logCorrection(supabase: any, data: {
+  organization_id: string, order_id?: string, correction_type: string,
+  filename?: string, from_stage?: number, to_stage?: number,
+  from_order?: string, to_order?: string, subject?: string, note?: string
+}) {
+  try {
+    await supabase.from('correction_log').insert(data)
+  } catch (err: any) {
+    console.log('[CORRECTION] Failed to log (table may not exist yet):', err?.message)
+  }
+}
+
+// Fetch recent corrections to feed into AI prompts
+async function getRecentCorrections(supabase: any, orgId: string): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('correction_log')
+      .select('correction_type, filename, from_stage, to_stage, from_order, to_order, subject, note')
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    if (error || !data || data.length === 0) return ''
+
+    const stageNames: Record<number, string> = {
+      1: 'Purchase Order', 2: 'Proforma Invoice', 3: 'Artwork', 4: 'Artwork Confirmed',
+      5: 'Quality Check', 6: 'Schedule Confirmed', 7: 'Draft Documents', 8: 'Final Documents', 9: 'DHL Number'
+    }
+
+    const lines: string[] = []
+    for (const c of data) {
+      if (c.correction_type === 'stage_move' && c.filename && c.from_stage && c.to_stage) {
+        lines.push(`- "${c.filename}" was incorrectly classified as ${stageNames[c.from_stage] || `stage ${c.from_stage}`} but is actually ${stageNames[c.to_stage] || `stage ${c.to_stage}`}`)
+      } else if (c.correction_type === 'order_reassign' && c.subject) {
+        lines.push(`- Email "${c.subject?.substring(0, 60)}" was incorrectly matched to ${c.from_order} but belongs to ${c.to_order}`)
+      } else if (c.correction_type === 'stage_assign' && c.subject && c.to_stage) {
+        lines.push(`- Email "${c.subject?.substring(0, 60)}" should be classified as ${stageNames[c.to_stage] || `stage ${c.to_stage}`}`)
+      }
+    }
+
+    if (lines.length === 0) return ''
+    return `\n\nIMPORTANT — LEARN FROM PAST CORRECTIONS:\nThe user has corrected these classification mistakes. Use them to improve your accuracy:\n${lines.join('\n')}\n`
+  } catch {
+    return ''
+  }
+}
+
+// Get document-specific corrections for the vision classifier
+async function getDocCorrections(supabase: any, orgId: string): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('correction_log')
+      .select('filename, from_stage, to_stage, note')
+      .eq('organization_id', orgId)
+      .eq('correction_type', 'stage_move')
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error || !data || data.length === 0) return ''
+
+    const typeMap: Record<number, string> = {
+      1: 'po', 2: 'pi', 3: 'artwork', 4: 'artwork', 5: 'certificate',
+      6: 'shipping', 7: 'finaldoc', 8: 'finaldoc', 9: 'other'
+    }
+
+    const lines = data
+      .filter((c: any) => c.filename && c.from_stage && c.to_stage)
+      .map((c: any) => `- "${c.filename}" was wrongly classified as "${typeMap[c.from_stage] || 'other'}" but is actually "${typeMap[c.to_stage] || 'other'}"`)
+
+    if (lines.length === 0) return ''
+    return `\nLEARN FROM PAST MISTAKES:\n${lines.join('\n')}\n`
+  } catch {
+    return ''
+  }
+}
+
 // Classify a document using vision AI — returns classification and whether the API call actually succeeded
 async function classifyDocumentWithVision(
-  base64Data: string, mimeType: string
+  base64Data: string, mimeType: string, correctionHints?: string
 ): Promise<{ classification: string; apiFailed: boolean }> {
   try {
     const isImage = mimeType.startsWith('image/')
@@ -598,6 +705,7 @@ async function classifyDocumentWithVision(
 - "finaldoc" if it is a final/original trade document: code list, boxes declaration, packing list with container/seal numbers, health certificate for export, or bill of lading copy
 - "certificate" if it is a certificate of analysis, quality certificate, health certificate
 - "other" if none of the above
+${correctionHints || ''}
 Reply with ONLY the single word classification.` }
           ]
         }],
@@ -622,7 +730,8 @@ Reply with ONLY the single word classification.` }
 
 // Helper: download attachment and return base64 + classification
 async function downloadAndClassify(
-  accessToken: string, gmailId: string, part: { filename: string; mimeType: string; attachmentId: string; size: number }
+  accessToken: string, gmailId: string, part: { filename: string; mimeType: string; attachmentId: string; size: number },
+  correctionHints?: string
 ): Promise<{ fileData: ArrayBuffer; base64: string; classification: string; apiFailed: boolean } | null> {
   const fileData = await downloadAttachment(accessToken, gmailId, part.attachmentId)
   if (!fileData) return null
@@ -636,7 +745,7 @@ async function downloadAndClassify(
     for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
   }
   const base64 = btoa(binary)
-  const { classification, apiFailed } = await classifyDocumentWithVision(base64, part.mimeType || 'application/pdf')
+  const { classification, apiFailed } = await classifyDocumentWithVision(base64, part.mimeType || 'application/pdf', correctionHints)
   return { fileData, base64, classification, apiFailed }
 }
 
@@ -724,6 +833,9 @@ async function processEmailAttachments(
     if (validParts.length === 0) { console.log(`[PROCESS] No valid attachments in email`); return { filesStored: 0, noValidParts: true } }
     console.log(`[PROCESS] Found ${validParts.length} valid attachments for ${matchedOrderId}`)
 
+    // Fetch correction hints for document classification AI
+    const docHints = await getDocCorrections(supabase, organizationId)
+
     // Track what we found
     let poAttachment: { url: string; filename: string; base64: string; mimeType: string } | null = null
     let foundPI = false
@@ -732,7 +844,7 @@ async function processEmailAttachments(
     // 2. For each attachment: download, classify, upload to correct stage
     for (const part of validParts) {
       try {
-        const result = await downloadAndClassify(accessToken, email.gmail_id, part)
+        const result = await downloadAndClassify(accessToken, email.gmail_id, part, docHints)
         if (!result) { console.log(`[PROCESS] Download failed for ${part.filename}`); continue }
 
         let classification = result.classification
@@ -1668,12 +1780,15 @@ If no purchase orders found, return: []`
         const stageMap = new Map<string, number>()
         if (emailsToDetect.length === 0) return stageMap
 
+        // Fetch recent corrections to help AI learn from past mistakes
+        const correctionHints = await getRecentCorrections(supabase, organization_id)
+
         const stagePrompt = `You are classifying emails for a frozen seafood trading company (Ganesh International). For each email, determine what STAGE of the trade process it represents.
 
 ${STAGE_TRIGGERS}
 
 IMPORTANT: Look at the FULL email content (subject AND body), not just the subject. Suppliers often reply with "Re: NEW PO..." but the body is about something completely different like a PI, artwork, or shipping docs.
-
+${correctionHints}
 EMAILS:
 ${emailsToDetect.map((e, i) => `
 EMAIL #${i + 1} (ID: "${e.id}"):
@@ -2807,7 +2922,8 @@ If truly unknown, return "Unknown" for that field.` }],
                   visionDebug.visionResult = extractedData ? extractedData.lineItems.length + ' items' : 'null'
                 } else {
                   // Normal flow: classify first, then extract
-                  const result = await downloadAndClassify(gmailAccessToken, attachEmail.gmail_id, chosenPart)
+                  const bulkDocHints = await getDocCorrections(supabase, organization_id)
+                  const result = await downloadAndClassify(gmailAccessToken, attachEmail.gmail_id, chosenPart, bulkDocHints)
                   if (!result) continue
                   visionDebug.downloadedSize = result.fileData.byteLength
                   visionDebug.classification = result.classification
