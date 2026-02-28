@@ -1327,10 +1327,10 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-800">Email History</h2>
-          <span className="text-sm text-gray-500">{order.history.length} emails</span>
+          <span className="text-sm text-gray-500">{order.history.filter(h => h.from !== 'System').length} emails</span>
         </div>
         <div className="space-y-3">
-          {[...order.history].reverse().map((entry, idx) => (
+          {[...order.history].filter(h => h.from !== 'System').reverse().map((entry, idx) => (
             <ExpandableEmailCard
               key={entry.id || idx}
               entry={entry}
