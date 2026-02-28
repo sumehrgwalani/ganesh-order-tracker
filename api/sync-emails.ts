@@ -563,35 +563,8 @@ async function saveDhlNumber(supabase: any, orderId: string, orgId: string, subj
 }
 
 // ==================== CORRECTION LOG ====================
-// Ensures correction_log table exists (creates if missing), then inserts
-async function ensureCorrectionTable(supabase: any): Promise<boolean> {
-  const { error } = await supabase.from('correction_log').select('id').limit(1)
-  if (error && error.code === 'PGRST205') {
-    // Table doesn't exist — create it via raw SQL
-    const { error: createErr } = await supabase.rpc('exec_sql', {
-      sql: `CREATE TABLE IF NOT EXISTS public.correction_log (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id UUID NOT NULL,
-        order_id TEXT,
-        correction_type TEXT NOT NULL,
-        filename TEXT,
-        from_stage SMALLINT,
-        to_stage SMALLINT,
-        from_order TEXT,
-        to_order TEXT,
-        subject TEXT,
-        note TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      ); CREATE INDEX IF NOT EXISTS idx_correction_log_org_recent ON public.correction_log (organization_id, created_at DESC);`
-    })
-    if (createErr) {
-      console.log('[CORRECTION] Could not auto-create correction_log table:', createErr.message)
-      return false
-    }
-    console.log('[CORRECTION] Created correction_log table')
-  }
-  return true
-}
+// Note: correction_log table must be created via sql/015_correction_log.sql in Supabase dashboard
+// All correction functions gracefully handle the case where the table doesn't exist yet
 
 async function logCorrection(supabase: any, data: {
   organization_id: string, order_id?: string, correction_type: string,
