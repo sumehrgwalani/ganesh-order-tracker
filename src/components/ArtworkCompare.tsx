@@ -21,6 +21,49 @@ async function loadPdfJs() {
   });
 }
 
+// jsPDF — loaded from CDN for PDF report generation
+let jsPDFLib: any = null;
+
+async function loadJsPdf(): Promise<any> {
+  if (jsPDFLib) return jsPDFLib;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = () => {
+      jsPDFLib = (window as any).jspdf;
+      resolve(jsPDFLib);
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// Composite the new artwork image with the highlight overlay on top
+function buildCompositeImage(
+  artworkDataUrl: string,
+  overlayDataUrl: string,
+  width: number,
+  height: number
+): Promise<string> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    const art = new Image();
+    art.onload = () => {
+      ctx.drawImage(art, 0, 0, width, height);
+      const ov = new Image();
+      ov.onload = () => {
+        ctx.drawImage(ov, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      ov.src = overlayDataUrl;
+    };
+    art.src = artworkDataUrl;
+  });
+}
+
 // Render a URL (PDF or image) to a data URL string
 async function urlToDataUrl(url: string): Promise<{ dataUrl: string; width: number; height: number }> {
   const isPdf = /\.pdf(\?|#|$)/i.test(url);
@@ -221,177 +264,335 @@ function describeDiffRegions(
 }
 
 // Generate an HTML report and trigger download
-function downloadReport(
+async function downloadReport(
   diffs: DiffItem[],
   refLabel: string,
   newLabel: string,
   diffPercent: number | null,
   refLines: string[],
   newLines: string[],
-  diffRegions: { zone: string; percent: number }[]
+  diffRegions: { zone: string; percent: number }[],
+  compositeImageUrl: string | null,
+  refImageUrl: string | null
 ) {
-  const changes = diffs.filter(d => d.type !== 'match');
-  const missing = diffs.filter(d => d.type === 'missing');
-  const changed = diffs.filter(d => d.type === 'changed');
-  const added = diffs.filter(d => d.type === 'added');
-  const matched = diffs.filter(d => d.type === 'match');
-  const noTextExtracted = refLines.length === 0 && newLines.length === 0;
+  const { jsPDF } = await loadJsPdf();
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const contentW = pageW - margin * 2;
+  let y = margin;
 
+  const missing = diffs.filter((d: DiffItem) => d.type === 'missing');
+  const changed = diffs.filter((d: DiffItem) => d.type === 'changed');
+  const added = diffs.filter((d: DiffItem) => d.type === 'added');
+  const matched = diffs.filter((d: DiffItem) => d.type === 'match');
+  const noTextExtracted = refLines.length === 0 && newLines.length === 0;
   const now = new Date().toLocaleString();
 
-  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Artwork Comparison Report</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
-  h1 { color: #7c3aed; font-size: 22px; border-bottom: 2px solid #7c3aed; padding-bottom: 8px; }
-  h2 { color: #374151; font-size: 16px; margin-top: 28px; }
-  .summary { background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0; }
-  .green { color: #059669; }
-  .red { color: #dc2626; }
-  .orange { color: #d97706; }
-  .blue { color: #2563eb; }
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
-  th { background: #f9fafb; text-align: left; padding: 8px 12px; border-bottom: 2px solid #e5e7eb; font-size: 11px; text-transform: uppercase; color: #6b7280; }
-  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
-  tr.changed td { background: #fffbeb; }
-  tr.missing td { background: #fef2f2; }
-  tr.added td { background: #eff6ff; }
-  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af; }
-  .no-issues { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; text-align: center; color: #065f46; }
-  .warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 16px 0; color: #92400e; }
-  .region-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-  .region-name { width: 120px; font-size: 13px; color: #374151; }
-  .region-fill { height: 20px; border-radius: 4px; background: #fbbf24; min-width: 4px; }
-  .region-pct { font-size: 12px; color: #6b7280; width: 50px; }
-  .grid-visual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; width: 200px; margin: 16px auto; }
-  .grid-cell { aspect-ratio: 1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white; }
-</style></head><body>`;
+  // Helper: add new page if needed
+  const checkPage = (needed: number) => {
+    if (y + needed > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
 
-  html += `<h1>Artwork Comparison Report</h1>`;
-  html += `<div class="summary">`;
-  html += `<div><strong>Reference:</strong> ${refLabel}</div>`;
-  html += `<div><strong>New Artwork:</strong> ${newLabel}</div>`;
-  html += `<div><strong>Generated:</strong> ${now}</div>`;
+  // --- PAGE 1: Summary ---
+  doc.setFontSize(20);
+  doc.setTextColor(124, 58, 237); // purple
+  doc.text('Artwork Comparison Report', margin, y);
+  y += 4;
+  doc.setDrawColor(124, 58, 237);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageW - margin, y);
+  y += 10;
+
+  // Summary box
+  doc.setFillColor(243, 244, 246);
+  doc.roundedRect(margin, y, contentW, 32, 3, 3, 'F');
+  doc.setFontSize(10);
+  doc.setTextColor(30, 30, 30);
+  y += 7;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Reference:', margin + 4, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(refLabel, margin + 30, y);
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('New Artwork:', margin + 4, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(newLabel, margin + 30, y);
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Generated:', margin + 4, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(now, margin + 30, y);
+  y += 6;
   if (diffPercent !== null) {
-    html += `<div><strong>Visual difference:</strong> ${diffPercent}% of pixels differ</div>`;
-    if (diffPercent === 0) {
-      html += `<div style="margin-top:8px;color:#059669;font-weight:600;">The artworks appear visually identical.</div>`;
-    }
+    doc.setFont('helvetica', 'bold');
+    doc.text('Visual difference:', margin + 4, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${diffPercent}% of pixels differ`, margin + 38, y);
   }
-  html += `</div>`;
+  y += 12;
 
-  // Visual difference regions — always show this
+  // Region analysis
   if (diffRegions.length > 0) {
-    html += `<h2>Where Differences Were Found</h2>`;
-    html += `<p style="font-size:13px;color:#6b7280;">The page was divided into a 3&times;3 grid. These areas have visual differences:</p>`;
+    checkPage(60);
+    doc.setFontSize(13);
+    doc.setTextColor(55, 65, 81);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Where Differences Were Found', margin, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.setFont('helvetica', 'normal');
+    doc.text('The page was divided into a 3x3 grid. These areas have visual differences:', margin, y);
+    y += 8;
 
-    // Grid visualization
+    // 3x3 grid visualization
     const zoneNames = ['Top-Left', 'Top-Center', 'Top-Right', 'Middle-Left', 'Middle-Center', 'Middle-Right', 'Bottom-Left', 'Bottom-Center', 'Bottom-Right'];
-    html += `<div class="grid-visual">`;
-    for (const zone of zoneNames) {
-      const match = diffRegions.find(r => r.zone === zone);
-      const pct = match ? match.percent : 0;
-      const intensity = Math.min(pct * 10, 100);
-      const bg = pct > 0 ? `hsl(40, 100%, ${80 - intensity * 0.4}%)` : '#e5e7eb';
-      const color = pct > 1 ? 'white' : '#6b7280';
-      html += `<div class="grid-cell" style="background:${bg};color:${color}">${pct > 0 ? pct.toFixed(1) + '%' : '—'}</div>`;
+    const cellSize = 18;
+    const gridX = margin + (contentW - cellSize * 3 - 4) / 2;
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const idx = row * 3 + col;
+        const zone = zoneNames[idx];
+        const match = diffRegions.find(r => r.zone === zone);
+        const pct = match ? match.percent : 0;
+        const intensity = Math.min(pct * 10, 100);
+        const cx = gridX + col * (cellSize + 2);
+        const cy = y + row * (cellSize + 2);
+        if (pct > 0) {
+          const lightness = Math.max(60, 90 - intensity * 0.4);
+          doc.setFillColor(255, Math.round(200 - intensity), Math.round(50 - intensity * 0.5));
+          doc.roundedRect(cx, cy, cellSize, cellSize, 2, 2, 'F');
+          doc.setTextColor(255, 255, 255);
+        } else {
+          doc.setFillColor(229, 231, 235);
+          doc.roundedRect(cx, cy, cellSize, cellSize, 2, 2, 'F');
+          doc.setTextColor(107, 114, 128);
+        }
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        const label = pct > 0 ? pct.toFixed(1) + '%' : '—';
+        doc.text(label, cx + cellSize / 2, cy + cellSize / 2 + 1, { align: 'center' });
+      }
     }
-    html += `</div>`;
+    y += 3 * (cellSize + 2) + 8;
 
     // Bar chart
-    html += `<div style="margin-top:16px">`;
     const maxPct = Math.max(...diffRegions.map(r => r.percent));
     for (const r of diffRegions) {
-      const barW = maxPct > 0 ? Math.max((r.percent / maxPct) * 100, 4) : 4;
-      html += `<div class="region-bar">`;
-      html += `<span class="region-name">${r.zone}</span>`;
-      html += `<div class="region-fill" style="width:${barW}%"></div>`;
-      html += `<span class="region-pct">${r.percent.toFixed(2)}%</span>`;
-      html += `</div>`;
+      checkPage(7);
+      doc.setFontSize(8);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'normal');
+      doc.text(r.zone, margin, y + 3.5);
+      const barMaxW = contentW - 70;
+      const barW = maxPct > 0 ? Math.max((r.percent / maxPct) * barMaxW, 2) : 2;
+      doc.setFillColor(251, 191, 36);
+      doc.roundedRect(margin + 35, y, barW, 5, 1, 1, 'F');
+      doc.setTextColor(107, 114, 128);
+      doc.text(r.percent.toFixed(2) + '%', margin + 35 + barMaxW + 3, y + 3.5);
+      y += 7;
     }
-    html += `</div>`;
+    y += 6;
   } else if (diffPercent !== null && diffPercent === 0) {
-    html += `<div class="no-issues">No visual differences detected. The artworks appear identical.</div>`;
+    checkPage(20);
+    doc.setFillColor(236, 253, 245);
+    doc.roundedRect(margin, y, contentW, 14, 3, 3, 'F');
+    doc.setFontSize(10);
+    doc.setTextColor(6, 95, 70);
+    doc.text('No visual differences detected. The artworks appear identical.', pageW / 2, y + 8, { align: 'center' });
+    y += 20;
   }
 
   // Text comparison section
   if (noTextExtracted) {
-    html += `<h2>Text Comparison</h2>`;
-    html += `<div class="warning">`;
-    html += `<strong>No extractable text found in either PDF.</strong><br>`;
-    html += `This is common with packaging artwork — designers often convert text to outlines (vector paths) for print compatibility. `;
-    html += `The text you see in the artwork is actually drawn as shapes, not characters.<br><br>`;
-    html += `<strong>What you can do:</strong> Use the visual comparison above to identify which areas of the artwork have changed, `;
-    html += `then manually check those regions in the Side by Side or Slider view.`;
-    html += `</div>`;
+    checkPage(30);
+    doc.setFontSize(13);
+    doc.setTextColor(55, 65, 81);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Text Comparison', margin, y);
+    y += 8;
+    doc.setFillColor(255, 251, 235);
+    doc.roundedRect(margin, y, contentW, 24, 3, 3, 'F');
+    doc.setFontSize(9);
+    doc.setTextColor(146, 64, 14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('No extractable text found in either PDF.', margin + 4, y + 6);
+    doc.setFont('helvetica', 'normal');
+    const warnLines = doc.splitTextToSize(
+      'This is common with packaging artwork — designers often convert text to outlines (vector paths) for print compatibility. Use the visual comparison images below to see highlighted changes.',
+      contentW - 8
+    );
+    doc.text(warnLines, margin + 4, y + 12);
+    y += 30;
   } else {
-    // Text stats
+    // Text stats table
     if (refLines.length > 0 || newLines.length > 0) {
-      html += `<h2>Text Comparison</h2>`;
-      html += `<table><tr>`;
-      html += `<th style="text-align:center">Matched</th><th style="text-align:center">Changed</th><th style="text-align:center">Missing</th><th style="text-align:center">Added</th>`;
-      html += `</tr><tr>`;
-      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="green">${matched.length}</td>`;
-      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="orange">${changed.length}</td>`;
-      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="red">${missing.length}</td>`;
-      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="blue">${added.length}</td>`;
-      html += `</tr></table>`;
+      checkPage(30);
+      doc.setFontSize(13);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Text Comparison', margin, y);
+      y += 8;
+
+      const colW = contentW / 4;
+      const headers = ['Matched', 'Changed', 'Missing', 'Added'];
+      const values = [matched.length, changed.length, missing.length, added.length];
+      const colors: [number, number, number][] = [[5, 150, 105], [217, 119, 6], [220, 38, 38], [37, 99, 235]];
+
+      doc.setFillColor(249, 250, 251);
+      doc.rect(margin, y, contentW, 7, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(107, 114, 128);
+      doc.setFont('helvetica', 'bold');
+      headers.forEach((h, i) => {
+        doc.text(h.toUpperCase(), margin + colW * i + colW / 2, y + 5, { align: 'center' });
+      });
+      y += 9;
+      doc.setFontSize(16);
+      values.forEach((v, i) => {
+        doc.setTextColor(...colors[i]);
+        doc.setFont('helvetica', 'bold');
+        doc.text(String(v), margin + colW * i + colW / 2, y + 6, { align: 'center' });
+      });
+      y += 12;
     }
 
-    if (changes.length === 0 && (refLines.length > 0 || newLines.length > 0)) {
-      html += `<div class="no-issues">All extracted text matches between the two artworks.</div>`;
-    }
-
+    // Changed text details
     if (changed.length > 0) {
-      html += `<h2>Changed Text (${changed.length})</h2>`;
-      html += `<p style="font-size:13px;color:#6b7280;">These lines exist in both but have differences:</p>`;
-      html += `<table><tr><th>#</th><th>Reference</th><th>New Artwork</th></tr>`;
-      changed.forEach((d, i) => {
-        html += `<tr class="changed"><td>${i + 1}</td><td>${d.refLine}</td><td>${d.newLine}</td></tr>`;
+      checkPage(20);
+      doc.setFontSize(11);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Changed Text (${changed.length})`, margin, y);
+      y += 6;
+      doc.setFontSize(8);
+      changed.forEach((d: DiffItem, i: number) => {
+        checkPage(14);
+        doc.setFillColor(255, 251, 235);
+        doc.rect(margin, y, contentW, 12, 'F');
+        doc.setTextColor(146, 64, 14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`#${i + 1}`, margin + 2, y + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 80, 80);
+        const refText = doc.splitTextToSize('Ref: ' + (d.refLine || ''), contentW - 10);
+        const newText = doc.splitTextToSize('New: ' + (d.newLine || ''), contentW - 10);
+        doc.text(refText[0] || '', margin + 10, y + 4);
+        doc.text(newText[0] || '', margin + 10, y + 9);
+        y += 14;
       });
-      html += `</table>`;
+      y += 4;
     }
 
+    // Missing text
     if (missing.length > 0) {
-      html += `<h2>Missing from New Artwork (${missing.length})</h2>`;
-      html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the reference but are missing from the new artwork:</p>`;
-      html += `<table><tr><th>#</th><th>Missing Text</th></tr>`;
-      missing.forEach((d, i) => {
-        html += `<tr class="missing"><td>${i + 1}</td><td>${d.refLine}</td></tr>`;
+      checkPage(16);
+      doc.setFontSize(11);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Missing from New Artwork (${missing.length})`, margin, y);
+      y += 6;
+      doc.setFontSize(8);
+      missing.forEach((d: DiffItem, i: number) => {
+        checkPage(8);
+        doc.setFillColor(254, 242, 242);
+        doc.rect(margin, y, contentW, 6, 'F');
+        doc.setTextColor(220, 38, 38);
+        doc.setFont('helvetica', 'normal');
+        const txt = doc.splitTextToSize(`#${i + 1}  ${d.refLine || ''}`, contentW - 4);
+        doc.text(txt[0] || '', margin + 2, y + 4);
+        y += 7;
       });
-      html += `</table>`;
+      y += 4;
     }
 
+    // Added text
     if (added.length > 0) {
-      html += `<h2>Added in New Artwork (${added.length})</h2>`;
-      html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the new artwork but not in the reference:</p>`;
-      html += `<table><tr><th>#</th><th>Added Text</th></tr>`;
-      added.forEach((d, i) => {
-        html += `<tr class="added"><td>${i + 1}</td><td>${d.newLine}</td></tr>`;
+      checkPage(16);
+      doc.setFontSize(11);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Added in New Artwork (${added.length})`, margin, y);
+      y += 6;
+      doc.setFontSize(8);
+      added.forEach((d: DiffItem, i: number) => {
+        checkPage(8);
+        doc.setFillColor(239, 246, 255);
+        doc.rect(margin, y, contentW, 6, 'F');
+        doc.setTextColor(37, 99, 235);
+        doc.setFont('helvetica', 'normal');
+        const txt = doc.splitTextToSize(`#${i + 1}  ${d.newLine || ''}`, contentW - 4);
+        doc.text(txt[0] || '', margin + 2, y + 4);
+        y += 7;
       });
-      html += `</table>`;
-    }
-
-    if (refLines.length > 0 || newLines.length > 0) {
-      html += `<h2>Full Text Extracted</h2>`;
-      html += `<table><tr><th>Reference (${refLines.length} lines)</th><th>New Artwork (${newLines.length} lines)</th></tr>`;
-      const maxLen = Math.max(refLines.length, newLines.length);
-      for (let i = 0; i < maxLen; i++) {
-        html += `<tr><td>${refLines[i] || '<em style="color:#ccc">—</em>'}</td><td>${newLines[i] || '<em style="color:#ccc">—</em>'}</td></tr>`;
-      }
-      html += `</table>`;
+      y += 4;
     }
   }
 
-  html += `<div class="footer">Generated by With The Tide — Artwork Comparison Tool</div>`;
-  html += `</body></html>`;
+  // --- IMAGE PAGES ---
+  // Page: Highlighted differences overlay on new artwork
+  if (compositeImageUrl) {
+    doc.addPage();
+    y = margin;
+    doc.setFontSize(14);
+    doc.setTextColor(124, 58, 237);
+    doc.setFont('helvetica', 'bold');
+    doc.text('New Artwork with Highlighted Differences', margin, y);
+    y += 3;
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Yellow highlighted areas indicate where differences were detected.', margin, y + 4);
+    y += 10;
 
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `artwork-comparison-report-${new Date().toISOString().slice(0, 10)}.html`;
-  a.click();
-  URL.revokeObjectURL(url);
+    // Fit image to page
+    const imgMaxW = contentW;
+    const imgMaxH = pageH - y - margin - 10;
+    try {
+      doc.addImage(compositeImageUrl, 'JPEG', margin, y, imgMaxW, imgMaxH, undefined, 'FAST');
+    } catch (_) { /* image add failed, skip */ }
+  }
+
+  // Page: Reference artwork
+  if (refImageUrl) {
+    doc.addPage();
+    y = margin;
+    doc.setFontSize(14);
+    doc.setTextColor(124, 58, 237);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Reference Artwork', margin, y);
+    y += 3;
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    doc.setFont('helvetica', 'normal');
+    doc.text(refLabel, margin, y + 4);
+    y += 10;
+
+    const imgMaxW = contentW;
+    const imgMaxH = pageH - y - margin - 10;
+    try {
+      doc.addImage(refImageUrl, 'JPEG', margin, y, imgMaxW, imgMaxH, undefined, 'FAST');
+    } catch (_) { /* image add failed, skip */ }
+  }
+
+  // Footer on all pages
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(156, 163, 175);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Generated by With The Tide — Artwork Comparison Tool', margin, pageH - 5);
+    doc.text(`Page ${i} of ${totalPages}`, pageW - margin, pageH - 5, { align: 'right' });
+  }
+
+  doc.save(`artwork-comparison-report-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 // Generate a highlight overlay
@@ -584,7 +785,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       ]);
       const diffs = compareTextLines(refLines, newLines);
 
-      // Load images for visual region analysis
+      // Load images for visual region analysis + overlay
       const loadImg = (src: string): Promise<HTMLImageElement> =>
         new Promise((res, rej) => {
           const img = new Image();
@@ -596,14 +797,24 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
         loadImg(refData.dataUrl),
         loadImg(newData.dataUrl),
       ]);
-      const { regions } = describeDiffRegions(img1, img2, sensitivity);
+      const threshold = 0.1;
+      const { regions } = describeDiffRegions(img1, img2, threshold);
 
-      downloadReport(diffs, referenceLabel, newLabel, diffPercent, refLines, newLines, regions);
+      // Build the highlight overlay and composite it onto the new artwork
+      const overlay = buildHighlightOverlay(img1, img2, threshold);
+      const compositeUrl = await buildCompositeImage(
+        newData.dataUrl,
+        overlay.overlayUrl,
+        overlay.width,
+        overlay.height
+      );
+
+      await downloadReport(diffs, referenceLabel, newLabel, diffPercent, refLines, newLines, regions, compositeUrl, refData.dataUrl);
     } catch (err: any) {
       alert('Failed to generate report: ' + (err.message || 'Unknown error'));
     }
     setGeneratingReport(false);
-  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf, sensitivity]);
+  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf]);
 
   // Pan handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
