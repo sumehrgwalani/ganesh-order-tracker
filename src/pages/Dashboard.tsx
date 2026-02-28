@@ -58,7 +58,8 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium appearance-none cursor-pointer hover:bg-gray-700 pr-8"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
             >
               <option value="po-desc">PO # (Newest)</option>
               <option value="po-asc">PO # (Oldest)</option>
