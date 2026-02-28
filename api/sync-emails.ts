@@ -539,6 +539,29 @@ Rules:
   }
 }
 
+// Extract DHL tracking number from email body/subject
+function extractDhlNumber(subject: string | null, bodyText: string | null): string | null {
+  const text = `${subject || ''} ${bodyText || ''}`
+  const m1 = text.match(/DHL\s*number\s*#?\s*(\d{8,})/i)
+  if (m1) return m1[1]
+  const m2 = text.match(/DHL\s*AWB\s*(\d{8,})/i)
+  if (m2) return m2[1]
+  const m3 = text.match(/AWB\s*#?\s*(\d{8,})/i)
+  if (m3) return m3[1]
+  const m4 = text.match(/DHL[^0-9]{0,30}(\d{10,})/i)
+  if (m4) return m4[1]
+  return null
+}
+
+// Save DHL number to order if found
+async function saveDhlNumber(supabase: any, orderId: string, orgId: string, subject: string | null, bodyText: string | null) {
+  const dhl = extractDhlNumber(subject, bodyText)
+  if (dhl) {
+    await supabase.from('orders').update({ awb_number: dhl }).eq('order_id', orderId).eq('organization_id', orgId)
+    console.log(`[DHL] Extracted DHL number ${dhl} for order ${orderId}`)
+  }
+}
+
 // Classify a document using vision AI — returns classification and whether the API call actually succeeded
 async function classifyDocumentWithVision(
   base64Data: string, mimeType: string
@@ -1603,33 +1626,6 @@ If no purchase orders found, return: []`
         })
       }
 
-      // Helper: extract DHL tracking number from email body/subject
-      const extractDhlNumber = (subject: string | null, bodyText: string | null): string | null => {
-        const text = `${subject || ''} ${bodyText || ''}`
-        // Pattern 1: "DHL number # 1234567890" or "DHL number #1234567890"
-        const m1 = text.match(/DHL\s*number\s*#?\s*(\d{8,})/i)
-        if (m1) return m1[1]
-        // Pattern 2: "DHL AWB 1234567890"
-        const m2 = text.match(/DHL\s*AWB\s*(\d{8,})/i)
-        if (m2) return m2[1]
-        // Pattern 3: "AWB 1234567890" or "AWB# 1234567890"
-        const m3 = text.match(/AWB\s*#?\s*(\d{8,})/i)
-        if (m3) return m3[1]
-        // Pattern 4: standalone "DHL" followed by a long number nearby
-        const m4 = text.match(/DHL[^0-9]{0,30}(\d{10,})/i)
-        if (m4) return m4[1]
-        return null
-      }
-
-      // Helper: save DHL number to order if found
-      const saveDhlNumber = async (orderId: string, orgId: string, subject: string | null, bodyText: string | null) => {
-        const dhl = extractDhlNumber(subject, bodyText)
-        if (dhl) {
-          await supabase.from('orders').update({ awb_number: dhl }).eq('order_id', orderId).eq('organization_id', orgId)
-          console.log(`[DHL] Extracted DHL number ${dhl} for order ${orderId}`)
-        }
-      }
-
       // Helper: detect order stage from email subject keywords
       // Ordered from most specific to most generic to avoid false matches
       const detectStageFromSubject = (subject: string | null, bodyText?: string | null): number | null => {
@@ -1916,7 +1912,7 @@ Return VALID JSON only, no markdown. One result per email:
 
         // Extract DHL number if this is a stage 9 (or airway bill) email
         if (detectedStage === 9) {
-          await saveDhlNumber(order.id, organization_id, email.subject, email.body_text)
+          await saveDhlNumber(supabase, order.id, organization_id, email.subject, email.body_text)
         }
 
         // Create order_history entry so email shows on order detail page (dedup check)
@@ -1955,7 +1951,7 @@ Return VALID JSON only, no markdown. One result per email:
         }
         // Extract DHL number if this is a stage 9 email
         if (stage === 9 && order) {
-          await saveDhlNumber(orderId, organization_id, email.subject, email.body_text)
+          await saveDhlNumber(supabase, orderId, organization_id, email.subject, email.body_text)
         }
         await insertHistoryIfNew({
           order_id: order?.uuid,
@@ -2274,7 +2270,7 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
 
               // Extract DHL number if stage 9
               if (detectedStage === 9) {
-                await saveDhlNumber(matchedOrderId, organization_id, email.subject, email.body_text)
+                await saveDhlNumber(supabase, matchedOrderId, organization_id, email.subject, email.body_text)
               }
 
               // Log in order_history (dedup check)
@@ -3111,7 +3107,7 @@ If truly unknown, return "Unknown" for that field.` }],
 
               // Extract DHL number from stage 9 emails
               if (stage === 9) {
-                await saveDhlNumber(order.order_id, organization_id, ue.subject, ue.body_text)
+                await saveDhlNumber(supabase, order.order_id, organization_id, ue.subject, ue.body_text)
               }
 
               // Create order_history entry if missing (so email shows in UI)
