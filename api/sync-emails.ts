@@ -3087,16 +3087,24 @@ If truly unknown, return "Unknown" for that field.` }],
           }
           console.log(`[RECOVER] Synced ${syncedCount} new emails for ${order.order_id} (query: "${usedQuery}")`)
 
-          // Now find all emails with attachments for this order (including freshly synced)
+          // Now find all emails for this order that might have attachments
+          // Note: has_attachment might be wrong for older emails, so also include
+          // emails with Final Doc subjects (they almost always have attachments)
           const { data: orderEmails } = await supabase
             .from('synced_emails')
             .select('id, gmail_id, subject, has_attachment, detected_stage, body_text')
             .eq('organization_id', organization_id)
             .eq('matched_order_id', order.order_id)
-            .eq('has_attachment', true)
-            .limit(20)
+            .limit(30)
 
-          const attachEmails = orderEmails || []
+          const attachEmails = (orderEmails || []).filter((e: any) => {
+            if (e.has_attachment) return true
+            // Include emails with Final Doc subject patterns even if has_attachment is false
+            const subj = (e.subject || '').toUpperCase()
+            if (subj.includes('ORIGINAL DOCUMENT') || subj.includes('FINAL DOC')) return true
+            return false
+          })
+          console.log(`[RECOVER] Found ${attachEmails.length} emails with attachments (or Final Doc subjects) for ${order.order_id}`)
 
           if (attachEmails.length === 0) {
             // No attachment emails — try to extract from email body text as last resort

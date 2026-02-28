@@ -994,7 +994,12 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
       if (error) {
         setRecoverResult(`Error: ${error}`);
       } else if (data?.results?.[0]?.status === 'ok') {
-        setRecoverResult(`Found ${data.results[0].lineItems || 0} line items! Refreshing...`);
+        const r = data.results[0];
+        const parts = [];
+        if (r.lineItems) parts.push(`${r.lineItems} line items`);
+        if (r.filesStored) parts.push(`${r.filesStored} documents filed`);
+        if (r.reason) parts.push(r.reason);
+        setRecoverResult(`${parts.join(', ') || 'Data recovered'}. Refreshing...`);
         setTimeout(() => window.location.reload(), 1500);
       } else if (data?.results?.[0]?.status === 'partial') {
         setRecoverResult('Emails found and added to this order — scroll down to see them. No PO document could be auto-extracted, but you can assign attachments manually from the email cards below.');
