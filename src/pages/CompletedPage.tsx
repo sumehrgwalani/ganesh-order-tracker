@@ -39,7 +39,7 @@ function CompletedPage({ orders }: Props) {
           <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => o.history.length > 0 && new Date(o.history[o.history.length-1]?.timestamp) > new Date(Date.now() - 30*24*60*60*1000)).length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
-          <p className="text-gray-500 text-sm">With DHL</p>
+          <p className="text-gray-500 text-sm">With DHL #</p>
           <p className="text-3xl font-bold mt-1 text-gray-800">{completedOrders.filter(o => o.awbNumber).length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
@@ -78,7 +78,7 @@ function CompletedPage({ orders }: Props) {
                       <Icon name="CheckCircle" size={20} className="text-green-600" />
                       <span className="font-mono text-sm text-gray-600 font-medium">{order.id}</span>
                       <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-green-100 text-green-700">Delivered</span>
-                      {order.awbNumber && <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded font-mono">AWB: {order.awbNumber}</span>}
+                      {order.awbNumber && <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded font-mono">DHL: {order.awbNumber}</span>}
                     </div>
                     <div className="flex items-center gap-6 text-sm">
                       <span className="text-gray-700 font-medium">{order.company}</span>

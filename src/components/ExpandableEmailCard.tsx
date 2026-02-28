@@ -32,7 +32,7 @@ const STAGE_OPTIONS = [
   { stage: 6, label: 'Schedule Confirmed' },
   { stage: 7, label: 'Draft Documents' },
   { stage: 8, label: 'Final Documents' },
-  { stage: 9, label: 'DHL Shipped' },
+  { stage: 9, label: 'DHL Number' },
 ];
 
 function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove, onAttachmentClick, onAssignAttachment }: Props) {

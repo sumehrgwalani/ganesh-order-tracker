@@ -36,7 +36,7 @@ Stage 7 (Draft Documents): Email contains draft shipping documents for review. K
 
 Stage 8 (Final Documents): Email confirms final/original documents sent. Keywords: "final documents", "original documents", "documents sent", "originals couriered", "BL released".
 
-Stage 9 (DHL Shipped): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill".
+Stage 9 (DHL Number): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill", "AIRWAY BILL NUMBER".
 `
 
 // Decode base64url encoded Gmail message body
@@ -1477,7 +1477,7 @@ STAGE DEFINITIONS:
 ${STAGE_TRIGGERS}
 
 Stage 1 = Order Confirmed (PO exists/was sent)
-Stage 9 = DHL Shipped (DHL tracking number shared)
+Stage 9 = DHL Number (DHL tracking number shared)
 
 IMPORTANT RULES FOR SKIPPED STAGES:
 - It's common for some stages to be skipped or happen without email evidence
@@ -1603,6 +1603,33 @@ If no purchase orders found, return: []`
         })
       }
 
+      // Helper: extract DHL tracking number from email body/subject
+      const extractDhlNumber = (subject: string | null, bodyText: string | null): string | null => {
+        const text = `${subject || ''} ${bodyText || ''}`
+        // Pattern 1: "DHL number # 1234567890" or "DHL number #1234567890"
+        const m1 = text.match(/DHL\s*number\s*#?\s*(\d{8,})/i)
+        if (m1) return m1[1]
+        // Pattern 2: "DHL AWB 1234567890"
+        const m2 = text.match(/DHL\s*AWB\s*(\d{8,})/i)
+        if (m2) return m2[1]
+        // Pattern 3: "AWB 1234567890" or "AWB# 1234567890"
+        const m3 = text.match(/AWB\s*#?\s*(\d{8,})/i)
+        if (m3) return m3[1]
+        // Pattern 4: standalone "DHL" followed by a long number nearby
+        const m4 = text.match(/DHL[^0-9]{0,30}(\d{10,})/i)
+        if (m4) return m4[1]
+        return null
+      }
+
+      // Helper: save DHL number to order if found
+      const saveDhlNumber = async (orderId: string, orgId: string, subject: string | null, bodyText: string | null) => {
+        const dhl = extractDhlNumber(subject, bodyText)
+        if (dhl) {
+          await supabase.from('orders').update({ awb_number: dhl }).eq('order_id', orderId).eq('organization_id', orgId)
+          console.log(`[DHL] Extracted DHL number ${dhl} for order ${orderId}`)
+        }
+      }
+
       // Helper: detect order stage from email subject keywords
       // Ordered from most specific to most generic to avoid false matches
       const detectStageFromSubject = (subject: string | null, bodyText?: string | null): number | null => {
@@ -1612,8 +1639,8 @@ If no purchase orders found, return: []`
         if (s.includes('final doc') || s.includes('original document') || s.includes('telex')) return 8
         // Stage 7 — draft documents
         if (s.includes('draft') || s.includes('bl ') || s.includes('bill of lading')) return 7
-        // Stage 9 — courier/tracking
-        if (s.includes('dhl') || s.includes('courier') || s.includes('tracking')) return 9
+        // Stage 9 — courier/tracking/airway bill
+        if (s.includes('dhl') || s.includes('courier') || s.includes('tracking') || s.includes('airway bill')) return 9
         // Specific invoice types that are NOT proforma
         if (s.includes('commercial invoice')) return 7
         if (s.includes('freight invoice') || s.includes('shipping invoice')) return 6
@@ -1887,6 +1914,11 @@ Return VALID JSON only, no markdown. One result per email:
           order.skippedStages = newSkipped
         }
 
+        // Extract DHL number if this is a stage 9 (or airway bill) email
+        if (detectedStage === 9) {
+          await saveDhlNumber(order.id, organization_id, email.subject, email.body_text)
+        }
+
         // Create order_history entry so email shows on order detail page (dedup check)
         await insertHistoryIfNew({
           organization_id,
@@ -1920,6 +1952,10 @@ Return VALID JSON only, no markdown. One result per email:
             .eq('organization_id', organization_id)
           order.currentStage = stage
           order.skippedStages = [...order.skippedStages, ...skipped]
+        }
+        // Extract DHL number if this is a stage 9 email
+        if (stage === 9 && order) {
+          await saveDhlNumber(orderId, organization_id, email.subject, email.body_text)
         }
         await insertHistoryIfNew({
           order_id: order?.uuid,
@@ -2235,6 +2271,11 @@ Return VALID JSON only, no markdown fences. Return exactly ${aiEmails.length} re
               // Update local copy so next emails in batch see new stage
               order.currentStage = detectedStage
               order.skippedStages = newSkipped
+
+              // Extract DHL number if stage 9
+              if (detectedStage === 9) {
+                await saveDhlNumber(matchedOrderId, organization_id, email.subject, email.body_text)
+              }
 
               // Log in order_history (dedup check)
               await insertHistoryIfNew({
@@ -3057,6 +3098,7 @@ If truly unknown, return "Unknown" for that field.` }],
               const subjectUpper = (ue.subject || '').toUpperCase()
               let stage = 0
               if (subjectUpper.includes('ORIGINAL DOCUMENT') || subjectUpper.includes('FINAL DOC')) stage = 8
+              else if (subjectUpper.includes('AIRWAY BILL') || subjectUpper.includes('DHL') || subjectUpper.includes('TRACKING')) stage = 9
               else if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) stage = 1
               else if (subjectUpper.includes('PROFORMA')) stage = 2
               else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL')) stage = 3
@@ -3065,6 +3107,11 @@ If truly unknown, return "Unknown" for that field.` }],
               if (stage && (!ue.detected_stage || ue.detected_stage !== stage)) {
                 await supabase.from('synced_emails').update({ detected_stage: stage }).eq('id', ue.id)
                 console.log(`[RECOVER] Updated detected_stage to ${stage} for "${(ue.subject || '').substring(0, 50)}"`)
+              }
+
+              // Extract DHL number from stage 9 emails
+              if (stage === 9) {
+                await saveDhlNumber(order.order_id, organization_id, ue.subject, ue.body_text)
               }
 
               // Create order_history entry if missing (so email shows in UI)

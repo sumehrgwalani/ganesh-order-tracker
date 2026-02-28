@@ -129,7 +129,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
     { id: 'schedule', title: 'Schedule Confirmed', icon: 'Calendar', color: 'teal', stage: 6, available: hasStageData(6) },
     { id: 'draftDocuments', title: 'Draft Documents', icon: 'File', color: 'amber', stage: 7, available: hasStageData(7) },
     { id: 'finalDocuments', title: 'Final Documents', icon: 'FileCheck', color: 'green', stage: 8, available: hasStageData(8) },
-    { id: 'dhlShipped', title: 'DHL Shipped', icon: 'Truck', color: 'emerald', stage: 9, available: hasStageData(9) },
+    { id: 'dhlShipped', title: 'DHL Number', icon: 'Truck', color: 'emerald', stage: 9, available: hasStageData(9) || !!order.awbNumber },
   ];
 
   const formatDate = (ts: string) => {
@@ -504,35 +504,25 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
 
       case 'dhlShipped': {
         const dhlHistory = order.history.filter(h => h.stage === 9);
-        const awb = order.awbNumber || dhlHistory.find(h => h.body?.match(/AWB\s*[\d]+/i))?.body?.match(/AWB\s*([\d]+)/i)?.[1] || '';
+        const awb = order.awbNumber || dhlHistory.find(h => h.body?.match(/DHL\s*(?:number\s*#?|AWB)\s*([\d]+)/i))?.body?.match(/DHL\s*(?:number\s*#?|AWB)\s*([\d]+)/i)?.[1] || '';
         return (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              {awb && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">AWB / Tracking Number</p>
-                  <p className="font-mono font-semibold text-blue-600">{awb}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Destination</p>
-                <p className="font-medium text-gray-800">{order.to || 'TBC'}</p>
+            {awb ? (
+              <div className="text-center space-y-3">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">DHL Tracking Number</p>
+                <p className="font-mono text-2xl font-bold text-gray-900">{awb}</p>
+                <a
+                  href={`https://www.dhl.com/en/express/tracking.html?AWB=${awb}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-xl transition-colors"
+                >
+                  <Icon name="ExternalLink" size={16} />
+                  Track on DHL
+                </a>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
-                <p className="font-medium text-emerald-700">{order.currentStage >= 9 ? 'Shipped' : 'Pending'}</p>
-              </div>
-            </div>
-            {awb && (
-              <a
-                href={`https://www.dhl.com/en/express/tracking.html?AWB=${awb}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-xl transition-colors"
-              >
-                <Icon name="ExternalLink" size={16} />
-                Track on DHL
-              </a>
+            ) : (
+              <p className="text-sm text-gray-500 text-center">No DHL number found yet</p>
             )}
             {renderAttachments(9)}
           </div>
@@ -1246,8 +1236,8 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           )}
           {order.awbNumber && (
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">DHL AWB</p>
-              <p className="font-mono text-sm text-blue-600">{order.awbNumber}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">DHL Number</p>
+              <a href={`https://www.dhl.com/en/express/tracking.html?AWB=${order.awbNumber}`} target="_blank" rel="noopener noreferrer" className="font-mono text-sm text-blue-600 hover:underline">{order.awbNumber}</a>
             </div>
           )}
           {order.totalValue && (

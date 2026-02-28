@@ -9,7 +9,7 @@ export const ORDER_STAGES: OrderStage[] = [
   { id: 6, name: 'Schedule Confirmed', shortName: 'Scheduled', description: 'Vessel schedule confirmed', color: 'orange' },
   { id: 7, name: 'Draft Documents', shortName: 'Docs OK', description: 'Complete when "DOCUMENTS OK" received', color: 'yellow' },
   { id: 8, name: 'Final Documents', shortName: 'Final Docs', description: 'Final document copies sent', color: 'teal' },
-  { id: 9, name: 'DHL Shipped', shortName: 'DHL Sent', description: 'DHL tracking number shared', color: 'green' },
+  { id: 9, name: 'DHL Number', shortName: 'DHL #', description: 'DHL tracking number extracted', color: 'green' },
 ];
 
 // Logos served from public/ directory via Vite base path

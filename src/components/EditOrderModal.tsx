@@ -60,7 +60,7 @@ export default function EditOrderModal({ order, buyerOptions, supplierOptions, p
     { key: 'from', label: 'Origin' },
     { key: 'to', label: 'Destination' },
     { key: 'piNumber', label: 'PI Number' },
-    { key: 'awbNumber', label: 'AWB / Tracking' },
+    { key: 'awbNumber', label: 'DHL Number' },
     { key: 'totalValue', label: 'Total Value (USD)' },
     { key: 'totalKilos', label: 'Total Kilos' },
   ];
