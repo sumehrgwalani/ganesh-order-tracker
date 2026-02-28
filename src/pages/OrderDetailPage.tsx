@@ -1082,6 +1082,17 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           )}
+          {orgId && userId && (
+            <button
+              onClick={handleRecoverData}
+              disabled={recovering}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              title="Search Gmail for emails related to this order"
+            >
+              <Icon name={recovering ? 'Loader' : 'Search'} size={14} className={recovering ? 'animate-spin' : ''} />
+              {recovering ? 'Searching...' : 'Recover'}
+            </button>
+          )}
           {onUpdateOrder && (
             <button
               onClick={() => {
@@ -1104,6 +1115,18 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           )}
         </div>
       </div>
+
+      {/* Recover result banner */}
+      {recoverResult && (
+        <div className={`mb-4 rounded-xl px-4 py-3 flex items-center justify-between ${recoverResult.startsWith('Error') ? 'bg-red-50 border border-red-200' : recoverResult.includes('Found') ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+          <p className={`text-sm font-medium ${recoverResult.startsWith('Error') ? 'text-red-700' : recoverResult.includes('Found') ? 'text-green-700' : 'text-yellow-700'}`}>
+            {recoverResult}
+          </p>
+          <button onClick={() => setRecoverResult(null)} className="text-gray-400 hover:text-gray-600">
+            <Icon name="X" size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Order Summary Card */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
@@ -1188,23 +1211,10 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           <div className="bg-gray-50 rounded-xl p-4">
             <p className="font-medium text-gray-800">{order.product}</p>
             <p className="text-sm text-gray-500 mt-1">{order.specs}</p>
-            {orgId && userId && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <button
-                  onClick={handleRecoverData}
-                  disabled={recovering}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <Icon name={recovering ? 'Loader' : 'Search'} size={14} className={recovering ? 'animate-spin' : ''} />
-                  {recovering ? 'Searching mailbox...' : 'Recover Data from Mailbox'}
-                </button>
-                <p className="text-xs text-gray-400 mt-1">Searches Gmail for this PO number and extracts order details</p>
-                {recoverResult && (
-                  <p className={`text-sm mt-2 ${recoverResult.startsWith('Error') ? 'text-red-600' : recoverResult.includes('Found') ? 'text-green-600' : 'text-yellow-600'}`}>
-                    {recoverResult}
-                  </p>
-                )}
-              </div>
+            {recoverResult && (
+              <p className={`text-sm mt-2 ${recoverResult.startsWith('Error') ? 'text-red-600' : recoverResult.includes('Found') ? 'text-green-600' : 'text-yellow-600'}`}>
+                {recoverResult}
+              </p>
             )}
           </div>
         )}
