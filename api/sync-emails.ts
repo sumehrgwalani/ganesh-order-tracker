@@ -2891,29 +2891,40 @@ If truly unknown, return "Unknown" for that field.` }],
 
       for (const order of recBatch) {
         try {
-          // Extract PO number for Gmail search (e.g. "3055" from "GI/PO/25-26/3055")
+          // Extract PO number for Gmail search (e.g. "3019" from "GI/PO/25-26/3019")
           const poMatch = order.order_id.match(/(\d{4,})/)
-          const searchTerms: string[] = []
-          if (poMatch) searchTerms.push(poMatch[1])
-          // Also search full PO ID
-          searchTerms.push(order.order_id)
-          // Include supplier name if known
-          if (order.supplier && order.supplier !== 'Unknown') searchTerms.push(order.supplier)
+          const poNum = poMatch ? poMatch[1] : ''
 
-          // Search Gmail for this specific order
-          const gmailQuery = searchTerms.map(t => `"${t}"`).join(' OR ')
-          console.log(`[RECOVER] Searching Gmail for order ${order.order_id}: ${gmailQuery}`)
+          // Tiered Gmail search: most specific first, broadening if nothing found
+          // Tier 1: "PURCHASE ORDER" + PO number with attachments (the actual PO email)
+          // Tier 2: PO number with attachments (PI, artwork, etc.)
+          // Tier 3: PO number in any email (for email body extraction)
+          const searchQueries = [
+            `"purchase order" "${poNum}" has:attachment`,
+            `"${poNum}" has:attachment`,
+            `"PO ${poNum}"`,
+            poNum ? `"${poNum}"` : '',
+          ].filter(Boolean)
 
-          const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=30`
-          const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${recAccessToken}` } })
-          const searchData = await searchRes.json()
-          const foundIds = (searchData.messages || []).map((m: any) => m.id)
+          let foundIds: string[] = []
+          let usedQuery = ''
+          for (const query of searchQueries) {
+            const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
+            const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${recAccessToken}` } })
+            const searchData = await searchRes.json()
+            const ids = (searchData.messages || []).map((m: any) => m.id)
+            if (ids.length > 0) {
+              foundIds = ids
+              usedQuery = query
+              console.log(`[RECOVER] Gmail search hit for ${order.order_id}: "${query}" → ${ids.length} results`)
+              break
+            }
+          }
 
           if (foundIds.length === 0) {
-            recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails found in Gmail' })
+            recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails found in Gmail for PO number ' + poNum })
             continue
           }
-          console.log(`[RECOVER] Found ${foundIds.length} emails for ${order.order_id}`)
 
           // Check which ones are already synced
           const { data: alreadySynced } = await supabase
@@ -2924,9 +2935,10 @@ If truly unknown, return "Unknown" for that field.` }],
           const syncedSet = new Set((alreadySynced || []).map((e: any) => e.gmail_id))
           const newIds = foundIds.filter((id: string) => !syncedSet.has(id))
 
-          // Sync new emails into synced_emails table
+          // Sync new emails into synced_emails table AND create order_history entries
           let syncedCount = 0
-          for (const msgId of newIds.slice(0, 10)) {
+          const syncedEmailDetails: any[] = []
+          for (const msgId of newIds.slice(0, 15)) {
             try {
               const msgRes = await fetch(
                 `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
@@ -2940,11 +2952,27 @@ If truly unknown, return "Unknown" for that field.` }],
               const to = getHeader(headers, 'To')
               const dateStr = getHeader(headers, 'Date')
               const bodyText = extractBody(msg.payload).substring(0, 5000)
-              const hasAttachment = (msg.payload?.parts || []).some((p: any) =>
-                p.filename && p.filename.length > 0 && !p.filename.match(/^image\d{0,3}\.(jpg|jpeg|png)$/i)
-              )
 
-              await supabase.from('synced_emails').upsert({
+              // Check actual attachment parts (not just inline images)
+              const attachParts = extractAttachmentParts(msg.payload)
+              const hasRealAttachment = attachParts.length > 0
+
+              // Only match to this order if the email actually mentions the PO number
+              const emailContent = `${subject} ${bodyText}`.toLowerCase()
+              const mentionsPO = poNum && (emailContent.includes(poNum) || emailContent.includes(order.order_id.toLowerCase()))
+              if (!mentionsPO) {
+                console.log(`[RECOVER] Skipping email "${subject.substring(0, 60)}" — doesn't mention PO ${poNum}`)
+                continue
+              }
+
+              // Detect stage from subject
+              const subjectUpper = subject.toUpperCase()
+              let detectedStage = 0
+              if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) detectedStage = 1
+              else if (subjectUpper.includes('PROFORMA') || subjectUpper.includes('NEW PROFORMA')) detectedStage = 2
+              else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL') || subjectUpper.includes('APPROVAL')) detectedStage = 3
+
+              const emailRow = {
                 organization_id,
                 gmail_id: msgId,
                 thread_id: msg.threadId || null,
@@ -2954,50 +2982,114 @@ If truly unknown, return "Unknown" for that field.` }],
                 subject,
                 body_text: bodyText,
                 date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
-                has_attachment: hasAttachment,
+                has_attachment: hasRealAttachment,
                 matched_order_id: order.order_id,
-                detected_stage: 1,
+                detected_stage: detectedStage || null,
                 connected_user_id: user_id,
-              }, { onConflict: 'gmail_id,organization_id', ignoreDuplicates: true })
+              }
+              await supabase.from('synced_emails').upsert(emailRow, { onConflict: 'gmail_id,organization_id', ignoreDuplicates: true })
               syncedCount++
+              syncedEmailDetails.push({ ...emailRow, gmail_id: msgId })
+
+              // Create an order_history entry so the email shows up in the order detail page
+              // Check for duplicates first (same order + subject + close timestamp)
+              const historyDate = dateStr ? new Date(dateStr).toISOString() : new Date().toISOString()
+              const { data: existingHistory } = await supabase.from('order_history')
+                .select('id')
+                .eq('order_id', order.id)
+                .eq('subject', subject)
+                .limit(1)
+              if (!existingHistory || existingHistory.length === 0) {
+                await supabase.from('order_history').insert({
+                  order_id: order.id,
+                  stage: detectedStage || 1,
+                  subject,
+                  from_address: `${extractName(from)} <${extractEmail(from)}>`,
+                  has_attachment: hasRealAttachment,
+                  timestamp: historyDate,
+                })
+              }
             } catch (syncErr) {
               console.log(`[RECOVER] Failed to sync email ${msgId}: ${syncErr}`)
             }
           }
-          console.log(`[RECOVER] Synced ${syncedCount} new emails for ${order.order_id}`)
+
+          // Also link already-synced but unmatched emails to this order
+          if (syncedSet.size > 0) {
+            const { data: existingUnmatched } = await supabase
+              .from('synced_emails')
+              .select('id, gmail_id, subject, body_text')
+              .eq('organization_id', organization_id)
+              .in('gmail_id', [...syncedSet])
+              .is('matched_order_id', null)
+            for (const ue of (existingUnmatched || [])) {
+              const content = `${ue.subject} ${ue.body_text || ''}`.toLowerCase()
+              if (poNum && content.includes(poNum)) {
+                await supabase.from('synced_emails').update({ matched_order_id: order.order_id }).eq('id', ue.id)
+                console.log(`[RECOVER] Linked existing email "${(ue.subject || '').substring(0, 50)}" to ${order.order_id}`)
+              }
+            }
+          }
+          console.log(`[RECOVER] Synced ${syncedCount} new emails for ${order.order_id} (query: "${usedQuery}")`)
 
           // Now find all emails with attachments for this order (including freshly synced)
           const { data: orderEmails } = await supabase
             .from('synced_emails')
-            .select('id, gmail_id, subject, has_attachment, detected_stage, matched_order_id, user_linked_order_id')
+            .select('id, gmail_id, subject, has_attachment, detected_stage, body_text')
             .eq('organization_id', organization_id)
-            .or(`matched_order_id.eq.${order.order_id},user_linked_order_id.eq.${order.order_id}`)
+            .eq('matched_order_id', order.order_id)
             .eq('has_attachment', true)
             .limit(20)
 
-          // Also check emails that were synced but not matched — re-match by gmail_id
-          const allEmailIds = [...syncedSet, ...newIds.slice(0, 10)]
-          const { data: unmatchedEmails } = await supabase
-            .from('synced_emails')
-            .select('id, gmail_id, subject, has_attachment, detected_stage, matched_order_id')
-            .eq('organization_id', organization_id)
-            .in('gmail_id', [...allEmailIds])
-            .is('matched_order_id', null)
-            .eq('has_attachment', true)
-
-          // Link unmatched emails to this order
-          const emailsToLink = unmatchedEmails || []
-          for (const ue of emailsToLink) {
-            await supabase.from('synced_emails')
-              .update({ matched_order_id: order.order_id })
-              .eq('id', ue.id)
-          }
-
-          const allEmails = [...(orderEmails || []), ...emailsToLink]
-          const attachEmails = allEmails.filter((e: any) => e.has_attachment)
+          const attachEmails = orderEmails || []
 
           if (attachEmails.length === 0) {
-            recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails with attachments found', emailsSynced: syncedCount })
+            // No attachment emails — try to extract from email body text as last resort
+            const { data: textEmails } = await supabase
+              .from('synced_emails')
+              .select('id, gmail_id, subject, body_text')
+              .eq('organization_id', organization_id)
+              .eq('matched_order_id', order.order_id)
+              .not('body_text', 'is', null)
+              .limit(5)
+
+            if (textEmails && textEmails.length > 0) {
+              // Try extracting PO data from email body text
+              for (const te of textEmails) {
+                if ((te.body_text || '').length < 50) continue
+                try {
+                  const emailData = await extractPODataFromEmail(te, order.company || '', order.supplier || '')
+                  if (emailData && emailData.lineItems && emailData.lineItems.length > 0) {
+                    const lineItemRows = emailData.lineItems.map((item: any, idx: number) => ({
+                      order_id: order.id, product: item.product, brand: item.brand || '',
+                      size: item.size || '', glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
+                      packing: item.packing || '', freezing: item.freezing || 'IQF',
+                      cases: parseInt(item.cases) || 0, kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
+                      currency: item.currency || 'USD',
+                      total: Number(item.total) || ((item.kilos || 0) * (item.pricePerKg || 0)), sort_order: idx,
+                    }))
+                    await supabase.from('order_line_items').insert(lineItemRows)
+                    const updates: any = {}
+                    if (emailData.deliveryTerms && !order.delivery_terms) updates.delivery_terms = emailData.deliveryTerms
+                    if (emailData.payment && !order.payment_terms) updates.payment_terms = emailData.payment
+                    if (emailData.destination && !order.to_location) updates.to_location = emailData.destination
+                    if (emailData.totalKilos > 0 && !order.total_kilos) updates.total_kilos = emailData.totalKilos
+                    if (emailData.totalValue > 0 && !order.total_value) updates.total_value = String(emailData.totalValue)
+                    if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
+                    recRecovered++
+                    recResults.push({ order: order.order_id, status: 'ok', source: 'email_text', emailsSynced: syncedCount, lineItems: emailData.lineItems.length })
+                    break
+                  }
+                } catch (textErr) {
+                  console.log(`[RECOVER] Email text extraction failed: ${textErr}`)
+                }
+              }
+              if (!recResults.some(r => r.order === order.order_id && r.status === 'ok')) {
+                recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but no PO data found in email text or attachments', emailsSynced: syncedCount })
+              }
+            } else {
+              recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but none have attachments', emailsSynced: syncedCount })
+            }
             continue
           }
 
@@ -3008,6 +3100,7 @@ If truly unknown, return "Unknown" for that field.` }],
             if (e.detected_stage === 1) score += 100
             if (subj.includes('purchase order') || subj.includes('new po')) score += 50
             if (subj.includes('proforma')) score += 40
+            if (subj.includes('audit') || subj.includes('foto') || subj.includes('photo')) score -= 50
             return { email: e, score }
           }).sort((a: any, b: any) => b.score - a.score)
 
