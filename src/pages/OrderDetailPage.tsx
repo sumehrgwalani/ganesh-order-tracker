@@ -977,6 +977,17 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
     window.location.reload();
   };
 
+  const handleDownloadAttachment = async (historyEntryId: string, targetStage: number) => {
+    const { data, error } = await apiCall('/api/download-email-attachment', {
+      history_entry_id: historyEntryId,
+      target_stage: targetStage,
+      organization_id: orgId,
+    });
+    if (error) throw error;
+    if (data?.downloaded === 0) throw new Error('No attachments could be downloaded');
+    window.location.reload();
+  };
+
   const handleRecoverData = async () => {
     if (!orgId || !userId) return;
     setRecovering(true);
@@ -1356,6 +1367,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
               onRemove={handleRemoveEmail}
               onAttachmentClick={(name, url) => setPdfModal({ open: true, url, title: name, loading: false })}
               onAssignAttachment={handleAssignAttachment}
+              onDownloadAttachment={handleDownloadAttachment}
             />
           ))}
         </div>

@@ -21,6 +21,7 @@ interface Props {
   onRemove?: (entryId: string, note: string) => Promise<void>;
   onAttachmentClick?: (name: string, url: string) => void;
   onAssignAttachment?: (entryId: string, stage: number, file: File) => Promise<void>;
+  onDownloadAttachment?: (entryId: string, stage: number) => Promise<void>;
 }
 
 const STAGE_OPTIONS = [
@@ -35,12 +36,13 @@ const STAGE_OPTIONS = [
   { stage: 9, label: 'DHL Number' },
 ];
 
-function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove, onAttachmentClick, onAssignAttachment }: Props) {
+function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrders, onReassign, onRemove, onAttachmentClick, onAssignAttachment, onDownloadAttachment }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showReassign, setShowReassign] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [assignStage, setAssignStage] = useState(entry.stage || 1);
   const [assignUploading, setAssignUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const assignFileRef = useRef<HTMLInputElement>(null);
   const contact = getContactInfo(entry.from);
   const formatTime = (ts: string) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -157,7 +159,7 @@ function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrder
           {/* Assign attachment inline panel */}
           {showAssign && (
             <div className="px-4 pb-4 border-t border-blue-100 bg-blue-50/30" onClick={e => e.stopPropagation()}>
-              <p className="text-xs text-gray-600 mt-3 mb-2">Upload the attachment file and assign it to a document stage:</p>
+              <p className="text-xs text-gray-600 mt-3 mb-2">Download the attachment from this email and assign it to a document stage:</p>
               <div className="flex items-center gap-3 flex-wrap">
                 <select
                   value={assignStage}
@@ -168,6 +170,28 @@ function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrder
                     <option key={s.stage} value={s.stage}>{s.label}</option>
                   ))}
                 </select>
+                {/* Primary: Download from Gmail */}
+                {onDownloadAttachment && entry.id && (
+                  <button
+                    onClick={async () => {
+                      if (!entry.id || !onDownloadAttachment) return;
+                      setDownloading(true);
+                      try {
+                        await onDownloadAttachment(entry.id, assignStage);
+                        setShowAssign(false);
+                      } catch (err: any) {
+                        alert('Failed to download: ' + (err?.message || 'Unknown error'));
+                      }
+                      setDownloading(false);
+                    }}
+                    disabled={downloading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    <Icon name="Download" size={12} />
+                    {downloading ? 'Downloading...' : 'Download & Assign'}
+                  </button>
+                )}
+                {/* Fallback: Upload from computer */}
                 <input
                   ref={assignFileRef}
                   type="file"
@@ -179,14 +203,16 @@ function ExpandableEmailCard({ entry, defaultExpanded = false, orderId, allOrder
                     if (assignFileRef.current) assignFileRef.current.value = '';
                   }}
                 />
-                <button
-                  onClick={() => assignFileRef.current?.click()}
-                  disabled={assignUploading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <Icon name="Upload" size={12} />
-                  {assignUploading ? 'Uploading...' : 'Choose File & Upload'}
-                </button>
+                {onAssignAttachment && entry.id && (
+                  <button
+                    onClick={() => assignFileRef.current?.click()}
+                    disabled={assignUploading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    <Icon name="Upload" size={12} />
+                    {assignUploading ? 'Uploading...' : 'Or Upload File'}
+                  </button>
+                )}
                 <button
                   onClick={() => setShowAssign(false)}
                   className="text-xs text-gray-500 hover:text-gray-700"
