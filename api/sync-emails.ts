@@ -732,11 +732,15 @@ async function processEmailAttachments(
           classification = 'commission'
         }
 
-        // If email is detected as stage 8 (Final Documents) from subject keywords like
-        // "ORIGINAL DOCUMENTS COPIES", force all attachments to finaldoc regardless of AI classification
-        if (email.detected_stage === 8 && classification !== 'commission') {
+        // If email is Final Documents (stage 8) — detected from stored stage OR subject keywords —
+        // force all attachments to finaldoc regardless of AI classification
+        const subjLower = (email.subject || '').toLowerCase()
+        const isFinalDocEmail = email.detected_stage === 8 ||
+          subjLower.includes('original document') || subjLower.includes('original copies') ||
+          subjLower.includes('final doc')
+        if (isFinalDocEmail && classification !== 'commission') {
           if (classification !== 'finaldoc') {
-            console.log(`[PROCESS] Overriding "${classification}" → "finaldoc" for ${part.filename} (email is stage 8 Final Documents)`)
+            console.log(`[PROCESS] Overriding "${classification}" → "finaldoc" for ${part.filename} (Final Documents email: "${(email.subject || '').substring(0, 60)}")`)
             classification = 'finaldoc'
           }
         }
@@ -3038,7 +3042,7 @@ If truly unknown, return "Unknown" for that field.` }],
           if (syncedSet.size > 0) {
             const { data: existingSynced } = await supabase
               .from('synced_emails')
-              .select('id, gmail_id, subject, body_text, from_email, from_name, date, has_attachment, matched_order_id')
+              .select('id, gmail_id, subject, body_text, from_email, from_name, date, has_attachment, matched_order_id, detected_stage')
               .eq('organization_id', organization_id)
               .in('gmail_id', [...syncedSet])
             for (const ue of (existingSynced || [])) {
@@ -3051,15 +3055,24 @@ If truly unknown, return "Unknown" for that field.` }],
                 console.log(`[RECOVER] Linked existing email "${(ue.subject || '').substring(0, 50)}" to ${order.order_id}`)
               }
 
+              // Detect stage from subject
+              const subjectUpper = (ue.subject || '').toUpperCase()
+              let stage = 0
+              if (subjectUpper.includes('ORIGINAL DOCUMENT') || subjectUpper.includes('FINAL DOC')) stage = 8
+              else if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) stage = 1
+              else if (subjectUpper.includes('PROFORMA')) stage = 2
+              else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL')) stage = 3
+
+              // Update detected_stage on synced email if it was wrong/missing
+              if (stage && (!ue.detected_stage || ue.detected_stage !== stage)) {
+                await supabase.from('synced_emails').update({ detected_stage: stage }).eq('id', ue.id)
+                console.log(`[RECOVER] Updated detected_stage to ${stage} for "${(ue.subject || '').substring(0, 50)}"`)
+              }
+
               // Create order_history entry if missing (so email shows in UI)
               const { data: existH } = await supabase.from('order_history')
                 .select('id').eq('order_id', order.id).eq('subject', ue.subject || '').limit(1)
               if (!existH || existH.length === 0) {
-                const subjectUpper = (ue.subject || '').toUpperCase()
-                let stage = 0
-                if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) stage = 1
-                else if (subjectUpper.includes('PROFORMA')) stage = 2
-                else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL')) stage = 3
                 await supabase.from('order_history').insert({
                   order_id: order.id,
                   stage: stage || 1,
@@ -3135,25 +3148,28 @@ If truly unknown, return "Unknown" for that field.` }],
             continue
           }
 
-          // Score and process attachment emails (PO emails first)
+          // Score and process attachment emails (PO emails first, then Final Docs)
           const scored = attachEmails.map((e: any) => {
             let score = 0
             const subj = (e.subject || '').toLowerCase()
             if (e.detected_stage === 1) score += 100
             if (subj.includes('purchase order') || subj.includes('new po')) score += 50
             if (subj.includes('proforma')) score += 40
+            if (subj.includes('original document') || subj.includes('final doc')) score += 30
             if (subj.includes('audit') || subj.includes('foto') || subj.includes('photo')) score -= 50
             return { email: e, score }
           }).sort((a: any, b: any) => b.score - a.score)
 
           let extracted = false
-          for (const { email: attachEmail } of scored.slice(0, 3)) {
+          let totalFilesStored = 0
+          for (const { email: attachEmail } of scored.slice(0, 5)) {
             if (extracted) break
             try {
               const result = await processEmailAttachments(
                 supabase, recAccessToken, attachEmail,
                 order.order_id, order.id, organization_id, user_id, false
               )
+              totalFilesStored += result.filesStored
               if (result.filesStored > 0) {
                 // Check if line items were actually extracted
                 const { count: itemCount } = await supabase.from('order_line_items')
