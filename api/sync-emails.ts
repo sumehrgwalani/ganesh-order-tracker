@@ -3160,33 +3160,33 @@ If truly unknown, return "Unknown" for that field.` }],
             return { email: e, score }
           }).sort((a: any, b: any) => b.score - a.score)
 
-          let extracted = false
           let totalFilesStored = 0
           for (const { email: attachEmail } of scored.slice(0, 5)) {
-            if (extracted) break
             try {
               const result = await processEmailAttachments(
                 supabase, recAccessToken, attachEmail,
                 order.order_id, order.id, organization_id, user_id, false
               )
               totalFilesStored += result.filesStored
-              if (result.filesStored > 0) {
-                // Check if line items were actually extracted
-                const { count: itemCount } = await supabase.from('order_line_items')
-                  .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
-                if (itemCount && itemCount > 0) {
-                  extracted = true
-                  recRecovered++
-                  recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, filesStored: result.filesStored, lineItems: itemCount })
-                }
-              }
+              console.log(`[RECOVER] Processed email "${(attachEmail.subject || '').substring(0, 50)}" → ${result.filesStored} files stored`)
             } catch (procErr) {
               console.log(`[RECOVER] Attachment processing failed for ${order.order_id}: ${procErr}`)
             }
           }
 
-          // If processEmailAttachments didn't extract data, try bulk-extract style (stored PDF fallback)
-          if (!extracted) {
+          // Check final state: did we store any files and/or extract line items?
+          if (totalFilesStored > 0) {
+            const { count: itemCount } = await supabase.from('order_line_items')
+              .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+            if (itemCount && itemCount > 0) {
+              recRecovered++
+              recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, filesStored: totalFilesStored, lineItems: itemCount })
+            }
+          }
+
+          // If no files were stored from email attachments, try bulk-extract style (stored PDF fallback)
+          const alreadyReported = recResults.some(r => r.order === order.order_id && r.status === 'ok')
+          if (!alreadyReported) {
             // Check if a pdfUrl was stored during attachment processing
             const { data: refreshedOrder } = await supabase
               .from('orders')
@@ -3238,7 +3238,6 @@ If truly unknown, return "Unknown" for that field.` }],
                       if (!order.product || genericNames.includes(order.product)) updates.product = extractedData.lineItems[0].product
                     }
                     if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
-                    extracted = true
                     recRecovered++
                     recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, source: 'stored_pdf', lineItems: extractedData.lineItems.length })
                   }
@@ -3249,8 +3248,13 @@ If truly unknown, return "Unknown" for that field.` }],
             }
           }
 
-          if (!extracted) {
-            recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but no PO data extracted', emailsSynced: syncedCount })
+          if (!recResults.some(r => r.order === order.order_id && r.status === 'ok')) {
+            if (totalFilesStored > 0) {
+              recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, filesStored: totalFilesStored, reason: 'Documents filed from email attachments' })
+              recRecovered++
+            } else {
+              recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but no PO data extracted', emailsSynced: syncedCount })
+            }
           }
         } catch (orderErr) {
           recResults.push({ order: order.order_id, status: 'error', reason: String(orderErr) })
