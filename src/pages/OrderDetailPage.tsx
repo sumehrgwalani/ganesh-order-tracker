@@ -13,17 +13,20 @@ import { supabase } from '../lib/supabase';
 import { buildPOHtml, buildPIHtml, orderToPdfData } from '../utils/pdfBuilders';
 import type { CatalogProduct } from '../hooks/useProducts';
 import ArtworkCompare from '../components/ArtworkCompare';
+import { apiCall } from '../utils/api';
 
 interface Props {
   orders: Order[];
   contacts?: ContactsMap;
   products?: CatalogProduct[];
+  orgId?: string | null;
+  userId?: string;
   onUpdateStage?: (orderId: string, newStage: number, oldStage?: number) => Promise<void>;
   onUpdateOrder?: (orderId: string, updates: Partial<Order>) => Promise<void>;
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
-function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
+function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateStage, onUpdateOrder, onDeleteOrder }: Props) {
   const { orderId: rawOrderId } = useParams<{ orderId: string }>();
   const orderId = rawOrderId ? decodeURIComponent(rawOrderId) : '';
   const navigate = useNavigate();
@@ -40,6 +43,8 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
   const [artworkPairPicker, setArtworkPairPicker] = useState<{ open: boolean; emailAttachments: { name: string; pdfUrl: string }[] } | null>(null);
   const [selectedPairTarget, setSelectedPairTarget] = useState<{ name: string; pdfUrl: string } | null>(null);
   const artworkFileRef = useRef<HTMLInputElement>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [recoverResult, setRecoverResult] = useState<string | null>(null);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -975,6 +980,33 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     window.location.reload();
   };
 
+  const handleRecoverData = async () => {
+    if (!orgId || !userId) return;
+    setRecovering(true);
+    setRecoverResult(null);
+    try {
+      const { data, error } = await apiCall('/api/sync-emails', {
+        organization_id: orgId,
+        user_id: userId,
+        mode: 'recover',
+        order_po: order.id,
+      });
+      if (error) {
+        setRecoverResult(`Error: ${error}`);
+      } else if (data?.results?.[0]?.status === 'ok') {
+        setRecoverResult(`Found ${data.results[0].lineItems || 0} line items! Refreshing...`);
+        setTimeout(() => window.location.reload(), 1500);
+      } else if (data?.results?.[0]?.status === 'partial') {
+        setRecoverResult('Emails found and synced, but no PO document with line items could be extracted. Try assigning attachments manually.');
+      } else {
+        setRecoverResult(data?.results?.[0]?.reason || data?.message || 'No matching emails found in Gmail.');
+      }
+    } catch (err: any) {
+      setRecoverResult(`Error: ${err.message || 'Unknown error'}`);
+    }
+    setRecovering(false);
+  };
+
   // Handle deleting a single attachment from a history entry
   const handleDeleteAttachment = async (historyId: string, attName: string) => {
     if (!onUpdateOrder) return;
@@ -1155,6 +1187,24 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
           <div className="bg-gray-50 rounded-xl p-4">
             <p className="font-medium text-gray-800">{order.product}</p>
             <p className="text-sm text-gray-500 mt-1">{order.specs}</p>
+            {orgId && userId && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <button
+                  onClick={handleRecoverData}
+                  disabled={recovering}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  <Icon name={recovering ? 'Loader' : 'Search'} size={14} className={recovering ? 'animate-spin' : ''} />
+                  {recovering ? 'Searching mailbox...' : 'Recover Data from Mailbox'}
+                </button>
+                <p className="text-xs text-gray-400 mt-1">Searches Gmail for this PO number and extracts order details</p>
+                {recoverResult && (
+                  <p className={`text-sm mt-2 ${recoverResult.startsWith('Error') ? 'text-red-600' : recoverResult.includes('Found') ? 'text-green-600' : 'text-yellow-600'}`}>
+                    {recoverResult}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -1054,7 +1054,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const reqBody = req.body
     const { organization_id, user_id, mode, batch_size } = reqBody
-    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync, 'reprocess' = re-download PI/PO attachments, 'bulk-extract' = extract PO line items
+    // mode: 'pull' = just download emails, 'match' = AI matching batch, 'full' = legacy full sync, 'reprocess' = re-download PI/PO attachments, 'bulk-extract' = extract PO line items, 'recover' = targeted Gmail search for orders missing data
     const syncMode = mode || 'full'
     if (!organization_id || !user_id) throw new Error('Missing organization_id or user_id')
 
@@ -2835,6 +2835,284 @@ If truly unknown, return "Unknown" for that field.` }],
       setCors(res)
       return res.status(200).json({
         mode: 'bulk-extract', done: bulkRemaining === 0, batchProcessed: batch.length, extracted, remaining: bulkRemaining, results
+      })
+    }
+
+    // ============================================================
+    // MODE: RECOVER — Targeted Gmail search for orders with missing data
+    // Searches Gmail for specific PO numbers, syncs matching emails,
+    // downloads attachments, and extracts order data.
+    // ============================================================
+    if (syncMode === 'recover') {
+      if (!member.gmail_refresh_token) throw new Error('Gmail not connected')
+      const { data: recSettings } = await supabase
+        .from('organization_settings')
+        .select('gmail_client_id')
+        .eq('organization_id', organization_id)
+        .single()
+      const recClientSecret = process.env.GOOGLE_CLIENT_SECRET!
+      if (!recSettings?.gmail_client_id || !recClientSecret) throw new Error('Gmail not configured')
+      const recAccessToken = await refreshGmailToken(member.gmail_refresh_token, recSettings.gmail_client_id, recClientSecret)
+      if (!recAccessToken) throw new Error('Failed to refresh Gmail token')
+
+      // Find orders that need recovery
+      const targetPO = reqBody.order_po as string | undefined
+      let ordersToRecover: any[] = []
+
+      if (targetPO) {
+        // Single order mode
+        const { data: order } = await supabase
+          .from('orders')
+          .select('id, order_id, company, supplier, product, metadata, delivery_terms, payment_terms, commission, to_location, total_kilos, total_value, order_line_items(id)')
+          .eq('organization_id', organization_id)
+          .eq('order_id', targetPO)
+          .single()
+        if (order) ordersToRecover = [order]
+      } else {
+        // Batch mode: find all orders with 0 line items
+        const { data } = await supabase
+          .from('orders')
+          .select('id, order_id, company, supplier, product, metadata, delivery_terms, payment_terms, commission, to_location, total_kilos, total_value, order_line_items(id)')
+          .eq('organization_id', organization_id)
+        ordersToRecover = (data || []).filter((o: any) =>
+          !o.order_line_items || o.order_line_items.length === 0
+        )
+      }
+
+      if (ordersToRecover.length === 0) {
+        setCors(res)
+        return res.status(200).json({ mode: 'recover', message: targetPO ? 'Order not found or already has data' : 'All orders already have line items', recovered: 0 })
+      }
+
+      const recBatchLimit = batch_size || 5
+      const recBatch = ordersToRecover.slice(0, recBatchLimit)
+      const recResults: any[] = []
+      let recRecovered = 0
+
+      for (const order of recBatch) {
+        try {
+          // Extract PO number for Gmail search (e.g. "3055" from "GI/PO/25-26/3055")
+          const poMatch = order.order_id.match(/(\d{4,})/)
+          const searchTerms: string[] = []
+          if (poMatch) searchTerms.push(poMatch[1])
+          // Also search full PO ID
+          searchTerms.push(order.order_id)
+          // Include supplier name if known
+          if (order.supplier && order.supplier !== 'Unknown') searchTerms.push(order.supplier)
+
+          // Search Gmail for this specific order
+          const gmailQuery = searchTerms.map(t => `"${t}"`).join(' OR ')
+          console.log(`[RECOVER] Searching Gmail for order ${order.order_id}: ${gmailQuery}`)
+
+          const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=30`
+          const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${recAccessToken}` } })
+          const searchData = await searchRes.json()
+          const foundIds = (searchData.messages || []).map((m: any) => m.id)
+
+          if (foundIds.length === 0) {
+            recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails found in Gmail' })
+            continue
+          }
+          console.log(`[RECOVER] Found ${foundIds.length} emails for ${order.order_id}`)
+
+          // Check which ones are already synced
+          const { data: alreadySynced } = await supabase
+            .from('synced_emails')
+            .select('gmail_id')
+            .eq('organization_id', organization_id)
+            .in('gmail_id', foundIds)
+          const syncedSet = new Set((alreadySynced || []).map((e: any) => e.gmail_id))
+          const newIds = foundIds.filter((id: string) => !syncedSet.has(id))
+
+          // Sync new emails into synced_emails table
+          let syncedCount = 0
+          for (const msgId of newIds.slice(0, 10)) {
+            try {
+              const msgRes = await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
+                { headers: { Authorization: `Bearer ${recAccessToken}` } }
+              )
+              if (!msgRes.ok) continue
+              const msg = await msgRes.json()
+              const headers = msg.payload?.headers || []
+              const subject = getHeader(headers, 'Subject')
+              const from = getHeader(headers, 'From')
+              const to = getHeader(headers, 'To')
+              const dateStr = getHeader(headers, 'Date')
+              const bodyText = extractBody(msg.payload).substring(0, 5000)
+              const hasAttachment = (msg.payload?.parts || []).some((p: any) =>
+                p.filename && p.filename.length > 0 && !p.filename.match(/^image\d{0,3}\.(jpg|jpeg|png)$/i)
+              )
+
+              await supabase.from('synced_emails').upsert({
+                organization_id,
+                gmail_id: msgId,
+                thread_id: msg.threadId || null,
+                from_email: extractEmail(from),
+                from_name: extractName(from),
+                to_email: extractEmail(to),
+                subject,
+                body_text: bodyText,
+                date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
+                has_attachment: hasAttachment,
+                matched_order_id: order.order_id,
+                detected_stage: 1,
+                connected_user_id: user_id,
+              }, { onConflict: 'gmail_id,organization_id', ignoreDuplicates: true })
+              syncedCount++
+            } catch (syncErr) {
+              console.log(`[RECOVER] Failed to sync email ${msgId}: ${syncErr}`)
+            }
+          }
+          console.log(`[RECOVER] Synced ${syncedCount} new emails for ${order.order_id}`)
+
+          // Now find all emails with attachments for this order (including freshly synced)
+          const { data: orderEmails } = await supabase
+            .from('synced_emails')
+            .select('id, gmail_id, subject, has_attachment, detected_stage, matched_order_id, user_linked_order_id')
+            .eq('organization_id', organization_id)
+            .or(`matched_order_id.eq.${order.order_id},user_linked_order_id.eq.${order.order_id}`)
+            .eq('has_attachment', true)
+            .limit(20)
+
+          // Also check emails that were synced but not matched — re-match by gmail_id
+          const allEmailIds = [...syncedSet, ...newIds.slice(0, 10)]
+          const { data: unmatchedEmails } = await supabase
+            .from('synced_emails')
+            .select('id, gmail_id, subject, has_attachment, detected_stage, matched_order_id')
+            .eq('organization_id', organization_id)
+            .in('gmail_id', [...allEmailIds])
+            .is('matched_order_id', null)
+            .eq('has_attachment', true)
+
+          // Link unmatched emails to this order
+          const emailsToLink = unmatchedEmails || []
+          for (const ue of emailsToLink) {
+            await supabase.from('synced_emails')
+              .update({ matched_order_id: order.order_id })
+              .eq('id', ue.id)
+          }
+
+          const allEmails = [...(orderEmails || []), ...emailsToLink]
+          const attachEmails = allEmails.filter((e: any) => e.has_attachment)
+
+          if (attachEmails.length === 0) {
+            recResults.push({ order: order.order_id, status: 'skip', reason: 'No emails with attachments found', emailsSynced: syncedCount })
+            continue
+          }
+
+          // Score and process attachment emails (PO emails first)
+          const scored = attachEmails.map((e: any) => {
+            let score = 0
+            const subj = (e.subject || '').toLowerCase()
+            if (e.detected_stage === 1) score += 100
+            if (subj.includes('purchase order') || subj.includes('new po')) score += 50
+            if (subj.includes('proforma')) score += 40
+            return { email: e, score }
+          }).sort((a: any, b: any) => b.score - a.score)
+
+          let extracted = false
+          for (const { email: attachEmail } of scored.slice(0, 3)) {
+            if (extracted) break
+            try {
+              const result = await processEmailAttachments(
+                supabase, recAccessToken, attachEmail,
+                order.order_id, order.id, organization_id, user_id, false
+              )
+              if (result.filesStored > 0) {
+                // Check if line items were actually extracted
+                const { count: itemCount } = await supabase.from('order_line_items')
+                  .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+                if (itemCount && itemCount > 0) {
+                  extracted = true
+                  recRecovered++
+                  recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, filesStored: result.filesStored, lineItems: itemCount })
+                }
+              }
+            } catch (procErr) {
+              console.log(`[RECOVER] Attachment processing failed for ${order.order_id}: ${procErr}`)
+            }
+          }
+
+          // If processEmailAttachments didn't extract data, try bulk-extract style (stored PDF fallback)
+          if (!extracted) {
+            // Check if a pdfUrl was stored during attachment processing
+            const { data: refreshedOrder } = await supabase
+              .from('orders')
+              .select('metadata')
+              .eq('id', order.id)
+              .single()
+            const storedPdf = refreshedOrder?.metadata?.pdfUrl
+            if (storedPdf) {
+              try {
+                const pdfResp = await fetch(storedPdf)
+                if (pdfResp.ok) {
+                  const pdfBuffer = await pdfResp.arrayBuffer()
+                  const bytes = new Uint8Array(pdfBuffer)
+                  let binary = ''
+                  const chunkSize = 8192
+                  for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+                    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j])
+                  }
+                  const base64 = btoa(binary)
+                  const urlLower = storedPdf.toLowerCase()
+                  const mimeType = urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg') ? 'image/jpeg'
+                    : urlLower.endsWith('.png') ? 'image/png'
+                    : pdfResp.headers.get('content-type') || 'application/pdf'
+                  const extractedData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '')
+                  if (extractedData && extractedData.lineItems.length > 0) {
+                    const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
+                      order_id: order.id, product: item.product, brand: item.brand || '',
+                      size: item.size || '', glaze: item.glaze || '', glaze_marked: item.glazeMarked || '',
+                      packing: item.packing || '', freezing: item.freezing || 'IQF',
+                      cases: parseInt(item.cases) || 0, kilos: item.kilos || 0, price_per_kg: item.pricePerKg || 0,
+                      currency: item.currency || 'USD',
+                      total: Number(item.total) || ((item.kilos || 0) * (item.pricePerKg || 0)), sort_order: idx,
+                    }))
+                    await supabase.from('order_line_items').insert(lineItemRows)
+                    // Fill empty fields
+                    const updates: any = {}
+                    if (extractedData.deliveryTerms && !order.delivery_terms) updates.delivery_terms = extractedData.deliveryTerms
+                    if (extractedData.payment && !order.payment_terms) updates.payment_terms = extractedData.payment
+                    if (extractedData.commission && !order.commission) updates.commission = extractedData.commission
+                    if (extractedData.destination && !order.to_location) updates.to_location = extractedData.destination
+                    if (extractedData.totalKilos > 0 && !order.total_kilos) updates.total_kilos = extractedData.totalKilos
+                    if (extractedData.totalValue > 0 && !order.total_value) updates.total_value = String(extractedData.totalValue)
+                    if (extractedData.supplier && extractedData.supplier !== 'Unknown' && (!order.supplier || order.supplier === 'Unknown')) {
+                      updates.supplier = extractedData.supplier
+                    }
+                    if (extractedData.lineItems.length > 0 && extractedData.lineItems[0].product !== 'Unknown') {
+                      const genericNames = ['Unknown', 'Frozen Shrimp', 'Frozen Squid', 'Frozen Cuttlefish', 'Frozen Octopus', 'Frozen Fish']
+                      if (!order.product || genericNames.includes(order.product)) updates.product = extractedData.lineItems[0].product
+                    }
+                    if (Object.keys(updates).length > 0) await supabase.from('orders').update(updates).eq('id', order.id)
+                    extracted = true
+                    recRecovered++
+                    recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, source: 'stored_pdf', lineItems: extractedData.lineItems.length })
+                  }
+                }
+              } catch (pdfErr) {
+                console.log(`[RECOVER] Stored PDF extraction failed for ${order.order_id}: ${pdfErr}`)
+              }
+            }
+          }
+
+          if (!extracted) {
+            recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but no PO data extracted', emailsSynced: syncedCount })
+          }
+        } catch (orderErr) {
+          recResults.push({ order: order.order_id, status: 'error', reason: String(orderErr) })
+        }
+        await delay(500)
+      }
+
+      const recRemaining = ordersToRecover.length - recBatch.length
+      setCors(res)
+      return res.status(200).json({
+        mode: 'recover', done: recRemaining === 0, recovered: recRecovered,
+        batchProcessed: recBatch.length, remaining: recRemaining,
+        totalMissing: ordersToRecover.length, results: recResults,
       })
     }
 

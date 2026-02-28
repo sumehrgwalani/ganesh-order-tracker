@@ -15,7 +15,7 @@ interface Props {
   userId?: string;
 }
 
-type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting' | 'done';
+type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting' | 'recovering' | 'done';
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
@@ -292,6 +292,30 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
         extractDone = exData?.done === true || exRemaining === 0;
         if (!extractDone) {
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+
+      // Phase 5: Recover — targeted Gmail search for orders still missing data
+      setSyncPhase('recovering');
+      setSyncProgress('Recovering missing order data from Gmail...');
+      let recoverDone = false;
+      let totalRecovered = 0;
+
+      while (!recoverDone && totalRecovered < 50) {
+        const { data: recData, error: recError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'recover' });
+        if (recError) { console.error('Recover error:', recError); break; }
+
+        totalRecovered += recData?.recovered || 0;
+        const recRemaining = recData?.remaining || 0;
+        setSyncProgress(
+          recRemaining > 0
+            ? `Recovering data: ${totalRecovered} orders recovered, ${recRemaining} remaining...`
+            : totalRecovered > 0 ? `Recovered data for ${totalRecovered} orders!` : 'No orders need recovery'
+        );
+
+        recoverDone = recData?.done === true || recRemaining === 0;
+        if (!recoverDone) {
           await new Promise((r) => setTimeout(r, 500));
         }
       }

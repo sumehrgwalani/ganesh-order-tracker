@@ -257,6 +257,8 @@ function App() {
                   orders={orders}
                   contacts={contacts}
                   products={dbProducts}
+                  orgId={orgId}
+                  userId={user?.id}
                   onUpdateStage={handleUpdateStage}
                   onUpdateOrder={handleUpdateOrder}
                   onDeleteOrder={handleDeleteOrder}
