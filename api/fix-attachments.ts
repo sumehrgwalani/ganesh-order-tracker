@@ -15,18 +15,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization
   if (!authHeader) return res.status(401).json({ error: 'No auth' })
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabaseUrl = process.env.SUPABASE_URL!
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const supabaseAnon = process.env.SUPABASE_ANON_KEY! || supabaseKey
 
   // Verify the user token
-  const userSupa = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-  const { data: { user } } = await userSupa.auth.getUser(authHeader.replace('Bearer ', ''))
-  if (!user) return res.status(401).json({ error: 'Invalid token' })
+  const userClient = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } }
+  })
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  if (authError || !user) return res.status(401).json({ error: 'Invalid token' })
+
+  const supabase = createClient(supabaseUrl, supabaseKey)
 
   const { action, order_id, organization_id, moves } = req.body || {}
 
