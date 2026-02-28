@@ -53,17 +53,231 @@ async function urlToDataUrl(url: string): Promise<{ dataUrl: string; width: numb
   }
 }
 
-// Generate a highlight overlay: yellow semi-transparent rectangles over areas that differ
+// Extract text from a PDF URL using pdf.js
+async function extractPdfText(url: string): Promise<string[]> {
+  const lib = await loadPdfJs();
+  const cleanUrl = url.split('#')[0];
+  const loadingTask = lib.getDocument(cleanUrl);
+  const pdf = await loadingTask.promise;
+  const lines: string[] = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const textContent = await page.getTextContent();
+    // Group text items by their Y position to form lines
+    const itemsByY: Map<number, { x: number; str: string }[]> = new Map();
+    for (const item of textContent.items) {
+      if (!item.str || !item.str.trim()) continue;
+      // Round Y to nearest 2px to group items on same line
+      const y = Math.round(item.transform[5] / 2) * 2;
+      if (!itemsByY.has(y)) itemsByY.set(y, []);
+      itemsByY.get(y)!.push({ x: item.transform[4], str: item.str });
+    }
+    // Sort by Y (descending — PDF coords go bottom-up) then X
+    const sortedYs = [...itemsByY.keys()].sort((a, b) => b - a);
+    for (const y of sortedYs) {
+      const items = itemsByY.get(y)!.sort((a, b) => a.x - b.x);
+      const line = items.map(i => i.str).join(' ').trim();
+      if (line) lines.push(line);
+    }
+  }
+  return lines;
+}
+
+// Compare two sets of text lines and produce a structured diff
+interface DiffItem {
+  type: 'match' | 'changed' | 'missing' | 'added';
+  refLine?: string;
+  newLine?: string;
+  lineNum: number;
+}
+
+function compareTextLines(refLines: string[], newLines: string[]): DiffItem[] {
+  const results: DiffItem[] = [];
+  const maxLen = Math.max(refLines.length, newLines.length);
+
+  // Normalize for comparison (lowercase, collapse whitespace)
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Build a set of new lines for quick lookup
+  const newNormSet = new Set(newLines.map(normalize));
+  const refNormSet = new Set(refLines.map(normalize));
+
+  // First pass: find lines in reference that are missing from new
+  let lineNum = 0;
+  for (const refLine of refLines) {
+    lineNum++;
+    const refNorm = normalize(refLine);
+    if (!refNorm) continue;
+
+    if (newNormSet.has(refNorm)) {
+      results.push({ type: 'match', refLine, lineNum });
+    } else {
+      // Try to find a close match in new lines (same start or >60% similar)
+      const closeMatch = newLines.find(nl => {
+        const nn = normalize(nl);
+        if (!nn) return false;
+        // Check if they share a common prefix of at least 10 chars
+        const minLen = Math.min(refNorm.length, nn.length);
+        let common = 0;
+        for (let i = 0; i < minLen; i++) {
+          if (refNorm[i] === nn[i]) common++;
+          else break;
+        }
+        return common >= Math.min(10, minLen * 0.5);
+      });
+
+      if (closeMatch) {
+        results.push({ type: 'changed', refLine, newLine: closeMatch, lineNum });
+        // Remove from consideration
+        newNormSet.delete(normalize(closeMatch));
+      } else {
+        results.push({ type: 'missing', refLine, lineNum });
+      }
+    }
+  }
+
+  // Second pass: find lines in new that aren't in reference
+  for (const newLine of newLines) {
+    const newNorm = normalize(newLine);
+    if (!newNorm) continue;
+    if (!refNormSet.has(newNorm) && !results.some(r => r.newLine && normalize(r.newLine!) === newNorm)) {
+      lineNum++;
+      results.push({ type: 'added', newLine, lineNum });
+    }
+  }
+
+  return results;
+}
+
+// Generate an HTML report and trigger download
+function downloadReport(
+  diffs: DiffItem[],
+  refLabel: string,
+  newLabel: string,
+  diffPercent: number | null,
+  refLines: string[],
+  newLines: string[]
+) {
+  const changes = diffs.filter(d => d.type !== 'match');
+  const missing = diffs.filter(d => d.type === 'missing');
+  const changed = diffs.filter(d => d.type === 'changed');
+  const added = diffs.filter(d => d.type === 'added');
+  const matched = diffs.filter(d => d.type === 'match');
+
+  const now = new Date().toLocaleString();
+
+  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Artwork Comparison Report</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { color: #7c3aed; font-size: 22px; border-bottom: 2px solid #7c3aed; padding-bottom: 8px; }
+  h2 { color: #374151; font-size: 16px; margin-top: 28px; }
+  .summary { background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
+  .stat { background: white; border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-num { font-size: 24px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #6b7280; text-transform: uppercase; }
+  .green { color: #059669; }
+  .red { color: #dc2626; }
+  .orange { color: #d97706; }
+  .blue { color: #2563eb; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th { background: #f9fafb; text-align: left; padding: 8px 12px; border-bottom: 2px solid #e5e7eb; font-size: 11px; text-transform: uppercase; color: #6b7280; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  tr.changed td { background: #fffbeb; }
+  tr.missing td { background: #fef2f2; }
+  tr.added td { background: #eff6ff; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-changed { background: #fef3c7; color: #92400e; }
+  .badge-missing { background: #fee2e2; color: #991b1b; }
+  .badge-added { background: #dbeafe; color: #1e40af; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af; }
+  .highlight { background: #fef08a; padding: 1px 3px; border-radius: 2px; }
+  .no-issues { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; text-align: center; color: #065f46; }
+</style></head><body>`;
+
+  html += `<h1>Artwork Comparison Report</h1>`;
+  html += `<div class="summary">`;
+  html += `<div><strong>Reference:</strong> ${refLabel}</div>`;
+  html += `<div><strong>New Artwork:</strong> ${newLabel}</div>`;
+  html += `<div><strong>Generated:</strong> ${now}</div>`;
+  if (diffPercent !== null) {
+    html += `<div><strong>Visual difference:</strong> ${diffPercent}% of pixels differ</div>`;
+  }
+  html += `<div class="summary-grid">`;
+  html += `<div class="stat"><div class="stat-num green">${matched.length}</div><div class="stat-label">Matched</div></div>`;
+  html += `<div class="stat"><div class="stat-num orange">${changed.length}</div><div class="stat-label">Changed</div></div>`;
+  html += `<div class="stat"><div class="stat-num red">${missing.length}</div><div class="stat-label">Missing</div></div>`;
+  html += `<div class="stat"><div class="stat-num blue">${added.length}</div><div class="stat-label">Added</div></div>`;
+  html += `</div></div>`;
+
+  if (changes.length === 0) {
+    html += `<div class="no-issues">No text differences found. The text content appears identical.</div>`;
+  } else {
+    // Changed lines
+    if (changed.length > 0) {
+      html += `<h2>Changed Text (${changed.length})</h2>`;
+      html += `<p style="font-size:13px;color:#6b7280;">These lines exist in both but have differences:</p>`;
+      html += `<table><tr><th>#</th><th>Reference</th><th>New Artwork</th></tr>`;
+      changed.forEach((d, i) => {
+        html += `<tr class="changed"><td>${i + 1}</td><td>${d.refLine}</td><td>${d.newLine}</td></tr>`;
+      });
+      html += `</table>`;
+    }
+
+    // Missing from new
+    if (missing.length > 0) {
+      html += `<h2>Missing from New Artwork (${missing.length})</h2>`;
+      html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the reference but are missing from the new artwork:</p>`;
+      html += `<table><tr><th>#</th><th>Missing Text</th></tr>`;
+      missing.forEach((d, i) => {
+        html += `<tr class="missing"><td>${i + 1}</td><td>${d.refLine}</td></tr>`;
+      });
+      html += `</table>`;
+    }
+
+    // Added in new
+    if (added.length > 0) {
+      html += `<h2>Added in New Artwork (${added.length})</h2>`;
+      html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the new artwork but not in the reference:</p>`;
+      html += `<table><tr><th>#</th><th>Added Text</th></tr>`;
+      added.forEach((d, i) => {
+        html += `<tr class="added"><td>${i + 1}</td><td>${d.newLine}</td></tr>`;
+      });
+      html += `</table>`;
+    }
+  }
+
+  // Full text comparison
+  html += `<h2>Full Text Extracted</h2>`;
+  html += `<table><tr><th>Reference (${refLines.length} lines)</th><th>New Artwork (${newLines.length} lines)</th></tr>`;
+  const maxLen = Math.max(refLines.length, newLines.length);
+  for (let i = 0; i < maxLen; i++) {
+    html += `<tr><td>${refLines[i] || '<em style="color:#ccc">—</em>'}</td><td>${newLines[i] || '<em style="color:#ccc">—</em>'}</td></tr>`;
+  }
+  html += `</table>`;
+
+  html += `<div class="footer">Generated by With The Tide — Artwork Comparison Tool</div>`;
+  html += `</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `artwork-comparison-report-${new Date().toISOString().slice(0, 10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Generate a highlight overlay
 function buildHighlightOverlay(
   img1: HTMLImageElement,
   img2: HTMLImageElement,
   threshold: number
 ): { overlayUrl: string; diffPercent: number; width: number; height: number } {
-  // Use the dimensions of the larger image
   const W = Math.max(img1.naturalWidth, img2.naturalWidth);
   const H = Math.max(img1.naturalHeight, img2.naturalHeight);
 
-  // Draw both to same-size canvases
   const c1 = document.createElement('canvas');
   c1.width = W; c1.height = H;
   const ctx1 = c1.getContext('2d')!;
@@ -82,7 +296,6 @@ function buildHighlightOverlay(
   const d2 = ctx2.getImageData(0, 0, W, H).data;
   const t = threshold * 255;
 
-  // Build a grid of diff blocks (each block = 8x8 pixels)
   const blockSize = 8;
   const cols = Math.ceil(W / blockSize);
   const rows = Math.ceil(H / blockSize);
@@ -110,20 +323,16 @@ function buildHighlightOverlay(
           if (maxDiff > t) blockDiff++;
         }
       }
-      // Mark block as different if >15% of its pixels differ
       const isDiff = blockDiff > blockPixels * 0.15;
       diffGrid[by][bx] = isDiff;
       if (isDiff) totalDiffPixels += blockDiff;
     }
   }
 
-  // Draw yellow highlight overlay
   const overlay = document.createElement('canvas');
   overlay.width = W;
   overlay.height = H;
   const octx = overlay.getContext('2d')!;
-
-  // Draw yellow rectangles with rounded feel by expanding diff regions slightly
   octx.fillStyle = 'rgba(255, 220, 0, 0.35)';
   octx.strokeStyle = 'rgba(255, 180, 0, 0.7)';
   octx.lineWidth = 1.5;
@@ -134,7 +343,6 @@ function buildHighlightOverlay(
         const x = bx * blockSize;
         const y = by * blockSize;
         octx.fillRect(x, y, blockSize, blockSize);
-        // Draw border only on edges (where adjacent block is NOT different)
         const top = by === 0 || !diffGrid[by-1][bx];
         const bottom = by === rows - 1 || !diffGrid[by+1]?.[bx];
         const left = bx === 0 || !diffGrid[by][bx-1];
@@ -169,23 +377,26 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
   const [error, setError] = useState<string | null>(null);
   const [diffPercent, setDiffPercent] = useState<number | null>(null);
   const [showHighlights, setShowHighlights] = useState(true);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
-  // Image data URLs
   const [refDataUrl, setRefDataUrl] = useState<string | null>(null);
   const [newDataUrl, setNewDataUrl] = useState<string | null>(null);
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
 
-  // Zoom (slider-controlled) & pan (click-drag)
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panStartOffset = useRef({ x: 0, y: 0 });
 
-  // Slider wipe position (0 to 100)
   const [sliderPos, setSliderPos] = useState(50);
   const isDraggingSlider = useRef(false);
   const sliderContainerRef = useRef<HTMLDivElement>(null);
+
+  // Check if either file is a PDF (report only works for PDFs)
+  const refIsPdf = /\.pdf(\?|#|$)/i.test(referenceUrl);
+  const newIsPdf = /\.pdf(\?|#|$)/i.test(newUrl);
+  const bothPdf = refIsPdf && newIsPdf;
 
   // Load images
   useEffect(() => {
@@ -212,7 +423,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     return () => { cancelled = true; };
   }, [referenceUrl, newUrl]);
 
-  // Build highlight overlay once images are loaded
+  // Build highlight overlay
   useEffect(() => {
     if (!refDataUrl || !newDataUrl) return;
     const img1 = new Image();
@@ -234,7 +445,24 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     img2.src = newDataUrl;
   }, [refDataUrl, newDataUrl]);
 
-  // Pan handlers (click-drag to move around when zoomed)
+  // Generate report
+  const handleGenerateReport = useCallback(async () => {
+    if (!bothPdf) return;
+    setGeneratingReport(true);
+    try {
+      const [refLines, newLines] = await Promise.all([
+        extractPdfText(referenceUrl),
+        extractPdfText(newUrl),
+      ]);
+      const diffs = compareTextLines(refLines, newLines);
+      downloadReport(diffs, referenceLabel, newLabel, diffPercent, refLines, newLines);
+    } catch (err: any) {
+      alert('Failed to generate report: ' + (err.message || 'Unknown error'));
+    }
+    setGeneratingReport(false);
+  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf]);
+
+  // Pan handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (isDraggingSlider.current) return;
     isPanning.current = true;
@@ -256,12 +484,11 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     isPanning.current = false;
   }, []);
 
-  // Slider wipe drag handlers
+  // Slider wipe drag
   const handleSliderMouseDown = useCallback((e: React.MouseEvent) => {
     isDraggingSlider.current = true;
     e.stopPropagation();
     e.preventDefault();
-
     const onMove = (ev: MouseEvent) => {
       if (!sliderContainerRef.current) return;
       const rect = sliderContainerRef.current.getBoundingClientRect();
@@ -277,7 +504,6 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     window.addEventListener('mouseup', onUp);
   }, []);
 
-  // Reset pan on mode switch
   useEffect(() => {
     setPan({ x: 0, y: 0 });
   }, [viewMode]);
@@ -288,7 +514,6 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     transition: isPanning.current ? 'none' : 'transform 0.15s ease-out',
   };
 
-  // Overlay image sits exactly on top of the artwork
   const overlayStyle: React.CSSProperties = {
     ...imgStyle,
     position: 'absolute',
@@ -336,7 +561,6 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
 
         {/* Controls */}
         <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-4 bg-white flex-wrap">
-          {/* View mode tabs */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             {([
               { mode: 'side-by-side' as ViewMode, label: 'Side by Side', icon: 'Columns' },
@@ -367,6 +591,18 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
             <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: showHighlights ? 'rgba(255,220,0,0.6)' : '#ccc' }} />
             Highlights {showHighlights ? 'On' : 'Off'}
           </button>
+
+          {/* Generate Report button (only for PDFs) */}
+          {bothPdf && (
+            <button
+              onClick={handleGenerateReport}
+              disabled={generatingReport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-green-50 border-green-300 text-green-800 hover:bg-green-100 disabled:opacity-50"
+            >
+              <Icon name="FileText" size={14} />
+              {generatingReport ? 'Generating...' : 'Generate Report'}
+            </button>
+          )}
 
           {/* Zoom slider */}
           <div className="flex items-center gap-2 ml-auto">
@@ -451,14 +687,12 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
                   onMouseLeave={handleMouseUp}
                   style={{ cursor: isPanning.current ? 'grabbing' : 'default' }}
                 >
-                  {/* New artwork (bottom layer) */}
                   <div className="absolute inset-0 flex items-center justify-center bg-white">
                     <img src={newDataUrl} alt="New" style={imgStyle} className="max-w-full max-h-full object-contain pointer-events-none" draggable={false} />
                     {showHighlights && overlayUrl && (
                       <img src={overlayUrl} alt="" style={overlayStyle} className="max-w-full max-h-full object-contain" draggable={false} />
                     )}
                   </div>
-                  {/* Reference (top layer — clipped from left) */}
                   <div
                     className="absolute inset-0 flex items-center justify-center bg-white"
                     style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
@@ -468,7 +702,6 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
                       <img src={overlayUrl} alt="" style={overlayStyle} className="max-w-full max-h-full object-contain" draggable={false} />
                     )}
                   </div>
-                  {/* Divider line */}
                   <div
                     className="absolute top-0 bottom-0 z-10"
                     style={{ left: `${sliderPos}%`, transform: 'translateX(-50%)' }}
@@ -484,7 +717,6 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
                       </svg>
                     </div>
                   </div>
-                  {/* Labels */}
                   <div className="absolute top-3 left-3 z-10 px-2 py-1 bg-purple-600 text-white text-xs font-semibold rounded-md shadow">Reference</div>
                   <div className="absolute top-3 right-3 z-10 px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded-md shadow">New</div>
                 </div>
