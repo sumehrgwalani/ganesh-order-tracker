@@ -110,8 +110,11 @@ function NotificationPanel({
               key={notif.id}
               className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
                 !notif.read ? 'bg-blue-50/30' : ''
-              }`}
-              onClick={() => { if (!notif.read) onMarkAsRead(notif.id) }}
+              } ${notif.type === 'unknown_contact' ? 'cursor-pointer' : ''}`}
+              onClick={() => {
+                if (!notif.read) onMarkAsRead(notif.id)
+                if (notif.type === 'unknown_contact') setActionNotif(notif)
+              }}
             >
               <div className="flex gap-3">
                 {/* Icon */}

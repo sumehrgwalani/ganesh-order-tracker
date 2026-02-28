@@ -944,11 +944,13 @@ async function processEmailAttachments(
             company: email.from_name, role: 'Internal', initials, color: '#3B82F6',
           }, { onConflict: 'email,organization_id' })
         } else {
+          const senderName = email.from_name || email.from_email?.split('@')[0] || 'Unknown'
+          const senderEmail = email.from_email || 'unknown'
           await supabase.from('notifications').insert({
             user_id: userId, organization_id: organizationId, type: 'unknown_contact',
-            title: 'PI from Unknown Contact',
-            message: `${email.from_name} (${email.from_email}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
-            data: { from_email: email.from_email, from_name: email.from_name, order_id: matchedOrderId, stage: 2 },
+            title: `PI from ${senderName}`,
+            message: `${senderName} (${senderEmail}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
+            data: { from_email: senderEmail, from_name: senderName, order_id: matchedOrderId, stage: 2 },
             read: false,
           })
         }
