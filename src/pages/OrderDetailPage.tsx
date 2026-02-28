@@ -997,7 +997,8 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         setRecoverResult(`Found ${data.results[0].lineItems || 0} line items! Refreshing...`);
         setTimeout(() => window.location.reload(), 1500);
       } else if (data?.results?.[0]?.status === 'partial') {
-        setRecoverResult('Emails found and synced, but no PO document with line items could be extracted. Try assigning attachments manually.');
+        setRecoverResult('Emails found and added to this order — scroll down to see them. No PO document could be auto-extracted, but you can assign attachments manually from the email cards below.');
+        setTimeout(() => window.location.reload(), 1500);
       } else {
         setRecoverResult(data?.results?.[0]?.reason || data?.message || 'No matching emails found in Gmail.');
       }

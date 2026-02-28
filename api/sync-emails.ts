@@ -3014,19 +3014,41 @@ If truly unknown, return "Unknown" for that field.` }],
             }
           }
 
-          // Also link already-synced but unmatched emails to this order
+          // Also link already-synced but unmatched emails to this order + create history entries
           if (syncedSet.size > 0) {
-            const { data: existingUnmatched } = await supabase
+            const { data: existingSynced } = await supabase
               .from('synced_emails')
-              .select('id, gmail_id, subject, body_text')
+              .select('id, gmail_id, subject, body_text, from_email, from_name, date, has_attachment, matched_order_id')
               .eq('organization_id', organization_id)
               .in('gmail_id', [...syncedSet])
-              .is('matched_order_id', null)
-            for (const ue of (existingUnmatched || [])) {
+            for (const ue of (existingSynced || [])) {
               const content = `${ue.subject} ${ue.body_text || ''}`.toLowerCase()
-              if (poNum && content.includes(poNum)) {
+              if (!(poNum && content.includes(poNum))) continue
+
+              // Link unmatched emails to this order
+              if (!ue.matched_order_id || ue.matched_order_id !== order.order_id) {
                 await supabase.from('synced_emails').update({ matched_order_id: order.order_id }).eq('id', ue.id)
                 console.log(`[RECOVER] Linked existing email "${(ue.subject || '').substring(0, 50)}" to ${order.order_id}`)
+              }
+
+              // Create order_history entry if missing (so email shows in UI)
+              const { data: existH } = await supabase.from('order_history')
+                .select('id').eq('order_id', order.id).eq('subject', ue.subject || '').limit(1)
+              if (!existH || existH.length === 0) {
+                const subjectUpper = (ue.subject || '').toUpperCase()
+                let stage = 0
+                if (subjectUpper.includes('PURCHASE ORDER') || subjectUpper.includes('NEW PO')) stage = 1
+                else if (subjectUpper.includes('PROFORMA')) stage = 2
+                else if (subjectUpper.includes('ARTWORK') || subjectUpper.includes('LABEL')) stage = 3
+                await supabase.from('order_history').insert({
+                  order_id: order.id,
+                  stage: stage || 1,
+                  subject: ue.subject || '',
+                  from_address: `${ue.from_name || ''} <${ue.from_email || ''}>`,
+                  has_attachment: ue.has_attachment || false,
+                  timestamp: ue.date || new Date().toISOString(),
+                })
+                console.log(`[RECOVER] Created history entry for existing email "${(ue.subject || '').substring(0, 50)}"`)
               }
             }
           }
