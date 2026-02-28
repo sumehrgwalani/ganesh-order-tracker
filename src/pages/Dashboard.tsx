@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import StatsCard from '../components/StatsCard';
@@ -18,6 +19,25 @@ interface Props {
 
 function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, onDeleteOrder, productInquiries }: Props) {
   const navigate = useNavigate();
+  const [sortBy, setSortBy] = useState<'po-asc' | 'po-desc' | 'stage-asc' | 'stage-desc' | 'date-desc' | 'date-asc'>('po-desc');
+
+  const getPoNum = (id: string) => {
+    const m = id.match(/(\d{4,})/)
+    return m ? parseInt(m[1]) : 0
+  }
+
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
+    switch (sortBy) {
+      case 'po-asc': return getPoNum(a.id) - getPoNum(b.id)
+      case 'po-desc': return getPoNum(b.id) - getPoNum(a.id)
+      case 'stage-asc': return a.currentStage - b.currentStage
+      case 'stage-desc': return b.currentStage - a.currentStage
+      case 'date-asc': return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
+      case 'date-desc': return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+      default: return 0
+    }
+  })
+
   return (
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
@@ -34,7 +54,21 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
             {selectedStage ? `Orders at "${ORDER_STAGES[selectedStage-1]?.name}"` : 'Active Orders'}
             <span className="ml-2 text-sm font-normal text-gray-500">({filteredOrders.length} orders)</span>
           </h2>
-          <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
+          <div className="flex items-center gap-3">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="po-desc">PO # (Newest)</option>
+              <option value="po-asc">PO # (Oldest)</option>
+              <option value="stage-asc">Stage (Earliest)</option>
+              <option value="stage-desc">Stage (Latest)</option>
+              <option value="date-desc">Date (Newest)</option>
+              <option value="date-asc">Date (Oldest)</option>
+            </select>
+            <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
+          </div>
         </div>
 
         {/* Clickable Stage Filter */}
@@ -46,8 +80,8 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
         />
 
         <div className="space-y-0">
-          {filteredOrders.length > 0 ? (
-            filteredOrders.map(order => (
+          {sortedOrders.length > 0 ? (
+            sortedOrders.map(order => (
               <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + encodeURIComponent(order.id))} onDelete={onDeleteOrder} />
             ))
           ) : (
