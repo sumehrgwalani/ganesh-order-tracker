@@ -33,7 +33,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [matchProgress, setMatchProgress] = useState({ matched: 0, remaining: 0, total: 0 });
   const [syncSummary, setSyncSummary] = useState<{
     pulled: number; regexMatched: number; threadMatched: number; aiMatched: number;
-    created: number; totalMatched: number; totalEmails: number; dismissed: number;
+    created: number; totalMatched: number; totalEmails: number; dismissed: number; recovered: number;
   } | null>(null);
 
   const handleDismiss = async (email: SyncedEmail) => {
@@ -164,7 +164,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       setSyncProgress(`Quick sync done — ${totalPulled} new emails processed`);
       setSyncSummary({
         pulled: totalPulled, regexMatched: sumRegex, threadMatched: sumThread,
-        aiMatched: sumAI, created: sumCreated, totalMatched, totalEmails: sumTotalEmails, dismissed: sumDismissed,
+        aiMatched: sumAI, created: sumCreated, totalMatched, totalEmails: sumTotalEmails, dismissed: sumDismissed, recovered: 0,
       });
       refetch();
       setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 15000);
@@ -326,6 +326,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         pulled: totalPulled, regexMatched: fSumRegex, threadMatched: fSumThread,
         aiMatched: fSumAI, created: fSumCreated, totalMatched: fSumTotalMatched,
         totalEmails: fSumTotalEmails, dismissed: fSumDismissed,
+        recovered: totalRecovered,
       });
       refetch();
 
@@ -418,7 +419,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
               }`}
             >
               <Icon name="RefreshCw" size={15} className={isSyncing && syncPhase !== 'pulling' ? 'animate-spin' : ''} />
-              {syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
+              {syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'recovering' ? 'Recovering...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
             </button>
           </div>
         }
@@ -492,6 +493,12 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                   <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
                     <p className="text-lg font-bold text-gray-400">{syncSummary.dismissed}</p>
                     <p className="text-xs text-gray-500">Dismissed</p>
+                  </div>
+                )}
+                {syncSummary.recovered > 0 && (
+                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
+                    <p className="text-lg font-bold text-orange-600">{syncSummary.recovered}</p>
+                    <p className="text-xs text-gray-500">Recovered</p>
                   </div>
                 )}
               </div>
