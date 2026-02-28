@@ -933,6 +933,48 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
     }
   };
 
+  // Handle assigning an uploaded file as an attachment to a specific stage
+  const handleAssignAttachment = async (historyEntryId: string, stage: number, file: File) => {
+    // 1. Look up DB UUID for this order
+    const { data: orderRow, error: orderErr } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('order_id', order.id)
+      .single();
+    if (orderErr || !orderRow) throw new Error(`Order lookup failed: ${orderErr?.message || 'not found'}`);
+
+    // 2. Upload file to Supabase storage
+    const safePo = order.id.replace(/\//g, '_');
+    const storagePath = `doc_${safePo}_s${stage}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+    const { error: uploadErr } = await supabase.storage
+      .from('po-documents')
+      .upload(storagePath, file, { contentType: file.type, upsert: true });
+    if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
+
+    // 3. Get public URL
+    const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
+    const publicUrl = urlData?.publicUrl || '';
+
+    // 4. Build the attachment JSON
+    const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
+
+    // 5. Update the existing history entry: set stage, add attachment
+    const entry = order.history.find(h => h.id === historyEntryId);
+    const existingAtts = entry?.attachments || [];
+    const { error: updateErr } = await supabase
+      .from('order_history')
+      .update({
+        stage: stage,
+        has_attachment: true,
+        attachments: [...existingAtts.map(a => typeof a === 'string' ? a : JSON.stringify(a)), attachment],
+      })
+      .eq('id', historyEntryId);
+    if (updateErr) throw new Error(`History update failed: ${updateErr.message}`);
+
+    // 6. Refresh to show changes
+    window.location.reload();
+  };
+
   // Handle deleting a single attachment from a history entry
   const handleDeleteAttachment = async (historyId: string, attName: string) => {
     if (!onUpdateOrder) return;
@@ -1248,6 +1290,7 @@ function OrderDetailPage({ orders, contacts, products, onUpdateStage, onUpdateOr
               onReassign={handleReassignEmail}
               onRemove={handleRemoveEmail}
               onAttachmentClick={(name, url) => setPdfModal({ open: true, url, title: name, loading: false })}
+              onAssignAttachment={handleAssignAttachment}
             />
           ))}
         </div>
