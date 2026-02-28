@@ -299,20 +299,23 @@ function ContactsPage({ dbContacts, onAddContact, onUpdateContact, onDeleteConta
         ? contactData.category.charAt(0).toUpperCase() + contactData.category.slice(1)
         : role;
       if (onUpdateContact) {
-        onUpdateContact(editingContact.email, {
-          name: contactData.name,
-          company: contactData.company,
-          role: dbRole,
-          phone: contactData.phone || '',
-          address: contactData.address || '',
-          country: contactData.country || '',
-          color: contactData.color,
-          initials,
-          default_brand: contactData.default_brand || '',
-        }).catch(err => {
+        try {
+          await onUpdateContact(editingContact.email, {
+            name: contactData.name,
+            company: contactData.company,
+            role: dbRole,
+            phone: contactData.phone || '',
+            address: contactData.address || '',
+            country: contactData.country || '',
+            color: contactData.color,
+            initials,
+            default_brand: contactData.default_brand || '',
+          });
+        } catch (err: any) {
           console.error('Failed to save contact, reverting:', err);
           setContacts(snapshot);
-        });
+          alert('Failed to save contact: ' + (err?.message || 'Unknown error'));
+        }
       }
     } else {
       // Save snapshot for rollback

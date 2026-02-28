@@ -556,7 +556,7 @@ async function downloadReport(
     const imgMaxH = pageH - y - margin - 10;
     try {
       doc.addImage(compositeImageUrl, 'JPEG', margin, y, imgMaxW, imgMaxH, undefined, 'FAST');
-    } catch (_) { /* image add failed, skip */ }
+    } catch (_) { alert('Failed to add comparison image to PDF. The image may be corrupted or too large.'); }
   }
 
   // Page: Reference artwork
@@ -578,7 +578,7 @@ async function downloadReport(
     const imgMaxH = pageH - y - margin - 10;
     try {
       doc.addImage(refImageUrl, 'JPEG', margin, y, imgMaxW, imgMaxH, undefined, 'FAST');
-    } catch (_) { /* image add failed, skip */ }
+    } catch (_) { alert('Failed to add reference image to PDF. The image may be corrupted or too large.'); }
   }
 
   // Footer on all pages

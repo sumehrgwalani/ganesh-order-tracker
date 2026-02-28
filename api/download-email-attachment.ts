@@ -80,6 +80,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!history_entry_id || !organization_id) {
       return res.status(400).json({ error: 'Missing history_entry_id or organization_id' })
     }
+
+    // Verify user belongs to this organization
+    const { data: membership } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organization_id', organization_id)
+      .eq('user_id', user.id)
+      .single()
+    if (!membership) return res.status(403).json({ error: 'Not a member of this organization' })
+
     const stage = target_stage || null // null means keep same stage
 
     // 1. Get the history entry to find subject/order

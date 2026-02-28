@@ -902,8 +902,9 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
 
       // Refresh orders data
       window.location.reload();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Reassign failed:', err);
+      alert('Failed to reassign email: ' + (err?.message || 'Unknown error'));
     }
   };
 
@@ -937,44 +938,49 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
 
   // Handle assigning an uploaded file as an attachment to a specific stage
   const handleAssignAttachment = async (historyEntryId: string, stage: number, file: File) => {
-    // 1. Look up DB UUID for this order
-    const { data: orderRow, error: orderErr } = await supabase
-      .from('orders')
-      .select('id')
-      .eq('order_id', order.id)
-      .single();
-    if (orderErr || !orderRow) throw new Error(`Order lookup failed: ${orderErr?.message || 'not found'}`);
+    try {
+      // 1. Look up DB UUID for this order
+      const { data: orderRow, error: orderErr } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_id', order.id)
+        .single();
+      if (orderErr || !orderRow) throw new Error(`Order lookup failed: ${orderErr?.message || 'not found'}`);
 
-    // 2. Upload file to Supabase storage
-    const safePo = order.id.replace(/\//g, '_');
-    const storagePath = `doc_${safePo}_s${stage}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-    const { error: uploadErr } = await supabase.storage
-      .from('po-documents')
-      .upload(storagePath, file, { contentType: file.type, upsert: true });
-    if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
+      // 2. Upload file to Supabase storage
+      const safePo = order.id.replace(/\//g, '_');
+      const storagePath = `doc_${safePo}_s${stage}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('po-documents')
+        .upload(storagePath, file, { contentType: file.type, upsert: true });
+      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
 
-    // 3. Get public URL
-    const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
-    const publicUrl = urlData?.publicUrl || '';
+      // 3. Get public URL
+      const { data: urlData } = supabase.storage.from('po-documents').getPublicUrl(storagePath);
+      const publicUrl = urlData?.publicUrl || '';
 
-    // 4. Build the attachment JSON
-    const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
+      // 4. Build the attachment JSON
+      const attachment = JSON.stringify({ name: file.name, meta: { pdfUrl: publicUrl } });
 
-    // 5. Update the existing history entry: set stage, add attachment
-    const entry = order.history.find(h => h.id === historyEntryId);
-    const existingAtts = entry?.attachments || [];
-    const { error: updateErr } = await supabase
-      .from('order_history')
-      .update({
-        stage: stage,
-        has_attachment: true,
-        attachments: [...existingAtts.map(a => typeof a === 'string' ? a : JSON.stringify(a)), attachment],
-      })
-      .eq('id', historyEntryId);
-    if (updateErr) throw new Error(`History update failed: ${updateErr.message}`);
+      // 5. Update the existing history entry: set stage, add attachment
+      const entry = order.history.find(h => h.id === historyEntryId);
+      const existingAtts = entry?.attachments || [];
+      const { error: updateErr } = await supabase
+        .from('order_history')
+        .update({
+          stage: stage,
+          has_attachment: true,
+          attachments: [...existingAtts.map(a => typeof a === 'string' ? a : JSON.stringify(a)), attachment],
+        })
+        .eq('id', historyEntryId);
+      if (updateErr) throw new Error(`History update failed: ${updateErr.message}`);
 
-    // 6. Refresh to show changes
-    window.location.reload();
+      // 6. Refresh to show changes
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Assign attachment failed:', err);
+      alert('Failed to assign attachment: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleDownloadAttachment = async (historyEntryId: string, targetStage: number) => {
@@ -1043,7 +1049,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
       }
 
       // If this was a revised PO, clear revisedPdfUrl from metadata
-      if (attName.startsWith('REVISED_') && order.metadata?.revisedPdfUrl) {
+      if (attName.startsWith('REVISED_') && order.metadata?.revisedPdfUrl && onUpdateOrder) {
         const { revisedPdfUrl, ...restMetadata } = order.metadata;
         await onUpdateOrder(order.id, { metadata: restMetadata } as any);
       }

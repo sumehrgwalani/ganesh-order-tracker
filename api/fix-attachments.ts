@@ -30,6 +30,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { action, order_id, organization_id, moves } = req.body || {}
 
+  // Verify user belongs to this organization
+  if (organization_id) {
+    const { data: membership } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organization_id', organization_id)
+      .eq('user_id', user.id)
+      .single()
+    if (!membership) return res.status(403).json({ error: 'Not a member of this organization' })
+  }
+
   // action: "move_attachments"
   // moves: [{ filename: "xxx.pdf", from_stage: 5, to_stage: 7 }, ...]
   if (action !== 'move_attachments' || !order_id || !organization_id || !moves?.length) {

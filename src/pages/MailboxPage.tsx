@@ -117,7 +117,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       while (!matchDone && matchBatch < 20) {
         matchBatch++;
         const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
-        if (matchError) { console.error('Match error:', matchError); break; }
+        if (matchError) { console.error('Match error:', matchError); setSyncProgress(`Error matching emails: ${matchError.message}`); break; }
         const remaining = matchData?.remaining || 0;
         totalMatched = matchData?.totalMatched || 0;
         sumRegex += matchData?.regexMatched || 0;
@@ -138,7 +138,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       let totalRp = 0;
       while (!rpDone && totalRp < 50) {
         const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
-        if (rpError) { console.error('Reprocess error:', rpError); break; }
+        if (rpError) { console.error('Reprocess error:', rpError); setSyncProgress(`Error processing attachments: ${rpError.message}`); break; }
         totalRp += rpData?.processed || 0;
         const rpRemaining = rpData?.remaining || 0;
         setSyncProgress(rpRemaining > 0 ? `Processing attachments: ${totalRp} done, ${rpRemaining} remaining...` : 'Attachments processed');
@@ -152,7 +152,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       let totalEx = 0;
       while (!exDone && totalEx < 20) {
         const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
-        if (exError) { console.error('Extract error:', exError); break; }
+        if (exError) { console.error('Extract error:', exError); setSyncProgress(`Error extracting line items: ${exError.message}`); break; }
         totalEx += exData?.batchProcessed || 0;
         const exRemaining = exData?.remaining || 0;
         setSyncProgress(exRemaining > 0 ? `Extracting line items: ${totalEx} done, ${exRemaining} remaining...` : 'Line items extracted');
@@ -256,7 +256,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
       while (!reprocessDone && totalReprocessed < MAX_REPROCESS) {
         const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
-        if (rpError) { console.error('Reprocess error:', rpError); break; }
+        if (rpError) { console.error('Reprocess error:', rpError); setSyncProgress(`Error processing attachments: ${rpError.message}`); break; }
 
         totalReprocessed += rpData?.processed || 0;
         const rpRemaining = rpData?.remaining || 0;
@@ -280,7 +280,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
       while (!extractDone && totalExtracted < MAX_EXTRACT) {
         const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
-        if (exError) { console.error('Extract error:', exError); break; }
+        if (exError) { console.error('Extract error:', exError); setSyncProgress(`Error extracting line items: ${exError.message}`); break; }
 
         totalExtracted += exData?.batchProcessed || 0;
         const exRemaining = exData?.remaining || 0;

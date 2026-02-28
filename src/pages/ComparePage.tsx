@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Icon from '../components/Icon';
 import ArtworkCompare from '../components/ArtworkCompare';
 
@@ -13,8 +13,16 @@ export default function ComparePage() {
   const accept = '.pdf,.jpg,.jpeg,.png';
 
   // Append filename as hash so ArtworkCompare can detect PDFs from blob URLs
-  const refUrl = refFile ? URL.createObjectURL(refFile) + '#' + refFile.name : null;
-  const newUrl = newFile ? URL.createObjectURL(newFile) + '#' + newFile.name : null;
+  const refUrl = useMemo(() => refFile ? URL.createObjectURL(refFile) + '#' + refFile.name : null, [refFile]);
+  const newUrl = useMemo(() => newFile ? URL.createObjectURL(newFile) + '#' + newFile.name : null, [newFile]);
+
+  // Revoke blob URLs on cleanup to prevent memory leaks
+  useEffect(() => {
+    return () => { if (refUrl) URL.revokeObjectURL(refUrl.split('#')[0]); };
+  }, [refUrl]);
+  useEffect(() => {
+    return () => { if (newUrl) URL.revokeObjectURL(newUrl.split('#')[0]); };
+  }, [newUrl]);
 
   return (
     <div className="max-w-2xl mx-auto">
