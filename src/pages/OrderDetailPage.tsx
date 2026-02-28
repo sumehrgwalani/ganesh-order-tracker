@@ -1335,7 +1335,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
             <ExpandableEmailCard
               key={entry.id || idx}
               entry={entry}
-              defaultExpanded={idx === 0}
+              defaultExpanded={false}
               orderId={order.id}
               allOrders={allOrderOptions}
               onReassign={handleReassignEmail}
