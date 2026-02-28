@@ -150,6 +150,76 @@ function compareTextLines(refLines: string[], newLines: string[]): DiffItem[] {
   return results;
 }
 
+// Analyze pixel diff regions to describe WHERE differences are on the page
+function describeDiffRegions(
+  img1: HTMLImageElement,
+  img2: HTMLImageElement,
+  threshold: number
+): { regions: { zone: string; percent: number }[]; totalPercent: number } {
+  const W = 600;
+  const H = 800;
+
+  const c1 = document.createElement('canvas');
+  c1.width = W; c1.height = H;
+  const ctx1 = c1.getContext('2d')!;
+  ctx1.fillStyle = '#fff';
+  ctx1.fillRect(0, 0, W, H);
+  const r1 = Math.min(W / img1.naturalWidth, H / img1.naturalHeight);
+  ctx1.drawImage(img1, (W - img1.naturalWidth * r1) / 2, (H - img1.naturalHeight * r1) / 2, img1.naturalWidth * r1, img1.naturalHeight * r1);
+
+  const c2 = document.createElement('canvas');
+  c2.width = W; c2.height = H;
+  const ctx2 = c2.getContext('2d')!;
+  ctx2.fillStyle = '#fff';
+  ctx2.fillRect(0, 0, W, H);
+  const r2 = Math.min(W / img2.naturalWidth, H / img2.naturalHeight);
+  ctx2.drawImage(img2, (W - img2.naturalWidth * r2) / 2, (H - img2.naturalHeight * r2) / 2, img2.naturalWidth * r2, img2.naturalHeight * r2);
+
+  const d1 = ctx1.getImageData(0, 0, W, H).data;
+  const d2 = ctx2.getImageData(0, 0, W, H).data;
+  const t = threshold * 255;
+
+  // Divide into a 3x3 grid
+  const zoneNames = [
+    'Top-Left', 'Top-Center', 'Top-Right',
+    'Middle-Left', 'Middle-Center', 'Middle-Right',
+    'Bottom-Left', 'Bottom-Center', 'Bottom-Right'
+  ];
+  const zoneW = Math.floor(W / 3);
+  const zoneH = Math.floor(H / 3);
+  const zoneDiffs = new Array(9).fill(0);
+  const zonePixels = new Array(9).fill(0);
+  let totalDiff = 0;
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const maxDiff = Math.max(
+        Math.abs(d1[i] - d2[i]),
+        Math.abs(d1[i+1] - d2[i+1]),
+        Math.abs(d1[i+2] - d2[i+2])
+      );
+      const col = Math.min(Math.floor(x / zoneW), 2);
+      const row = Math.min(Math.floor(y / zoneH), 2);
+      const zoneIdx = row * 3 + col;
+      zonePixels[zoneIdx]++;
+      if (maxDiff > t) {
+        zoneDiffs[zoneIdx]++;
+        totalDiff++;
+      }
+    }
+  }
+
+  const regions = zoneNames.map((zone, i) => ({
+    zone,
+    percent: zonePixels[i] > 0 ? Math.round((zoneDiffs[i] / zonePixels[i]) * 10000) / 100 : 0
+  })).filter(r => r.percent > 0.05) // Only include zones with meaningful differences
+    .sort((a, b) => b.percent - a.percent);
+
+  const totalPercent = Math.round((totalDiff / (W * H)) * 10000) / 100;
+  return { regions, totalPercent };
+}
+
 // Generate an HTML report and trigger download
 function downloadReport(
   diffs: DiffItem[],
@@ -157,13 +227,15 @@ function downloadReport(
   newLabel: string,
   diffPercent: number | null,
   refLines: string[],
-  newLines: string[]
+  newLines: string[],
+  diffRegions: { zone: string; percent: number }[]
 ) {
   const changes = diffs.filter(d => d.type !== 'match');
   const missing = diffs.filter(d => d.type === 'missing');
   const changed = diffs.filter(d => d.type === 'changed');
   const added = diffs.filter(d => d.type === 'added');
   const matched = diffs.filter(d => d.type === 'match');
+  const noTextExtracted = refLines.length === 0 && newLines.length === 0;
 
   const now = new Date().toLocaleString();
 
@@ -173,10 +245,6 @@ function downloadReport(
   h1 { color: #7c3aed; font-size: 22px; border-bottom: 2px solid #7c3aed; padding-bottom: 8px; }
   h2 { color: #374151; font-size: 16px; margin-top: 28px; }
   .summary { background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0; }
-  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
-  .stat { background: white; border-radius: 6px; padding: 12px; text-align: center; }
-  .stat-num { font-size: 24px; font-weight: 700; }
-  .stat-label { font-size: 11px; color: #6b7280; text-transform: uppercase; }
   .green { color: #059669; }
   .red { color: #dc2626; }
   .orange { color: #d97706; }
@@ -187,13 +255,15 @@ function downloadReport(
   tr.changed td { background: #fffbeb; }
   tr.missing td { background: #fef2f2; }
   tr.added td { background: #eff6ff; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-  .badge-changed { background: #fef3c7; color: #92400e; }
-  .badge-missing { background: #fee2e2; color: #991b1b; }
-  .badge-added { background: #dbeafe; color: #1e40af; }
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af; }
-  .highlight { background: #fef08a; padding: 1px 3px; border-radius: 2px; }
   .no-issues { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px; text-align: center; color: #065f46; }
+  .warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 16px 0; color: #92400e; }
+  .region-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .region-name { width: 120px; font-size: 13px; color: #374151; }
+  .region-fill { height: 20px; border-radius: 4px; background: #fbbf24; min-width: 4px; }
+  .region-pct { font-size: 12px; color: #6b7280; width: 50px; }
+  .grid-visual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; width: 200px; margin: 16px auto; }
+  .grid-cell { aspect-ratio: 1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white; }
 </style></head><body>`;
 
   html += `<h1>Artwork Comparison Report</h1>`;
@@ -203,18 +273,74 @@ function downloadReport(
   html += `<div><strong>Generated:</strong> ${now}</div>`;
   if (diffPercent !== null) {
     html += `<div><strong>Visual difference:</strong> ${diffPercent}% of pixels differ</div>`;
+    if (diffPercent === 0) {
+      html += `<div style="margin-top:8px;color:#059669;font-weight:600;">The artworks appear visually identical.</div>`;
+    }
   }
-  html += `<div class="summary-grid">`;
-  html += `<div class="stat"><div class="stat-num green">${matched.length}</div><div class="stat-label">Matched</div></div>`;
-  html += `<div class="stat"><div class="stat-num orange">${changed.length}</div><div class="stat-label">Changed</div></div>`;
-  html += `<div class="stat"><div class="stat-num red">${missing.length}</div><div class="stat-label">Missing</div></div>`;
-  html += `<div class="stat"><div class="stat-num blue">${added.length}</div><div class="stat-label">Added</div></div>`;
-  html += `</div></div>`;
+  html += `</div>`;
 
-  if (changes.length === 0) {
-    html += `<div class="no-issues">No text differences found. The text content appears identical.</div>`;
+  // Visual difference regions — always show this
+  if (diffRegions.length > 0) {
+    html += `<h2>Where Differences Were Found</h2>`;
+    html += `<p style="font-size:13px;color:#6b7280;">The page was divided into a 3&times;3 grid. These areas have visual differences:</p>`;
+
+    // Grid visualization
+    const zoneNames = ['Top-Left', 'Top-Center', 'Top-Right', 'Middle-Left', 'Middle-Center', 'Middle-Right', 'Bottom-Left', 'Bottom-Center', 'Bottom-Right'];
+    html += `<div class="grid-visual">`;
+    for (const zone of zoneNames) {
+      const match = diffRegions.find(r => r.zone === zone);
+      const pct = match ? match.percent : 0;
+      const intensity = Math.min(pct * 10, 100);
+      const bg = pct > 0 ? `hsl(40, 100%, ${80 - intensity * 0.4}%)` : '#e5e7eb';
+      const color = pct > 1 ? 'white' : '#6b7280';
+      html += `<div class="grid-cell" style="background:${bg};color:${color}">${pct > 0 ? pct.toFixed(1) + '%' : '—'}</div>`;
+    }
+    html += `</div>`;
+
+    // Bar chart
+    html += `<div style="margin-top:16px">`;
+    const maxPct = Math.max(...diffRegions.map(r => r.percent));
+    for (const r of diffRegions) {
+      const barW = maxPct > 0 ? Math.max((r.percent / maxPct) * 100, 4) : 4;
+      html += `<div class="region-bar">`;
+      html += `<span class="region-name">${r.zone}</span>`;
+      html += `<div class="region-fill" style="width:${barW}%"></div>`;
+      html += `<span class="region-pct">${r.percent.toFixed(2)}%</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  } else if (diffPercent !== null && diffPercent === 0) {
+    html += `<div class="no-issues">No visual differences detected. The artworks appear identical.</div>`;
+  }
+
+  // Text comparison section
+  if (noTextExtracted) {
+    html += `<h2>Text Comparison</h2>`;
+    html += `<div class="warning">`;
+    html += `<strong>No extractable text found in either PDF.</strong><br>`;
+    html += `This is common with packaging artwork — designers often convert text to outlines (vector paths) for print compatibility. `;
+    html += `The text you see in the artwork is actually drawn as shapes, not characters.<br><br>`;
+    html += `<strong>What you can do:</strong> Use the visual comparison above to identify which areas of the artwork have changed, `;
+    html += `then manually check those regions in the Side by Side or Slider view.`;
+    html += `</div>`;
   } else {
-    // Changed lines
+    // Text stats
+    if (refLines.length > 0 || newLines.length > 0) {
+      html += `<h2>Text Comparison</h2>`;
+      html += `<table><tr>`;
+      html += `<th style="text-align:center">Matched</th><th style="text-align:center">Changed</th><th style="text-align:center">Missing</th><th style="text-align:center">Added</th>`;
+      html += `</tr><tr>`;
+      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="green">${matched.length}</td>`;
+      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="orange">${changed.length}</td>`;
+      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="red">${missing.length}</td>`;
+      html += `<td style="text-align:center;font-size:20px;font-weight:700" class="blue">${added.length}</td>`;
+      html += `</tr></table>`;
+    }
+
+    if (changes.length === 0 && (refLines.length > 0 || newLines.length > 0)) {
+      html += `<div class="no-issues">All extracted text matches between the two artworks.</div>`;
+    }
+
     if (changed.length > 0) {
       html += `<h2>Changed Text (${changed.length})</h2>`;
       html += `<p style="font-size:13px;color:#6b7280;">These lines exist in both but have differences:</p>`;
@@ -225,7 +351,6 @@ function downloadReport(
       html += `</table>`;
     }
 
-    // Missing from new
     if (missing.length > 0) {
       html += `<h2>Missing from New Artwork (${missing.length})</h2>`;
       html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the reference but are missing from the new artwork:</p>`;
@@ -236,7 +361,6 @@ function downloadReport(
       html += `</table>`;
     }
 
-    // Added in new
     if (added.length > 0) {
       html += `<h2>Added in New Artwork (${added.length})</h2>`;
       html += `<p style="font-size:13px;color:#6b7280;">These lines appear in the new artwork but not in the reference:</p>`;
@@ -246,16 +370,17 @@ function downloadReport(
       });
       html += `</table>`;
     }
-  }
 
-  // Full text comparison
-  html += `<h2>Full Text Extracted</h2>`;
-  html += `<table><tr><th>Reference (${refLines.length} lines)</th><th>New Artwork (${newLines.length} lines)</th></tr>`;
-  const maxLen = Math.max(refLines.length, newLines.length);
-  for (let i = 0; i < maxLen; i++) {
-    html += `<tr><td>${refLines[i] || '<em style="color:#ccc">—</em>'}</td><td>${newLines[i] || '<em style="color:#ccc">—</em>'}</td></tr>`;
+    if (refLines.length > 0 || newLines.length > 0) {
+      html += `<h2>Full Text Extracted</h2>`;
+      html += `<table><tr><th>Reference (${refLines.length} lines)</th><th>New Artwork (${newLines.length} lines)</th></tr>`;
+      const maxLen = Math.max(refLines.length, newLines.length);
+      for (let i = 0; i < maxLen; i++) {
+        html += `<tr><td>${refLines[i] || '<em style="color:#ccc">—</em>'}</td><td>${newLines[i] || '<em style="color:#ccc">—</em>'}</td></tr>`;
+      }
+      html += `</table>`;
+    }
   }
-  html += `</table>`;
 
   html += `<div class="footer">Generated by With The Tide — Artwork Comparison Tool</div>`;
   html += `</body></html>`;
@@ -450,17 +575,35 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
     if (!bothPdf) return;
     setGeneratingReport(true);
     try {
-      const [refLines, newLines] = await Promise.all([
+      // Extract text and load images in parallel
+      const [refLines, newLines, refData, newData] = await Promise.all([
         extractPdfText(referenceUrl),
         extractPdfText(newUrl),
+        urlToDataUrl(referenceUrl),
+        urlToDataUrl(newUrl),
       ]);
       const diffs = compareTextLines(refLines, newLines);
-      downloadReport(diffs, referenceLabel, newLabel, diffPercent, refLines, newLines);
+
+      // Load images for visual region analysis
+      const loadImg = (src: string): Promise<HTMLImageElement> =>
+        new Promise((res, rej) => {
+          const img = new Image();
+          img.onload = () => res(img);
+          img.onerror = rej;
+          img.src = src;
+        });
+      const [img1, img2] = await Promise.all([
+        loadImg(refData.dataUrl),
+        loadImg(newData.dataUrl),
+      ]);
+      const { regions } = describeDiffRegions(img1, img2, sensitivity);
+
+      downloadReport(diffs, referenceLabel, newLabel, diffPercent, refLines, newLines, regions);
     } catch (err: any) {
       alert('Failed to generate report: ' + (err.message || 'Unknown error'));
     }
     setGeneratingReport(false);
-  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf]);
+  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf, sensitivity]);
 
   // Pan handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
