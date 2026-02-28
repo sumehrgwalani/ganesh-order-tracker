@@ -567,8 +567,9 @@ async function classifyDocumentWithVision(
           content: [
             contentBlock,
             { type: 'text', text: `What type of trade document is this? Reply with ONLY one word:
-- "po" if it is a Purchase Order (business document with order items, quantities, prices)
-- "pi" if it is a Proforma Invoice (business document with invoice/proforma details)
+- "po" if it is a Purchase Order (business document with order items, quantities, prices sent TO a supplier)
+- "pi" if it is a Proforma Invoice (invoice FROM a supplier with product details, quantities, prices)
+- "commission" if it is a Commission Invoice (invoice for brokerage/commission fees, mentions "commission", IGST on commission, or agent fees — NOT a product invoice)
 - "artwork" if it is product packaging artwork, label designs, branding materials, box designs
 - "shipping" if it is a shipping document, bill of lading, packing list
 - "certificate" if it is a certificate of analysis, quality certificate, health certificate
@@ -585,7 +586,7 @@ Reply with ONLY the single word classification.` }
     }
     const data = await res.json()
     const raw = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '')
-    const valid = ['po', 'pi', 'artwork', 'shipping', 'certificate', 'other']
+    const valid = ['po', 'pi', 'commission', 'artwork', 'shipping', 'certificate', 'other']
     const classification = valid.includes(raw) ? raw : 'other'
     console.log(`[CLASSIFY] Document classified as: ${classification}`)
     return { classification, apiFailed: false }
@@ -720,6 +721,13 @@ async function processEmailAttachments(
             console.log(`[PROCESS] AI classification failed for ${part.filename}, using detected_stage ${email.detected_stage} → ${fallback}`)
             classification = fallback
           }
+        }
+
+        // Filename-based override: catch commission invoices the AI might miss
+        const fnLower = (part.filename || '').toLowerCase()
+        if ((fnLower.includes('commission') || fnLower.includes('brokerage')) && classification !== 'commission') {
+          console.log(`[PROCESS] Overriding "${classification}" → "commission" for ${part.filename} (filename match)`)
+          classification = 'commission'
         }
 
         const stage = classificationToStage(classification)
