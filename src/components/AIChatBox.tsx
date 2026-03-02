@@ -180,7 +180,7 @@ export default function AIChatBox({ orgId }: Props) {
                 letterSpacing: '0.025em',
               }}
             >
-              AI Assistant
+              Ask me anything
             </span>
             <span
               style={{

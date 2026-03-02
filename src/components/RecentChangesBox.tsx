@@ -129,7 +129,7 @@ export default function RecentChangesBox({ orgId }: Props) {
             <Icon name="Zap" size={14} className="text-white" />
           </div>
           <span style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0', letterSpacing: '0.025em' }}>
-            Sync Summary
+            What's New
           </span>
         </div>
         {syncLabel && !initialLoad && (
