@@ -1,6 +1,75 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { setCors, authenticateRequest } from './_utils/shared'
-import { normalizeCompanyName } from './_utils/normalizeCompany'
+import { createClient } from '@supabase/supabase-js'
+
+// ===== CORS =====
+
+const ALLOWED_ORIGIN = 'https://ganesh-order-tracker.vercel.app'
+
+function setCors(res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+}
+
+// ===== AUTH =====
+
+/**
+ * Authenticate the request and return the user + service-role Supabase client.
+ * Sends an error response and returns null if auth fails.
+ */
+async function authenticateRequest(req: VercelRequest, res: VercelResponse) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Missing authorization' })
+    return null
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL!
+  const supabaseAnon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const userClient = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } },
+  })
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  if (authError || !user) {
+    res.status(401).json({ error: 'Authentication failed. Please log in again.' })
+    return null
+  }
+
+  const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+  return { user, supabase }
+}
+
+// ===== NORMALIZE COMPANY NAME =====
+
+/**
+ * Normalize a company name to a canonical form.
+ * Strips extra spaces, normalizes dots/periods, standardizes common abbreviations.
+ */
+function normalizeCompanyName(name: string): string {
+  if (!name) return ''
+  let n = name.trim()
+
+  // Collapse multiple spaces
+  n = n.replace(/\s+/g, ' ')
+
+  // Normalize common suffixes
+  n = n.replace(/\bS\s*\.\s*L\s*\.?\b/gi, 'S.L.')
+  n = n.replace(/\bPvt\s*\.?\s*Ltd\s*\.?\b/gi, 'Pvt. Ltd.')
+  n = n.replace(/\bPrivate\s+Limited\b/gi, 'Pvt. Ltd.')
+  n = n.replace(/\bLtd\s*\.?\b/gi, 'Ltd.')
+  n = n.replace(/\bInc\s*\.?\b/gi, 'Inc.')
+  n = n.replace(/\bCorp\s*\.?\b/gi, 'Corp.')
+  n = n.replace(/\bL\s*\.\s*L\s*\.\s*C\s*\.?\b/gi, 'LLC')
+  n = n.replace(/\bS\s*\.\s*A\s*\.?\b/gi, 'S.A.')
+  n = n.replace(/\bG\s*\.?\s*m\s*\.?\s*b\s*\.?\s*H\s*\.?\b/gi, 'GmbH')
+
+  // Collapse spaces again after replacements
+  n = n.replace(/\s+/g, ' ').trim()
+
+  return n
+}
+
 export { normalizeCompanyName }
 
 /**

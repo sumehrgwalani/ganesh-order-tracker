@@ -1,5 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { setCors, authenticateRequest } from './_utils/shared'
+import { createClient } from '@supabase/supabase-js'
+
+const ALLOWED_ORIGIN = 'https://ganesh-order-tracker.vercel.app'
+function setCors(res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+}
 
 const STAGE_NAMES: Record<number, string> = {
   1: 'Order Confirmed (PO Sent)',
@@ -18,9 +25,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   try {
-    const auth = await authenticateRequest(req, res)
-    if (!auth) return
-    const { user, supabase } = auth
+    // Auth
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing authorization' })
+    const supabaseUrl = process.env.SUPABASE_URL!
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const userClient = createClient(supabaseUrl, supabaseAnon, { global: { headers: { Authorization: authHeader } } })
+    const { data: { user }, error: authError } = await userClient.auth.getUser()
+    if (authError || !user) return res.status(401).json({ error: 'Authentication failed. Please log in again.' })
+    const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {

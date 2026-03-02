@@ -1,6 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { setCors, isValidUUID } from './_utils/shared'
+
+// ===== CORS =====
+
+const ALLOWED_ORIGIN = 'https://ganesh-order-tracker.vercel.app'
+
+function setCors(res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+}
+
+// ===== VALIDATION =====
+
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
 
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!
 

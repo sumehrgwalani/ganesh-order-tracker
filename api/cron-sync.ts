@@ -1,8 +1,84 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { decodeBase64Url, extractBody, extractAttachmentParts, extractEmail, extractName } from './_utils/gmail-helpers'
 
-/**
+// ===== GMAIL HELPERS =====
+
+// Decode base64url encoded Gmail message body
+function decodeBase64Url(data: string): string {
+  const base64 = data.replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    return atob(base64)
+  } catch {
+    return ''
+  }
+}
+
+// Extract plain text body from Gmail message payload
+function extractBody(payload: any): string {
+  if (!payload) return ''
+
+  // Simple text/plain part
+  if (payload.mimeType === 'text/plain' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+  }
+
+  // Multipart: look through parts
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body?.data) {
+        return decodeBase64Url(part.body.data)
+      }
+      // Recurse into nested multipart
+      if (part.parts) {
+        const nested = extractBody(part)
+        if (nested) return nested
+      }
+    }
+    // Fallback to text/html if no plain text
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        const html = decodeBase64Url(part.body.data)
+        return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+      }
+    }
+  }
+
+  return ''
+}
+
+// Check if a filename is an inline email image (logos, signatures, etc.)
+function isInlineImage(filename: string): boolean {
+  const lower = filename.toLowerCase()
+  if (/^image\d{0,3}\.(jpg|jpeg|png|gif)$/.test(lower)) return true
+  if (/^outlook-.*\.(jpg|jpeg|png|gif)$/.test(lower)) return true
+  return false
+}
+
+// Extract attachment parts from Gmail message payload (skips inline images)
+function extractAttachmentParts(payload: any): { filename: string; mimeType: string; attachmentId: string; size: number }[] {
+  const parts: any[] = []
+  function walk(p: any) {
+    if (p.filename && p.filename.length > 0 && p.body?.attachmentId && !isInlineImage(p.filename)) {
+      parts.push({ filename: p.filename, mimeType: p.mimeType || 'application/octet-stream', attachmentId: p.body.attachmentId, size: p.body.size || 0 })
+    }
+    if (p.parts) p.parts.forEach(walk)
+  }
+  if (payload) walk(payload)
+  return parts
+}
+
+// Extract name from email "Name <email@example.com>" format
+function extractName(emailStr: string): string {
+  const match = emailStr.match(/^"?([^"<]+)"?\s*</)
+  return match ? match[1].trim() : emailStr.split('@')[0]
+}
+
+// Extract email from "Name <email@example.com>" format
+function extractEmail(emailStr: string): string {
+  const match = emailStr.match(/<([^>]+)>/)
+  return match ? match[1] : emailStr
+}
+
  * Vercel Cron endpoint — runs daily at 6 AM UTC to keep emails up to date.
  * Authenticates via CRON_SECRET header, not user JWT.
  * Finds the first org member with a Gmail refresh token and runs:
