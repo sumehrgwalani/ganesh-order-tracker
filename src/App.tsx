@@ -244,6 +244,7 @@ function App() {
                   setSelectedStage={setSelectedStage}
                   onDeleteOrder={handleDeleteOrder}
                   productInquiries={productInquiries}
+                  orgId={orgId}
                 />
               } />
               <Route path="/orders" element={

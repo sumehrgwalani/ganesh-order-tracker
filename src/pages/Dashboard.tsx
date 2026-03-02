@@ -4,6 +4,7 @@ import Icon from '../components/Icon';
 import StatsCard from '../components/StatsCard';
 import StageFilter from '../components/StageFilter';
 import OrderRow from '../components/OrderRow';
+import AIChatBox from '../components/AIChatBox';
 import { ORDER_STAGES } from '../data/constants';
 import type { Order, Stats, ProductInquiry } from '../types';
 
@@ -15,9 +16,10 @@ interface Props {
   setSelectedStage: (stage: number | null) => void;
   onDeleteOrder?: (orderId: string) => Promise<void>;
   productInquiries: ProductInquiry[];
+  orgId?: string | null;
 }
 
-function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, onDeleteOrder, productInquiries }: Props) {
+function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, onDeleteOrder, productInquiries, orgId }: Props) {
   const navigate = useNavigate();
   const [sortBy, setSortBy] = useState<'po-asc' | 'po-desc' | 'stage-asc' | 'stage-desc' | 'date-desc' | 'date-asc'>('po-desc');
 
@@ -41,6 +43,7 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
   return (
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
+      {orgId && <AIChatBox orgId={orgId} />}
       <div className="grid grid-cols-5 gap-4 mb-8">
         <StatsCard icon="Package" title="Active Orders" value={stats.active} color="primary" onClick={() => navigate('/orders')} trend="+2 this week" />
         <StatsCard icon="CheckCircle" title="Completed" value={stats.completed} color="secondary" onClick={() => navigate('/completed')} />
