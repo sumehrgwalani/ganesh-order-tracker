@@ -90,6 +90,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[CHAT] Found ${orders.length} orders for org ${organization_id}`)
 
+    // Debug mode: return raw query results
+    if (question === '__debug__') {
+      return res.status(200).json({
+        answer: `Debug: Found ${orders.length} orders. First 3: ${orders.slice(0, 3).map((o: any) => o.order_id).join(', ')}. Org: ${organization_id}. Error: ${orderErr?.message || 'none'}`,
+      })
+    }
+
     const orderIds = orders.map((o: any) => o.id)
 
     // Fetch order history (email trail) — just subjects and key info, not full bodies
