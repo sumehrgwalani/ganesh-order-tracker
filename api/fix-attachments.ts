@@ -1,32 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-
-function setCors(res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://ganesh-order-tracker.vercel.app')
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-}
+import { setCors, authenticateRequest } from './_utils/shared'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
-  const authHeader = req.headers.authorization
-  if (!authHeader) return res.status(401).json({ error: 'No auth' })
-
-  const supabaseUrl = process.env.SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabaseAnon = process.env.SUPABASE_ANON_KEY! || supabaseKey
-
-  // Verify the user token
-  const userClient = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: authHeader } }
-  })
-  const { data: { user }, error: authError } = await userClient.auth.getUser()
-  if (authError || !user) return res.status(401).json({ error: 'Invalid token' })
-
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const auth = await authenticateRequest(req, res)
+  if (!auth) return
+  const { user, supabase } = auth
 
   const { action, order_id, organization_id, moves } = req.body || {}
 

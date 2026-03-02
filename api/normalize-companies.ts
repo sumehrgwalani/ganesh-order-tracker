@@ -1,16 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': 'https://ganesh-order-tracker.vercel.app',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function setCors(res: VercelResponse) {
-  for (const [k, v] of Object.entries(corsHeaders)) res.setHeader(k, v)
-}
-
+import { setCors, authenticateRequest } from './_utils/shared'
 import { normalizeCompanyName } from './_utils/normalizeCompany'
 export { normalizeCompanyName }
 
@@ -27,27 +16,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing authorization' })
-    }
-
-    const supabaseUrl = process.env.SUPABASE_URL!
-    const supabaseAnon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-    const userClient = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Authentication failed' })
-    }
+    const auth = await authenticateRequest(req, res)
+    if (!auth) return
+    const { user, supabase } = auth
 
     const { organization_id, dry_run } = req.body || {}
     if (!organization_id) {
       return res.status(400).json({ error: 'Missing organization_id' })
     }
-
-    const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
     // Verify membership
     const { data: membership } = await supabase
@@ -136,36 +112,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     for (const { from, to } of renames) {
       // Update contacts
-      const { count: cCount } = await supabase
+      const cResult = await supabase
         .from('contacts')
         .update({ company: to })
         .eq('organization_id', organization_id)
         .eq('company', from)
         .select('id', { count: 'exact', head: true })
-        .then(r => ({ count: r.count || 0 }))
-      contactsUpdated += cCount
+      contactsUpdated += cResult.count || 0
 
       // Update orders — company (buyer)
-      const { count: oBuyerCount } = await supabase
+      const oBuyerResult = await supabase
         .from('orders')
         .update({ company: to })
         .eq('organization_id', organization_id)
         .eq('company', from)
         .is('deleted_at', null)
         .select('id', { count: 'exact', head: true })
-        .then(r => ({ count: r.count || 0 }))
-      ordersCompanyUpdated += oBuyerCount
+      ordersCompanyUpdated += oBuyerResult.count || 0
 
       // Update orders — supplier
-      const { count: oSupCount } = await supabase
+      const oSupResult = await supabase
         .from('orders')
         .update({ supplier: to })
         .eq('organization_id', organization_id)
         .eq('supplier', from)
         .is('deleted_at', null)
         .select('id', { count: 'exact', head: true })
-        .then(r => ({ count: r.count || 0 }))
-      ordersSupplierUpdated += oSupCount
+      ordersSupplierUpdated += oSupResult.count || 0
     }
 
     return res.status(200).json({

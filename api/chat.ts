@@ -1,15 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': 'https://ganesh-order-tracker.vercel.app',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function setCors(res: VercelResponse) {
-  for (const [k, v] of Object.entries(corsHeaders)) res.setHeader(k, v)
-}
+import { setCors, authenticateRequest } from './_utils/shared'
 
 const STAGE_NAMES: Record<number, string> = {
   1: 'Order Confirmed (PO Sent)',
@@ -28,21 +18,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   try {
-    // Auth check
-    const authHeader = req.headers.authorization
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing authorization' })
-    }
-
-    const supabaseUrl = process.env.SUPABASE_URL!
-    const supabaseAnon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-    const userClient = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: authHeader } }
-    })
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Authentication failed. Please log in again.' })
-    }
+    const auth = await authenticateRequest(req, res)
+    if (!auth) return
+    const { user, supabase } = auth
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
@@ -55,7 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Verify org membership
-    const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!)
     const { data: membership } = await supabase
       .from('organization_members')
       .select('id')
@@ -202,10 +179,10 @@ Total orders: ${(orders || []).length}`
     const aiData = await aiRes.json()
     const answer = aiData.content?.[0]?.text || 'No response from AI.'
 
-    // Build PO number → order_id lookup for linking
+    // Build PO number → database UUID lookup for linking
     const orderMap: Record<string, string> = {}
     for (const o of orders) {
-      if (o.order_id) orderMap[o.order_id] = o.order_id
+      if (o.order_id) orderMap[o.order_id] = o.id
     }
 
     return res.status(200).json({ answer, orderMap })

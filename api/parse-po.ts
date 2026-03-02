@@ -1,11 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': 'https://ganesh-order-tracker.vercel.app',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+import { setCors } from './_utils/shared'
 
 interface Supplier {
   company: string;
@@ -157,9 +152,7 @@ When quantity is determined to be kilos:
 - If glaze is mentioned with "marked as" or "marked", put in glazeMarked
 - If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`;
 
-function setCors(res: VercelResponse) {
-  for (const [k, v] of Object.entries(corsHeaders)) res.setHeader(k, v)
-}
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res)

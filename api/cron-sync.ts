@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { decodeBase64Url, extractBody, extractAttachmentParts, extractEmail, extractName } from './_utils/gmail-helpers'
 
 /**
  * Vercel Cron endpoint — runs daily at 6 AM UTC to keep emails up to date.
@@ -289,50 +290,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// ---- Helper functions (duplicated from sync-emails.ts for standalone use) ----
-
-function decodeBase64Url(data: string): string {
-  const base64 = data.replace(/-/g, '+').replace(/_/g, '/')
-  try { return atob(base64) } catch { return '' }
-}
-
-function extractBody(payload: any): string {
-  if (!payload) return ''
-  if (payload.mimeType === 'text/plain' && payload.body?.data) return decodeBase64Url(payload.body.data)
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/plain' && part.body?.data) return decodeBase64Url(part.body.data)
-      if (part.parts) { const nested = extractBody(part); if (nested) return nested }
-    }
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/html' && part.body?.data) {
-        const html = decodeBase64Url(part.body.data)
-        return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-      }
-    }
-  }
-  return ''
-}
-
-function extractAttachmentParts(payload: any): any[] {
-  const parts: any[] = []
-  if (!payload) return parts
-  function walk(p: any) {
-    if (p.filename && p.body?.attachmentId) {
-      parts.push({ filename: p.filename, mimeType: p.mimeType, attachmentId: p.body.attachmentId, size: p.body.size || 0 })
-    }
-    if (p.parts) p.parts.forEach(walk)
-  }
-  walk(payload)
-  return parts
-}
-
-function extractEmail(str: string): string {
-  const m = str.match(/<([^>]+)>/)
-  return m ? m[1].toLowerCase() : str.toLowerCase().trim()
-}
-
-function extractName(str: string): string {
-  const m = str.match(/^"?([^"<]+)"?\s*</)
-  return m ? m[1].trim() : ''
-}
+// Gmail helper functions imported from ./_utils/gmail-helpers

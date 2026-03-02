@@ -1,31 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-/**
- * Normalize a company name to a canonical form.
- * Inlined here to avoid cross-file import issues in Vercel serverless.
- */
-function normalizeCompanyName(name: string): string {
-  if (!name) return ''
-  let n = name.trim()
-  n = n.replace(/\s+/g, ' ')
-  n = n.replace(/\bS\s*\.\s*L\s*\.?\b/gi, 'S.L.')
-  n = n.replace(/\bPvt\s*\.?\s*Ltd\s*\.?\b/gi, 'Pvt. Ltd.')
-  n = n.replace(/\bPrivate\s+Limited\b/gi, 'Pvt. Ltd.')
-  n = n.replace(/\bLtd\s*\.?\b/gi, 'Ltd.')
-  n = n.replace(/\bInc\s*\.?\b/gi, 'Inc.')
-  n = n.replace(/\bCorp\s*\.?\b/gi, 'Corp.')
-  n = n.replace(/\bL\s*\.\s*L\s*\.\s*C\s*\.?\b/gi, 'LLC')
-  n = n.replace(/\bS\s*\.\s*A\s*\.?\b/gi, 'S.A.')
-  n = n.replace(/\bG\s*\.?\s*m\s*\.?\s*b\s*\.?\s*H\s*\.?\b/gi, 'GmbH')
-  n = n.replace(/\s+/g, ' ').trim()
-  return n
-}
-
-function setCors(res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://ganesh-order-tracker.vercel.app')
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-}
+import { setCors } from './_utils/shared'
+import { normalizeCompanyName } from './_utils/normalizeCompany'
+import {
+  decodeBase64Url, extractBody, getHeader, extractName, extractEmail,
+  extractAllEmails, isInlineImage, extractAttachmentParts,
+  refreshGmailToken, getAttachmentPartsForMessage, downloadAttachment,
+} from './_utils/gmail-helpers'
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_MAIL_API_KEY! || process.env.ANTHROPIC_API_KEY!
 
@@ -58,82 +39,8 @@ Stage 8 (Final Documents): Email confirms final/original documents sent. Keyword
 Stage 9 (DHL Number): Email contains DHL/courier tracking info. Keywords: "DHL", "tracking number", "AWB", "airway bill", "courier tracking", "shipped via DHL", "DHL waybill", "AIRWAY BILL NUMBER".
 `
 
-// Decode base64url encoded Gmail message body
-function decodeBase64Url(data: string): string {
-  const base64 = data.replace(/-/g, '+').replace(/_/g, '/')
-  try {
-    return atob(base64)
-  } catch {
-    return ''
-  }
-}
-
-// Extract plain text body from Gmail message payload
-function extractBody(payload: any): string {
-  if (!payload) return ''
-
-  // Simple text/plain part
-  if (payload.mimeType === 'text/plain' && payload.body?.data) {
-    return decodeBase64Url(payload.body.data)
-  }
-
-  // Multipart: look through parts
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/plain' && part.body?.data) {
-        return decodeBase64Url(part.body.data)
-      }
-      // Recurse into nested multipart
-      if (part.parts) {
-        const nested = extractBody(part)
-        if (nested) return nested
-      }
-    }
-    // Fallback to text/html if no plain text
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/html' && part.body?.data) {
-        const html = decodeBase64Url(part.body.data)
-        return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-      }
-    }
-  }
-
-  return ''
-}
-
-// Get header value from Gmail message headers
-function getHeader(headers: any[], name: string): string {
-  const h = headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())
-  return h?.value || ''
-}
-
-// Extract name from email "Name <email@example.com>" format
-function extractName(emailStr: string): string {
-  const match = emailStr.match(/^"?([^"<]+)"?\s*</)
-  return match ? match[1].trim() : emailStr.split('@')[0]
-}
-
-function extractEmail(emailStr: string): string {
-  const match = emailStr.match(/<([^>]+)>/)
-  return match ? match[1] : emailStr
-}
-
-// Extract all email addresses from a header like CC (can have multiple comma-separated entries)
-function extractAllEmails(headerStr: string): string[] {
-  if (!headerStr) return []
-  const emails: string[] = []
-  // Match all <email> patterns
-  const angleMatches = headerStr.matchAll(/<([^>]+)>/g)
-  for (const m of angleMatches) emails.push(m[1].toLowerCase())
-  // If no angle brackets, try splitting by comma and trimming
-  if (emails.length === 0) {
-    for (const part of headerStr.split(',')) {
-      const trimmed = part.trim().toLowerCase()
-      if (trimmed.includes('@')) emails.push(trimmed)
-    }
-  }
-  return emails
-}
+// Gmail helper functions (decodeBase64Url, extractBody, getHeader, extractName,
+// extractEmail, extractAllEmails) are imported from ./_utils/gmail-helpers
 
 // Extract PI number from email subject
 function extractPINumber(subject: string): string | null {
@@ -151,37 +58,7 @@ function extractPINumber(subject: string): string | null {
   return null
 }
 
-// Refresh Gmail access token from refresh token
-async function refreshGmailToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string | null> {
-  try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'refresh_token',
-      }),
-    })
-    const data = await res.json()
-    if (data.error) { console.error(`Token refresh failed: ${data.error}`); return null }
-    return data.access_token
-  } catch (err) { console.error('Token refresh error:', err); return null }
-}
-
-// Fetch attachment parts for a Gmail message
-async function getAttachmentPartsForMessage(accessToken: string, messageId: string): Promise<{ filename: string; mimeType: string; attachmentId: string; size: number }[]> {
-  try {
-    const res = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    if (!res.ok) return []
-    const msg = await res.json()
-    return extractAttachmentParts(msg.payload)
-  } catch (err) { console.error('Failed to fetch message attachments:', err); return [] }
-}
+// refreshGmailToken, getAttachmentPartsForMessage imported from ./_utils/gmail-helpers
 
 // Extract structured PO data from email text using Claude AI
 async function extractPODataFromEmail(
@@ -1149,44 +1026,7 @@ function pickBestAttachment(
   return scored[0].part
 }
 
-// Check if a filename is an inline email image (logos, signatures, etc.)
-function isInlineImage(filename: string): boolean {
-  const lower = filename.toLowerCase()
-  if (/^image\d{0,3}\.(jpg|jpeg|png|gif)$/.test(lower)) return true
-  if (/^outlook-.*\.(jpg|jpeg|png|gif)$/.test(lower)) return true
-  return false
-}
-
-// Extract attachment parts from Gmail message payload (skips inline images)
-function extractAttachmentParts(payload: any): { filename: string; mimeType: string; attachmentId: string; size: number }[] {
-  const parts: any[] = []
-  function walk(p: any) {
-    if (p.filename && p.filename.length > 0 && p.body?.attachmentId && !isInlineImage(p.filename)) {
-      parts.push({ filename: p.filename, mimeType: p.mimeType || 'application/octet-stream', attachmentId: p.body.attachmentId, size: p.body.size || 0 })
-    }
-    if (p.parts) p.parts.forEach(walk)
-  }
-  if (payload) walk(payload)
-  return parts
-}
-
-// Download attachment data from Gmail API
-async function downloadAttachment(accessToken: string, messageId: string, attachmentId: string): Promise<Uint8Array | null> {
-  try {
-    const res = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    if (!res.ok) { console.error(`Attachment download failed: ${res.status}`); return null }
-    const data = await res.json()
-    if (!data.data) return null
-    const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/')
-    const binary = atob(b64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    return bytes
-  } catch (err) { console.error('Attachment download error:', err); return null }
-}
+// isInlineImage, extractAttachmentParts, downloadAttachment imported from ./_utils/gmail-helpers
 
 // Upload file to Supabase Storage and return public URL
 async function uploadToStorage(supabase: any, orgId: string, poNumber: string, filename: string, data: Uint8Array, mimeType: string): Promise<string | null> {

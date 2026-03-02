@@ -1,59 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-
-function setCors(res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://ganesh-order-tracker.vercel.app')
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-}
-
-// Refresh Gmail access token
-async function refreshGmailToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string | null> {
-  try {
-    const r = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ refresh_token: refreshToken, client_id: clientId, client_secret: clientSecret, grant_type: 'refresh_token' }),
-    })
-    const d = await r.json()
-    if (d.error) { console.error('Token refresh failed:', d.error); return null }
-    return d.access_token
-  } catch (err) { console.error('Token refresh error:', err); return null }
-}
-
-// Get attachment parts from a Gmail message
-function extractAttachmentParts(payload: any): { filename: string; mimeType: string; attachmentId: string; size: number }[] {
-  const parts: any[] = []
-  function walk(p: any) {
-    if (p.filename && p.filename.length > 0 && p.body?.attachmentId) {
-      const lower = p.filename.toLowerCase()
-      // Skip inline images
-      if (/^image\d{0,3}\.(jpg|jpeg|png|gif)$/.test(lower)) return
-      if (/^outlook-.*\.(jpg|jpeg|png|gif)$/.test(lower)) return
-      parts.push({ filename: p.filename, mimeType: p.mimeType || 'application/octet-stream', attachmentId: p.body.attachmentId, size: p.body.size || 0 })
-    }
-    if (p.parts) p.parts.forEach(walk)
-  }
-  if (payload) walk(payload)
-  return parts
-}
-
-// Download attachment binary from Gmail
-async function downloadAttachment(accessToken: string, messageId: string, attachmentId: string): Promise<Uint8Array | null> {
-  try {
-    const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    })
-    if (!r.ok) { console.error(`Attachment download failed: ${r.status}`); return null }
-    const data = await r.json()
-    if (!data.data) return null
-    const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/')
-    const binary = atob(b64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    return bytes
-  } catch (err) { console.error('Attachment download error:', err); return null }
-}
+import { setCors } from './_utils/shared'
+import { refreshGmailToken, extractAttachmentParts, downloadAttachment } from './_utils/gmail-helpers'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res)
