@@ -11,50 +11,8 @@ function setCors(res: VercelResponse) {
   for (const [k, v] of Object.entries(corsHeaders)) res.setHeader(k, v)
 }
 
-/**
- * Normalize a company name to a canonical form for comparison.
- * Strips extra spaces, normalizes dots/periods, standardizes common abbreviations.
- */
-export function normalizeCompanyName(name: string): string {
-  if (!name) return ''
-  let n = name.trim()
-
-  // Collapse multiple spaces
-  n = n.replace(/\s+/g, ' ')
-
-  // Normalize common suffixes: S.L., S. L., SL → S.L.
-  n = n.replace(/\bS\s*\.\s*L\s*\.?\b/gi, 'S.L.')
-
-  // Normalize Pvt. Ltd., Pvt Ltd, Private Limited → Pvt. Ltd.
-  n = n.replace(/\bPvt\s*\.?\s*Ltd\s*\.?\b/gi, 'Pvt. Ltd.')
-  n = n.replace(/\bPrivate\s+Limited\b/gi, 'Pvt. Ltd.')
-
-  // Normalize Ltd., Ltd → Ltd.
-  n = n.replace(/\bLtd\s*\.?\b/gi, 'Ltd.')
-
-  // Normalize Inc., Inc → Inc.
-  n = n.replace(/\bInc\s*\.?\b/gi, 'Inc.')
-
-  // Normalize Corp., Corp → Corp.
-  n = n.replace(/\bCorp\s*\.?\b/gi, 'Corp.')
-
-  // Normalize LLC, L.L.C. → LLC
-  n = n.replace(/\bL\s*\.\s*L\s*\.\s*C\s*\.?\b/gi, 'LLC')
-
-  // Normalize S.A., S. A. → S.A.
-  n = n.replace(/\bS\s*\.\s*A\s*\.?\b/gi, 'S.A.')
-
-  // Normalize GmbH
-  n = n.replace(/\bG\s*\.?\s*m\s*\.?\s*b\s*\.?\s*H\s*\.?\b/gi, 'GmbH')
-
-  // Remove trailing dots that aren't part of abbreviations
-  // but keep abbreviation dots
-
-  // Collapse spaces again after replacements
-  n = n.replace(/\s+/g, ' ').trim()
-
-  return n
-}
+import { normalizeCompanyName } from './_utils/normalizeCompany'
+export { normalizeCompanyName }
 
 /**
  * Generate a simplified key for fuzzy matching.

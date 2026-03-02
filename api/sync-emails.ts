@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { normalizeCompanyName } from './normalize-companies'
+import { normalizeCompanyName } from './_utils/normalizeCompany'
 
 
 function setCors(res: VercelResponse) {

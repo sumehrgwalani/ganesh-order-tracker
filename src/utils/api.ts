@@ -26,8 +26,13 @@ export async function apiCall(
     let token = session.data.session?.access_token;
     if (!token) return { data: null, error: new Error('Not authenticated') };
 
+    const safeJson = async (r: Response) => {
+      const text = await r.text();
+      try { return JSON.parse(text); } catch { return { error: text.slice(0, 200) || `Request failed (${r.status})` }; }
+    };
+
     let resp = await doFetch(token);
-    let data = await resp.json();
+    let data = await safeJson(resp);
 
     // Auto-retry once on auth failure — refresh session and try again
     if (resp.status === 401 || (data?.error && typeof data.error === 'string' && data.error.includes('Authentication'))) {
@@ -36,7 +41,7 @@ export async function apiCall(
       if (newToken) {
         token = newToken;
         resp = await doFetch(token);
-        data = await resp.json();
+        data = await safeJson(resp);
       }
     }
 
