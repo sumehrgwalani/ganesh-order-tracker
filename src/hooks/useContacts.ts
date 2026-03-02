@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Contact, ContactsMap, ContactFormData } from '../types'
+import { normalizeCompanyName } from '../utils/normalizeCompany'
 
 export function useContacts(orgId: string | null) {
   const [contacts, setContacts] = useState<ContactsMap>({})
@@ -63,7 +64,7 @@ export function useContacts(orgId: string | null) {
           organization_id: orgId,
           email: formData.email,
           name: formData.name,
-          company: formData.company,
+          company: normalizeCompanyName(formData.company),
           role: (formData.category && formData.category !== 'other')
             ? formData.category.charAt(0).toUpperCase() + formData.category.slice(1)
             : formData.role || 'Supplier',
@@ -156,7 +157,7 @@ export function useContacts(orgId: string | null) {
         organization_id: orgId,
         email: row.email.toLowerCase().trim(),
         name: row.name.trim(),
-        company: row.company?.trim() || '',
+        company: normalizeCompanyName(row.company || ''),
         role: row.role?.trim() || 'Supplier',
         phone: row.phone?.trim() || '',
         address: row.address?.trim() || '',

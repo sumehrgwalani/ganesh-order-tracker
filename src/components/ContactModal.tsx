@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ContactFormData } from '../types';
 import Icon from './Icon';
+import { findMatchingCompany } from '../utils/normalizeCompany';
 
 interface Props {
   contact: ContactFormData | null;
@@ -136,6 +137,14 @@ function ContactModal({ contact, onSave, onClose, companies }: Props) {
               list="companies"
               value={formData.company}
               onChange={(e) => setFormData({...formData, company: e.target.value})}
+              onBlur={() => {
+                if (formData.company) {
+                  const match = findMatchingCompany(formData.company, companies)
+                  if (match !== formData.company) {
+                    setFormData({...formData, company: match})
+                  }
+                }
+              }}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Company Name"
             />

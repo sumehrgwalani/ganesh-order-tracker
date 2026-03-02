@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Order, HistoryEntry, OrderLineItem, AttachmentEntry } from '../types'
 import { ORDER_STAGES } from '../data/constants'
+import { normalizeCompanyName } from '../utils/normalizeCompany'
 
 // DB row shapes returned by Supabase queries
 interface DbLineItem {
@@ -158,7 +159,7 @@ export function useOrders(orgId: string | null) {
           order_id: order.id,
           po_number: order.poNumber,
           pi_number: order.piNumber || null,
-          company: order.company,
+          company: normalizeCompanyName(order.company),
           brand: order.brand || null,
           product: order.product,
           specs: order.specs,
@@ -166,7 +167,7 @@ export function useOrders(orgId: string | null) {
           to_location: order.to,
           order_date: new Date().toISOString().split('T')[0],
           current_stage: order.currentStage,
-          supplier: order.supplier,
+          supplier: normalizeCompanyName(order.supplier),
           total_value: order.totalValue || null,
           total_kilos: order.totalKilos || null,
           status: 'sent',
@@ -273,8 +274,8 @@ export function useOrders(orgId: string | null) {
     try {
       // Build the DB update payload from the Order fields provided
       const dbUpdates: Record<string, string | number | boolean | null | Record<string, unknown>> = { updated_at: new Date().toISOString() }
-      if (updates.company !== undefined) dbUpdates.company = updates.company
-      if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier
+      if (updates.company !== undefined) dbUpdates.company = normalizeCompanyName(updates.company)
+      if (updates.supplier !== undefined) dbUpdates.supplier = normalizeCompanyName(updates.supplier)
       if (updates.product !== undefined) dbUpdates.product = updates.product
       if (updates.specs !== undefined) dbUpdates.specs = updates.specs
       if (updates.from !== undefined) dbUpdates.from_location = updates.from

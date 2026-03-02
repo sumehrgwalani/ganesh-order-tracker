@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { normalizeCompanyName } from './normalize-companies'
 
 
 function setCors(res: VercelResponse) {
@@ -1515,8 +1516,8 @@ If truly unknown, return "Unknown" for that field.` }],
               organization_id,
               order_id: fullPO,
               po_number: fullPO,
-              company,
-              supplier,
+              company: normalizeCompanyName(company),
+              supplier: normalizeCompanyName(supplier),
               product,
               current_stage: highestStage,
               status: 'sent',
@@ -1647,8 +1648,8 @@ If no purchase orders found, return: []`
                   organization_id,
                   order_id: disc.po_number,
                   po_number: disc.po_number,
-                  company: disc.company || 'Unknown',
-                  supplier: disc.supplier || 'Unknown',
+                  company: normalizeCompanyName(disc.company || 'Unknown'),
+                  supplier: normalizeCompanyName(disc.supplier || 'Unknown'),
                   product: disc.product || 'Unknown',
                   from_location: disc.from_location || 'India',
                   current_stage: disc.highest_stage || 1,
@@ -2576,8 +2577,8 @@ If truly unknown, return "Unknown" for that field.` }],
               organization_id,
               order_id: fullPO,
               po_number: fullPO,
-              company: company,
-              supplier: supplier,
+              company: normalizeCompanyName(company),
+              supplier: normalizeCompanyName(supplier),
               product: product,
               from_location: 'India',
               current_stage: highestStage,
