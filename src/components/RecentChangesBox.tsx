@@ -40,18 +40,30 @@ export default function RecentChangesBox({ orgId }: Props) {
   const [changes, setChanges] = useState<Changes | null>(null)
   const [totalChanges, setTotalChanges] = useState(0)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [syncLabel, setSyncLabel] = useState('')
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
+  // Fetch on mount, then poll every 30 seconds
   useEffect(() => {
     fetchChanges()
+    const interval = setInterval(fetchChanges, 30000)
+    return () => clearInterval(interval)
   }, [orgId])
 
+  // Update the "Last sync: Xm ago" label every 15 seconds so it stays fresh
+  useEffect(() => {
+    const tick = () => {
+      if (lastSyncTime) setSyncLabel(timeAgo(lastSyncTime))
+    }
+    tick()
+    const interval = setInterval(tick, 15000)
+    return () => clearInterval(interval)
+  }, [lastSyncTime])
+
   const fetchChanges = async () => {
-    setLoading(true)
-    setError('')
     try {
       const { data, error: err } = await apiCall('/api/recent-changes', {
         organization_id: orgId,
@@ -62,11 +74,12 @@ export default function RecentChangesBox({ orgId }: Props) {
         setChanges(data.changes)
         setTotalChanges(data.totalChanges)
         setLastSyncTime(data.lastSyncTime)
+        setError('')
       }
     } catch {
       setError('Could not reach server')
     } finally {
-      setLoading(false)
+      setInitialLoad(false)
     }
   }
 
@@ -207,44 +220,26 @@ export default function RecentChangesBox({ orgId }: Props) {
             </span>
           )}
         </div>
-        <button
-          onClick={fetchChanges}
-          style={{
-            fontSize: '11px',
-            color: '#64748b',
-            background: 'rgba(100, 116, 139, 0.1)',
-            border: '1px solid rgba(100, 116, 139, 0.15)',
-            borderRadius: '6px',
-            padding: '4px 10px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}
-          onMouseOver={e => {
-            e.currentTarget.style.color = '#94a3b8'
-            e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.3)'
-          }}
-          onMouseOut={e => {
-            e.currentTarget.style.color = '#64748b'
-            e.currentTarget.style.borderColor = 'rgba(100, 116, 139, 0.15)'
-          }}
-        >
-          <Icon name="RefreshCw" size={10} className="text-slate-500" />
-          Refresh
-        </button>
-      </div>
 
-      {/* Last sync indicator */}
-      {lastSyncTime && !loading && (
-        <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-          <span style={{ fontSize: '10px', color: '#64748b' }}>
-            Last sync: {timeAgo(lastSyncTime)}
-          </span>
-        </div>
-      )}
+        {/* Live sync indicator */}
+        {syncLabel && !initialLoad && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#22c55e',
+                boxShadow: '0 0 6px #22c55e',
+                animation: 'rcBlink 3s ease-in-out infinite',
+              }}
+            />
+            <span style={{ fontSize: '10px', color: '#64748b' }}>
+              Synced {syncLabel}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Content */}
       <div
@@ -258,7 +253,7 @@ export default function RecentChangesBox({ orgId }: Props) {
           gap: '8px',
         }}
       >
-        {loading && (
+        {initialLoad && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', animation: 'rcPulse 1.5s ease-in-out infinite' }} />
@@ -269,14 +264,14 @@ export default function RecentChangesBox({ orgId }: Props) {
           </div>
         )}
 
-        {error && !loading && (
+        {error && !initialLoad && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <Icon name="AlertCircle" size={24} className="text-red-400 mx-auto" />
             <p style={{ fontSize: '12px', color: '#f87171', marginTop: '8px' }}>{error}</p>
           </div>
         )}
 
-        {!loading && !error && allItems.length === 0 && (
+        {!initialLoad && !error && allItems.length === 0 && (
           <div style={{ textAlign: 'center', padding: '30px 0' }}>
             <Icon name="CheckCircle" size={28} className="text-green-400 mx-auto" />
             <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '10px', fontWeight: 500 }}>All caught up!</p>
@@ -284,7 +279,7 @@ export default function RecentChangesBox({ orgId }: Props) {
           </div>
         )}
 
-        {!loading && !error && allItems.map((entry, i) => renderItem(entry.item, entry.type, i))}
+        {!initialLoad && !error && allItems.map((entry, i) => renderItem(entry.item, entry.type, i))}
       </div>
 
       {/* CSS */}
@@ -292,6 +287,10 @@ export default function RecentChangesBox({ orgId }: Props) {
         @keyframes rcPulse {
           0%, 100% { opacity: 0.3; transform: scale(0.8); }
           50% { opacity: 1; transform: scale(1.2); }
+        }
+        @keyframes rcBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
         }
       `}</style>
     </div>
