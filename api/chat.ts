@@ -197,7 +197,13 @@ Total orders: ${(orders || []).length}`
     const aiData = await aiRes.json()
     const answer = aiData.content?.[0]?.text || 'No response from AI.'
 
-    return res.status(200).json({ answer })
+    // Build PO number → order_id lookup for linking
+    const orderMap: Record<string, string> = {}
+    for (const o of orders) {
+      if (o.order_id) orderMap[o.order_id] = o.order_id
+    }
+
+    return res.status(200).json({ answer, orderMap })
   } catch (err: any) {
     console.error('[CHAT] Error:', err)
     return res.status(500).json({ error: err.message || 'Something went wrong' })

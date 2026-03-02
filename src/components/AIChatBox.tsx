@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from './Icon'
 import { apiCall } from '../utils/api'
 
@@ -11,17 +12,73 @@ interface Props {
   orgId: string
 }
 
+// Match PO numbers like GI/PO/25-26/3038 or **GI/PO/25-26/3038**
+const PO_REGEX = /\*{0,2}(GI\/PO\/[\d\-]+\/\d+)\*{0,2}/g
+
 export default function AIChatBox({ orgId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [knownOrders, setKnownOrders] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Render text with PO numbers as clickable links
+  const renderLinkedContent = (text: string) => {
+    const parts: (string | { po: string; key: number })[] = []
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    const regex = new RegExp(PO_REGEX.source, 'g')
+    let key = 0
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index))
+      }
+      parts.push({ po: match[1], key: key++ })
+      lastIndex = match.index + match[0].length
+    }
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex))
+    }
+
+    return parts.map((part, i) => {
+      if (typeof part === 'string') return <span key={i}>{part}</span>
+      const orderId = part.po
+      return (
+        <span
+          key={`po-${part.key}`}
+          onClick={() => navigate(`/orders/${encodeURIComponent(orderId)}`)}
+          style={{
+            color: '#38bdf8',
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textDecorationColor: 'rgba(56, 189, 248, 0.3)',
+            textUnderlineOffset: '2px',
+            transition: 'all 0.15s',
+          }}
+          onMouseOver={e => {
+            e.currentTarget.style.color = '#7dd3fc'
+            e.currentTarget.style.textDecorationColor = '#7dd3fc'
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.color = '#38bdf8'
+            e.currentTarget.style.textDecorationColor = 'rgba(56, 189, 248, 0.3)'
+          }}
+          title={`Open ${orderId}`}
+        >
+          {orderId}
+        </span>
+      )
+    })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +100,9 @@ export default function AIChatBox({ orgId }: Props) {
         setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }])
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: data.answer }])
+        if (data.orderMap) {
+          setKnownOrders(prev => ({ ...prev, ...data.orderMap }))
+        }
       }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Could not reach the server. Please try again.' }])
@@ -209,7 +269,9 @@ export default function AIChatBox({ orgId }: Props) {
                       </span>
                     </div>
                   )}
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                  <span style={{ whiteSpace: 'pre-wrap' }}>
+                    {msg.role === 'assistant' ? renderLinkedContent(msg.content) : msg.content}
+                  </span>
                 </div>
               </div>
             ))}
