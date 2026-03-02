@@ -15,8 +15,10 @@ function SignaturePad({ signatureData, onSignatureChange, onNotification }: Prop
 
   // Load saved signature on mount
   useEffect(() => {
-    const saved = localStorage.getItem('gi_signature');
-    if (saved && !signatureData) onSignatureChange(saved);
+    try {
+      const saved = localStorage.getItem('gi_signature');
+      if (saved && !signatureData) onSignatureChange(saved);
+    } catch { /* localStorage unavailable (Safari private mode, etc.) */ }
   }, []);
 
   const initCanvas = () => {
@@ -68,7 +70,7 @@ function SignaturePad({ signatureData, onSignatureChange, onNotification }: Prop
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     onSignatureChange(dataUrl);
-    localStorage.setItem('gi_signature', dataUrl);
+    try { localStorage.setItem('gi_signature', dataUrl); } catch {}
     setShowSignaturePad(false);
     onNotification({ type: 'success', message: 'Signature saved! It will appear on your POs.' });
   };
@@ -90,7 +92,7 @@ function SignaturePad({ signatureData, onSignatureChange, onNotification }: Prop
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       onSignatureChange(dataUrl);
-      localStorage.setItem('gi_signature', dataUrl);
+      try { localStorage.setItem('gi_signature', dataUrl); } catch {}
       setShowSignaturePad(false);
       onNotification({ type: 'success', message: 'Signature uploaded and saved!' });
     };
@@ -99,7 +101,7 @@ function SignaturePad({ signatureData, onSignatureChange, onNotification }: Prop
 
   const removeSignature = () => {
     onSignatureChange('');
-    localStorage.removeItem('gi_signature');
+    try { localStorage.removeItem('gi_signature'); } catch {}
     onNotification({ type: 'info', message: 'Signature removed.' });
   };
 

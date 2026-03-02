@@ -52,6 +52,8 @@ export default function ComposeEmailModal({
   const [suggestions, setSuggestions] = useState<Array<{ email: string; name: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const toInputRef = useRef<HTMLInputElement>(null);
 
   // Pre-fill values when modal opens
@@ -74,7 +76,7 @@ export default function ComposeEmailModal({
             mimeType: ab.mimeType,
             size: ab.blob.size,
           }))
-        ).then(setAttachments);
+        ).then(setAttachments).catch(err => console.error('Attachment conversion failed:', err));
       }
     }
   }, [isOpen, prefillTo, prefillSubject, prefillBody, attachmentBlobs]);
@@ -126,6 +128,10 @@ export default function ComposeEmailModal({
     const files = e.target.files;
     if (!files) return;
     for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        setError(`File "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 10MB per file.`);
+        continue;
+      }
       const data = await blobToBase64(file);
       setAttachments(prev => [...prev, {
         filename: file.name,
@@ -168,15 +174,16 @@ export default function ComposeEmailModal({
       if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
 
+      if (!mountedRef.current) return;
       setSuccess(true);
       setTimeout(() => {
         onClose();
         if (onSent) onSent();
       }, 1200);
     } catch (err: any) {
-      setError(err.message || 'Failed to send email');
+      if (mountedRef.current) setError(err.message || 'Failed to send email');
     } finally {
-      setSending(false);
+      if (mountedRef.current) setSending(false);
     }
   };
 

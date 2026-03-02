@@ -79,7 +79,7 @@ export default function EditOrderModal({ order, buyerOptions, supplierOptions, p
             {dropdownFields.map(field => {
               const currentVal = editForm[field.key] || '';
               const isCustomMode = editForm[field.customKey] === 'true';
-              const isInList = field.options.includes(currentVal);
+              const isInList = field.options?.includes(currentVal);
               return (
                 <div key={field.key}>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1">{field.label}</label>

@@ -275,7 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       parsed = JSON.parse(jsonStr)
     } catch (parseErr) {
       console.error('Failed to parse AI response as JSON:', content)
-      return res.status(500).json({ error: 'AI returned invalid data. Please try again.', raw: content })
+      return res.status(500).json({ error: 'AI returned invalid data. Please try again.' })
     }
 
     let lineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: any) => ({

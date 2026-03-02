@@ -4,10 +4,12 @@ import Icon from './Icon';
 // PDF.js — loaded from CDN to avoid bundling the worker
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
 let pdfjsLib: any = null;
+let pdfjsLoadPromise: Promise<any> | null = null;
 
-async function loadPdfJs() {
-  if (pdfjsLib) return pdfjsLib;
-  return new Promise((resolve, reject) => {
+function loadPdfJs(): Promise<any> {
+  if (pdfjsLib) return Promise.resolve(pdfjsLib);
+  if (pdfjsLoadPromise) return pdfjsLoadPromise;
+  pdfjsLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = `${PDFJS_CDN}/pdf.min.js`;
     script.onload = () => {
@@ -19,14 +21,17 @@ async function loadPdfJs() {
     script.onerror = reject;
     document.head.appendChild(script);
   });
+  return pdfjsLoadPromise;
 }
 
 // jsPDF — loaded from CDN for PDF report generation
 let jsPDFLib: any = null;
+let jsPDFLoadPromise: Promise<any> | null = null;
 
-async function loadJsPdf(): Promise<any> {
-  if (jsPDFLib) return jsPDFLib;
-  return new Promise((resolve, reject) => {
+function loadJsPdf(): Promise<any> {
+  if (jsPDFLib) return Promise.resolve(jsPDFLib);
+  if (jsPDFLoadPromise) return jsPDFLoadPromise;
+  jsPDFLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
     script.onload = () => {
@@ -36,6 +41,7 @@ async function loadJsPdf(): Promise<any> {
     script.onerror = reject;
     document.head.appendChild(script);
   });
+  return jsPDFLoadPromise;
 }
 
 // Composite the new artwork image with the highlight overlay on top
@@ -204,7 +210,8 @@ function describeDiffRegions(
 
   const c1 = document.createElement('canvas');
   c1.width = W; c1.height = H;
-  const ctx1 = c1.getContext('2d')!;
+  const ctx1 = c1.getContext('2d');
+  if (!ctx1) return { regions: [], totalPercent: 0 };
   ctx1.fillStyle = '#fff';
   ctx1.fillRect(0, 0, W, H);
   const r1 = Math.min(W / img1.naturalWidth, H / img1.naturalHeight);
@@ -212,7 +219,8 @@ function describeDiffRegions(
 
   const c2 = document.createElement('canvas');
   c2.width = W; c2.height = H;
-  const ctx2 = c2.getContext('2d')!;
+  const ctx2 = c2.getContext('2d');
+  if (!ctx2) return { regions: [], totalPercent: 0 };
   ctx2.fillStyle = '#fff';
   ctx2.fillRect(0, 0, W, H);
   const r2 = Math.min(W / img2.naturalWidth, H / img2.naturalHeight);

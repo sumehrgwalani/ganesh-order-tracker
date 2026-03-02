@@ -39,7 +39,7 @@ export const calculateLineItem = (item: any) => {
     }
   }
 
-  const total = (adjustedKilos * price).toFixed(2);
+  const total = Math.round(adjustedKilos * price * 100) / 100;
 
   return {
     cases: cases || '',
@@ -62,7 +62,7 @@ export const recalculateAllLineItems = (items: any[]) => {
 };
 
 export const calcGrandTotal = (items: any[]) =>
-  items.reduce((sum, item) => sum + parseFloat((item.total as string) || '0'), 0).toFixed(2);
+  items.reduce((sum, item) => sum + (typeof item.total === 'number' ? item.total : parseFloat(item.total || '0')), 0).toFixed(2);
 
 export const calcTotalKilos = (items: any[]) =>
   items.reduce((sum, item) => sum + (parseFloat((item.kilos as string) || '0') || 0), 0);
