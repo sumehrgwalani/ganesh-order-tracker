@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let orders: any[] = []
     const { data: orderData, error: orderErr } = await supabase
       .from('orders')
-      .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, date, brand, pi_number, from_location, to_location, metadata')
+      .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, created_at, brand, pi_number, from_location, to_location')
       .eq('organization_id', organization_id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.log('[CHAT] Orders query error, trying fallback:', orderErr.message)
       const { data: fallback } = await supabase
         .from('orders')
-        .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, date, brand, pi_number, from_location, to_location, metadata')
+        .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, created_at, brand, pi_number, from_location, to_location')
         .eq('organization_id', organization_id)
         .order('created_at', { ascending: false })
       orders = fallback || []
@@ -89,13 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     console.log(`[CHAT] Found ${orders.length} orders for org ${organization_id}`)
-
-    // Debug mode: return raw query results
-    if (question === '__debug__') {
-      return res.status(200).json({
-        answer: `Debug: Found ${orders.length} orders. First 3: ${orders.slice(0, 3).map((o: any) => o.order_id).join(', ')}. Org: ${organization_id}. Error: ${orderErr?.message || 'none'}`,
-      })
-    }
 
     const orderIds = orders.map((o: any) => o.id)
 
@@ -137,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (o.pi_number) summary += ` | PI#: ${o.pi_number}`
       if (o.from_location) summary += ` | From: ${o.from_location}`
       if (o.to_location) summary += ` | To: ${o.to_location}`
-      if (o.date) summary += ` | Date: ${o.date}`
+      if (o.created_at) summary += ` | Date: ${o.created_at.substring(0, 10)}`
 
       if (orderItems.length > 0) {
         summary += `\n  Line Items:`
