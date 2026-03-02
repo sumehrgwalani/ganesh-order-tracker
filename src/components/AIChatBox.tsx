@@ -23,10 +23,15 @@ export default function AIChatBox({ orgId }: Props) {
   const [knownOrders, setKnownOrders] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Scroll only the messages container, not the whole page
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }, [messages, loading])
 
   // Render text with PO numbers as clickable links
@@ -217,6 +222,7 @@ export default function AIChatBox({ orgId }: Props) {
         {/* Messages area */}
         {expanded && messages.length > 0 && (
           <div
+            ref={messagesContainerRef}
             style={{
               maxHeight: '300px',
               overflowY: 'auto',
