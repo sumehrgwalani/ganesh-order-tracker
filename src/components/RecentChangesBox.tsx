@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from './Icon'
 import { apiCall } from '../utils/api'
 
@@ -6,10 +7,16 @@ interface Props {
   orgId: string
 }
 
+interface DetailLink {
+  po: string
+  id: string
+}
+
 interface SummaryItem {
   icon: string
   text: string
   detail?: string
+  detailLinks?: DetailLink[]
 }
 
 interface SyncStats {
@@ -38,6 +45,7 @@ const ICONS: Record<string, { name: string; color: string }> = {
 }
 
 export default function RecentChangesBox({ orgId }: Props) {
+  const navigate = useNavigate()
   const [summary, setSummary] = useState<SummaryItem[]>([])
   const [stats, setStats] = useState<SyncStats | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
@@ -250,9 +258,27 @@ export default function RecentChangesBox({ orgId }: Props) {
                   />
                 )}
               </div>
-              {isExpanded && item.detail && (
-                <div style={{ marginTop: '8px', paddingLeft: '34px', fontSize: '11px', color: '#38bdf8', lineHeight: '1.6' }}>
-                  {item.detail}
+              {isExpanded && (item.detailLinks || item.detail) && (
+                <div style={{ marginTop: '8px', paddingLeft: '34px', fontSize: '11px', lineHeight: '1.8', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {item.detailLinks ? item.detailLinks.map((link, li) => (
+                    <span
+                      key={li}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/orders/${encodeURIComponent(link.id)}`) }}
+                      style={{
+                        color: '#38bdf8',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textDecorationColor: 'rgba(56, 189, 248, 0.3)',
+                        textUnderlineOffset: '2px',
+                      }}
+                      onMouseOver={e => (e.currentTarget.style.textDecorationColor = '#38bdf8')}
+                      onMouseOut={e => (e.currentTarget.style.textDecorationColor = 'rgba(56, 189, 248, 0.3)')}
+                    >
+                      {link.po}
+                    </span>
+                  )) : (
+                    <span style={{ color: '#38bdf8' }}>{item.detail}</span>
+                  )}
                 </div>
               )}
             </div>

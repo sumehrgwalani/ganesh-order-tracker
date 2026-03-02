@@ -113,31 +113,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // === BUILD SUMMARY ===
-    const summary: { icon: string; text: string; detail?: string; orderId?: string }[] = []
+    // Build a lookup from PO number to database UUID
+    const poToId: Record<string, string> = {}
+    for (const o of (allOrgOrders || [])) {
+      poToId[o.order_id] = o.id
+    }
+
+    const summary: { icon: string; text: string; detail?: string; detailLinks?: { po: string; id: string }[] }[] = []
 
     // New orders
     if ((newOrders || []).length > 0) {
       const count = newOrders!.length
-      const poList = newOrders!.map(o => o.order_id).join(', ')
+      const links = newOrders!.map(o => ({ po: o.order_id, id: o.id }))
       summary.push({
         icon: 'new_order',
         text: `${count} new order${count > 1 ? 's' : ''} created`,
-        detail: poList,
+        detail: links.map(l => l.po).join(', '),
+        detailLinks: links,
       })
     }
 
     // Stage updates — group by stage
-    const stageGroups: Record<string, string[]> = {}
+    const stageGroups: Record<string, { po: string; id: string }[]> = {}
     for (const o of pureUpdates) {
       const stageName = STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`
       if (!stageGroups[stageName]) stageGroups[stageName] = []
-      stageGroups[stageName].push(o.order_id)
+      stageGroups[stageName].push({ po: o.order_id, id: o.id })
     }
     for (const [stage, orders] of Object.entries(stageGroups)) {
       summary.push({
         icon: 'stage_update',
         text: `${orders.length} order${orders.length > 1 ? 's' : ''} moved to ${stage}`,
-        detail: orders.join(', '),
+        detail: orders.map(o => o.po).join(', '),
+        detailLinks: orders,
       })
     }
 
@@ -162,6 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stage = Number(stageNum)
       const stageName = STAGE_NAMES[stage] || `Stage ${stage}`
       const pos = [...poSet]
+      const links = pos.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
 
       let action = ''
       switch (stage) {
@@ -181,16 +190,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         icon: 'email',
         text: `${pos.length} ${action}`,
         detail: pos.join(', '),
+        detailLinks: links,
       })
     }
 
     // Attachments summary
     if (emailsWithAttachments.length > 0) {
       const unique = [...new Set(emailsWithAttachments)]
+      const links = unique.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
       summary.push({
         icon: 'attachment',
         text: `${emailsWithAttachments.length} email${emailsWithAttachments.length > 1 ? 's' : ''} with attachments`,
         detail: unique.join(', '),
+        detailLinks: links,
       })
     }
 
