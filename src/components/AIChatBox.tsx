@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Icon from './Icon'
 import { apiCall } from '../utils/api'
 
@@ -17,6 +17,11 @@ export default function AIChatBox({ orgId }: Props) {
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,78 +57,308 @@ export default function AIChatBox({ orgId }: Props) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 mb-6 overflow-hidden">
-      {/* Input bar */}
-      <form onSubmit={handleSubmit} className="flex items-center gap-3 p-4">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 flex-shrink-0">
-          <Icon name="MessageSquare" size={16} className="text-blue-600" />
-        </div>
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="Ask about your orders... e.g. &quot;What's the DHL number for PO 3020?&quot;"
-          className="flex-1 text-sm text-gray-800 placeholder-gray-400 outline-none bg-transparent"
-          disabled={loading}
+    <div className="mb-6">
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+          borderRadius: '16px',
+          border: '1px solid rgba(56, 189, 248, 0.15)',
+          boxShadow: '0 0 30px rgba(56, 189, 248, 0.05), 0 4px 20px rgba(0,0,0,0.15)',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        {/* Subtle top glow line */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '10%',
+            right: '10%',
+            height: '1px',
+            background: 'linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent)',
+          }}
         />
-        {loading ? (
-          <div className="w-8 h-8 flex items-center justify-center">
-            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-          >
-            <Icon name="Send" size={14} />
-          </button>
-        )}
-        {messages.length > 0 && (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
-          >
-            Clear
-          </button>
-        )}
-      </form>
 
-      {/* Messages area */}
-      {expanded && messages.length > 0 && (
-        <div className="border-t border-gray-100 max-h-80 overflow-y-auto">
-          {messages.map((msg, i) => (
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 20px 0 20px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
-              key={i}
-              className={`px-4 py-3 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-gray-50 text-gray-600'
-                  : 'bg-white text-gray-800'
-              }`}
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 12px rgba(59, 130, 246, 0.3)',
+              }}
             >
-              {msg.role === 'user' ? (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 font-medium text-xs mt-0.5">Q:</span>
-                  <span>{msg.content}</span>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2">
-                  <span className="text-blue-500 font-medium text-xs mt-0.5">AI:</span>
-                  <span className="whitespace-pre-wrap leading-relaxed">{msg.content}</span>
-                </div>
-              )}
+              <Icon name="Sparkles" size={14} className="text-white" />
             </div>
-          ))}
-          {loading && (
-            <div className="px-4 py-3 text-sm text-gray-400 flex items-center gap-2">
-              <span className="text-blue-500 font-medium text-xs">AI:</span>
-              <span>Thinking...</span>
-            </div>
+            <span
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#e2e8f0',
+                letterSpacing: '0.025em',
+              }}
+            >
+              AI Assistant
+            </span>
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#38bdf8',
+                background: 'rgba(56, 189, 248, 0.1)',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                border: '1px solid rgba(56, 189, 248, 0.15)',
+              }}
+            >
+              Powered by Claude
+            </span>
+          </div>
+          {messages.length > 0 && (
+            <button
+              onClick={handleClear}
+              style={{
+                fontSize: '11px',
+                color: '#64748b',
+                background: 'rgba(100, 116, 139, 0.1)',
+                border: '1px solid rgba(100, 116, 139, 0.15)',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={e => {
+                e.currentTarget.style.color = '#94a3b8'
+                e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.3)'
+              }}
+              onMouseOut={e => {
+                e.currentTarget.style.color = '#64748b'
+                e.currentTarget.style.borderColor = 'rgba(100, 116, 139, 0.15)'
+              }}
+            >
+              Clear chat
+            </button>
           )}
         </div>
-      )}
+
+        {/* Messages area */}
+        {expanded && messages.length > 0 && (
+          <div
+            style={{
+              maxHeight: '300px',
+              overflowY: 'auto',
+              padding: '12px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                }}
+              >
+                <div
+                  style={{
+                    maxWidth: '85%',
+                    padding: '10px 14px',
+                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                    fontSize: '13px',
+                    lineHeight: '1.5',
+                    ...(msg.role === 'user'
+                      ? {
+                          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                          color: '#ffffff',
+                          boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                        }
+                      : {
+                          background: 'rgba(30, 41, 59, 0.8)',
+                          color: '#e2e8f0',
+                          border: '1px solid rgba(56, 189, 248, 0.08)',
+                        }),
+                  }}
+                >
+                  {msg.role === 'assistant' && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      <Icon name="Zap" size={10} className="text-cyan-400" />
+                      <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 600 }}>
+                        Claude
+                      </span>
+                    </div>
+                  )}
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '14px 14px 14px 4px',
+                    background: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(56, 189, 248, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: '#38bdf8',
+                      animation: 'pulse 1.5s ease-in-out infinite',
+                    }}
+                  />
+                  <div
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: '#38bdf8',
+                      animation: 'pulse 1.5s ease-in-out 0.3s infinite',
+                    }}
+                  />
+                  <div
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: '#38bdf8',
+                      animation: 'pulse 1.5s ease-in-out 0.6s infinite',
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '4px' }}>
+                    Searching through your orders...
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+
+        {/* Input bar */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '14px 20px',
+            borderTop: expanded && messages.length > 0 ? '1px solid rgba(56, 189, 248, 0.06)' : 'none',
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              background: 'rgba(15, 23, 42, 0.6)',
+              border: '1px solid rgba(56, 189, 248, 0.1)',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              transition: 'all 0.2s',
+            }}
+            onClick={() => inputRef.current?.focus()}
+          >
+            <Icon name="Search" size={14} className="text-slate-500" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask anything about your orders..."
+              disabled={loading}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: '13px',
+                color: '#e2e8f0',
+                lineHeight: '1.4',
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={!input.trim() || loading}
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '12px',
+              border: 'none',
+              background: input.trim() && !loading
+                ? 'linear-gradient(135deg, #3b82f6, #06b6d4)'
+                : 'rgba(30, 41, 59, 0.6)',
+              color: input.trim() && !loading ? '#ffffff' : '#475569',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s',
+              boxShadow: input.trim() && !loading ? '0 0 15px rgba(59, 130, 246, 0.25)' : 'none',
+              flexShrink: 0,
+            }}
+          >
+            {loading ? (
+              <div
+                style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid rgba(56, 189, 248, 0.3)',
+                  borderTopColor: '#38bdf8',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }}
+              />
+            ) : (
+              <Icon name="Send" size={15} />
+            )}
+          </button>
+        </form>
+
+        {/* CSS animations */}
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
     </div>
   )
 }
