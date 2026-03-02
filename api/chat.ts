@@ -67,25 +67,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Fetch all orders with history and line items
-    const { data: orders } = await supabase
+    let orders: any[] = []
+    const { data: orderData, error: orderErr } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, date, brand, pi_number, from_location, to_location, metadata')
       .eq('organization_id', organization_id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
+    if (orderErr) {
+      // Fallback without deleted_at filter
+      console.log('[CHAT] Orders query error, trying fallback:', orderErr.message)
+      const { data: fallback } = await supabase
+        .from('orders')
+        .select('id, order_id, company, supplier, product, specs, current_stage, awb_number, total_value, total_kilos, delivery_terms, payment_terms, commission, date, brand, pi_number, from_location, to_location, metadata')
+        .eq('organization_id', organization_id)
+        .order('created_at', { ascending: false })
+      orders = fallback || []
+    } else {
+      orders = orderData || []
+    }
+
+    console.log(`[CHAT] Found ${orders.length} orders for org ${organization_id}`)
+
+    const orderIds = orders.map((o: any) => o.id)
+
     // Fetch order history (email trail) — just subjects and key info, not full bodies
-    const { data: history } = await supabase
-      .from('order_history')
-      .select('order_id, stage, from_address, subject, timestamp, has_attachment, attachments')
-      .in('order_id', (orders || []).map((o: any) => o.id))
-      .order('timestamp', { ascending: false })
+    let history: any[] = []
+    if (orderIds.length > 0) {
+      const { data: histData } = await supabase
+        .from('order_history')
+        .select('order_id, stage, from_address, subject, timestamp, has_attachment, attachments')
+        .in('order_id', orderIds)
+        .order('timestamp', { ascending: false })
+      history = histData || []
+    }
 
     // Fetch line items
-    const { data: lineItems } = await supabase
-      .from('order_line_items')
-      .select('order_id, product, brand, size, packing, cases, kilos, price_per_kg, currency, total')
-      .in('order_id', (orders || []).map((o: any) => o.id))
+    let lineItems: any[] = []
+    if (orderIds.length > 0) {
+      const { data: liData } = await supabase
+        .from('order_line_items')
+        .select('order_id, product, brand, size, packing, cases, kilos, price_per_kg, currency, total')
+        .in('order_id', orderIds)
+      lineItems = liData || []
+    }
 
     // Build order context — keep it concise to fit in context window
     const orderSummaries = (orders || []).map((o: any) => {
