@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import Icon from './Icon'
 import { apiCall } from '../utils/api'
 
@@ -7,22 +6,17 @@ interface Props {
   orgId: string
 }
 
-interface ChangeItem {
-  orderId: string
-  company: string
-  supplier: string
-  product?: string
-  stage?: string
-  subject?: string
-  from?: string
-  timestamp: string
-  hasAttachment?: boolean
+interface SummaryItem {
+  icon: string
+  text: string
+  detail?: string
 }
 
-interface Changes {
-  newOrders: ChangeItem[]
-  stageUpdates: ChangeItem[]
-  newEmails: ChangeItem[]
+interface SyncStats {
+  newOrders: number
+  stageUpdates: number
+  emailsReceived: number
+  ordersAffected: number
 }
 
 function timeAgo(ts: string): string {
@@ -36,15 +30,21 @@ function timeAgo(ts: string): string {
   return `${days}d ago`
 }
 
+const ICONS: Record<string, { name: string; color: string }> = {
+  new_order: { name: 'Plus', color: '#22c55e' },
+  stage_update: { name: 'ArrowRight', color: '#3b82f6' },
+  email: { name: 'Mail', color: '#a855f7' },
+  attachment: { name: 'Paperclip', color: '#f59e0b' },
+}
+
 export default function RecentChangesBox({ orgId }: Props) {
-  const [changes, setChanges] = useState<Changes | null>(null)
-  const [totalChanges, setTotalChanges] = useState(0)
+  const [summary, setSummary] = useState<SummaryItem[]>([])
+  const [stats, setStats] = useState<SyncStats | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [syncLabel, setSyncLabel] = useState('')
   const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const navigate = useNavigate()
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
 
   // Fetch on mount, then poll every 30 seconds
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function RecentChangesBox({ orgId }: Props) {
     return () => clearInterval(interval)
   }, [orgId])
 
-  // Update the "Last sync: Xm ago" label every 15 seconds so it stays fresh
+  // Keep sync label fresh
   useEffect(() => {
     const tick = () => {
       if (lastSyncTime) setSyncLabel(timeAgo(lastSyncTime))
@@ -71,8 +71,8 @@ export default function RecentChangesBox({ orgId }: Props) {
       if (err) {
         setError('Could not load updates')
       } else {
-        setChanges(data.changes)
-        setTotalChanges(data.totalChanges)
+        setSummary(data.summary || [])
+        setStats(data.stats || null)
         setLastSyncTime(data.lastSyncTime)
         setError('')
       }
@@ -83,73 +83,7 @@ export default function RecentChangesBox({ orgId }: Props) {
     }
   }
 
-  const renderItem = (item: ChangeItem, type: 'new' | 'update' | 'email', idx: number) => {
-    const colors = {
-      new: { bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.2)', dot: '#22c55e', label: 'NEW ORDER' },
-      update: { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.2)', dot: '#3b82f6', label: 'STAGE UPDATE' },
-      email: { bg: 'rgba(168, 85, 247, 0.1)', border: 'rgba(168, 85, 247, 0.2)', dot: '#a855f7', label: 'NEW EMAIL' },
-    }
-    const c = colors[type]
-
-    return (
-      <div
-        key={`${type}-${idx}`}
-        onClick={() => navigate(`/orders/${encodeURIComponent(item.orderId)}`)}
-        style={{
-          padding: '10px 12px',
-          background: c.bg,
-          border: `1px solid ${c.border}`,
-          borderRadius: '10px',
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-        }}
-        onMouseOver={e => {
-          e.currentTarget.style.transform = 'translateX(4px)'
-          e.currentTarget.style.borderColor = c.dot
-        }}
-        onMouseOut={e => {
-          e.currentTarget.style.transform = 'translateX(0)'
-          e.currentTarget.style.borderColor = c.border
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.dot, boxShadow: `0 0 6px ${c.dot}` }} />
-            <span style={{ fontSize: '9px', fontWeight: 700, color: c.dot, letterSpacing: '0.05em' }}>{c.label}</span>
-          </div>
-          <span style={{ fontSize: '10px', color: '#64748b' }}>{timeAgo(item.timestamp)}</span>
-        </div>
-        <div style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8', marginBottom: '2px' }}>{item.orderId}</div>
-        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-          {item.company}{item.supplier ? ` → ${item.supplier}` : ''}
-        </div>
-        {type === 'email' && item.subject && (
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            📧 {item.subject}
-          </div>
-        )}
-        {type === 'update' && item.stage && (
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px' }}>
-            → {item.stage}
-          </div>
-        )}
-        {type === 'new' && item.product && (
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px' }}>
-            {item.product}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Combine and sort all changes by timestamp
-  const allItems: { item: ChangeItem; type: 'new' | 'update' | 'email' }[] = []
-  if (changes) {
-    for (const o of changes.newOrders) allItems.push({ item: o, type: 'new' })
-    for (const o of changes.stageUpdates) allItems.push({ item: o, type: 'update' })
-    for (const o of changes.newEmails) allItems.push({ item: o, type: 'email' })
-  }
-  allItems.sort((a, b) => new Date(b.item.timestamp).getTime() - new Date(a.item.timestamp).getTime())
+  const totalActivity = stats ? stats.newOrders + stats.stageUpdates + stats.emailsReceived : 0
 
   return (
     <div
@@ -178,14 +112,7 @@ export default function RecentChangesBox({ orgId }: Props) {
       />
 
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 20px',
-        }}
-      >
+      <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div
             style={{
@@ -199,29 +126,12 @@ export default function RecentChangesBox({ orgId }: Props) {
               boxShadow: '0 0 12px rgba(168, 85, 247, 0.3)',
             }}
           >
-            <Icon name="Bell" size={14} className="text-white" />
+            <Icon name="Zap" size={14} className="text-white" />
           </div>
           <span style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0', letterSpacing: '0.025em' }}>
-            What's New
+            Sync Summary
           </span>
-          {totalChanges > 0 && (
-            <span
-              style={{
-                fontSize: '10px',
-                color: '#22c55e',
-                background: 'rgba(34, 197, 94, 0.1)',
-                padding: '2px 8px',
-                borderRadius: '10px',
-                border: '1px solid rgba(34, 197, 94, 0.15)',
-                fontWeight: 600,
-              }}
-            >
-              {totalChanges} update{totalChanges !== 1 ? 's' : ''}
-            </span>
-          )}
         </div>
-
-        {/* Live sync indicator */}
         {syncLabel && !initialLoad && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div
@@ -234,32 +144,44 @@ export default function RecentChangesBox({ orgId }: Props) {
                 animation: 'rcBlink 3s ease-in-out infinite',
               }}
             />
-            <span style={{ fontSize: '10px', color: '#64748b' }}>
-              Synced {syncLabel}
-            </span>
+            <span style={{ fontSize: '10px', color: '#64748b' }}>Synced {syncLabel}</span>
           </div>
         )}
       </div>
 
-      {/* Content */}
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '0 20px 14px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}
-      >
+      {/* Quick stats bar */}
+      {stats && !initialLoad && totalActivity > 0 && (
+        <div style={{ padding: '0 20px 12px', display: 'flex', gap: '12px' }}>
+          {stats.emailsReceived > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Icon name="Mail" size={12} className="text-purple-400" />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.emailsReceived} emails</span>
+            </div>
+          )}
+          {stats.ordersAffected > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Icon name="Package" size={12} className="text-cyan-400" />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.ordersAffected} orders</span>
+            </div>
+          )}
+          {stats.newOrders > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Icon name="Plus" size={12} className="text-green-400" />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.newOrders} new</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary items */}
+      <div style={{ flex: 1, padding: '0 20px 14px', display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
         {initialLoad && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', animation: 'rcPulse 1.5s ease-in-out infinite' }} />
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', animation: 'rcPulse 1.5s ease-in-out 0.3s infinite' }} />
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', animation: 'rcPulse 1.5s ease-in-out 0.6s infinite' }} />
-              <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '4px' }}>Loading updates...</span>
+              <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '4px' }}>Loading...</span>
             </div>
           </div>
         )}
@@ -271,18 +193,73 @@ export default function RecentChangesBox({ orgId }: Props) {
           </div>
         )}
 
-        {!initialLoad && !error && allItems.length === 0 && (
+        {!initialLoad && !error && summary.length === 0 && (
           <div style={{ textAlign: 'center', padding: '30px 0' }}>
             <Icon name="CheckCircle" size={28} className="text-green-400 mx-auto" />
             <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '10px', fontWeight: 500 }}>All caught up!</p>
-            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>No changes since last sync</p>
+            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>No activity since last sync</p>
           </div>
         )}
 
-        {!initialLoad && !error && allItems.map((entry, i) => renderItem(entry.item, entry.type, i))}
+        {!initialLoad && !error && summary.map((item, i) => {
+          const iconInfo = ICONS[item.icon] || { name: 'Zap', color: '#38bdf8' }
+          const isExpanded = expandedIdx === i
+
+          return (
+            <div
+              key={i}
+              onClick={() => setExpandedIdx(isExpanded ? null : i)}
+              style={{
+                padding: '10px 12px',
+                background: 'rgba(30, 41, 59, 0.6)',
+                border: '1px solid rgba(56, 189, 248, 0.08)',
+                borderRadius: '10px',
+                cursor: item.detail ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={e => {
+                if (item.detail) e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.2)'
+              }}
+              onMouseOut={e => {
+                e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.08)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    background: `${iconInfo.color}15`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon name={iconInfo.name} size={12} style={{ color: iconInfo.color } as any} className="" />
+                </div>
+                <span style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: 500, flex: 1 }}>
+                  {item.text}
+                </span>
+                {item.detail && (
+                  <Icon
+                    name={isExpanded ? 'ChevronDown' : 'ChevronRight'}
+                    size={12}
+                    className="text-slate-500"
+                  />
+                )}
+              </div>
+              {isExpanded && item.detail && (
+                <div style={{ marginTop: '8px', paddingLeft: '34px', fontSize: '11px', color: '#38bdf8', lineHeight: '1.6' }}>
+                  {item.detail}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
-      {/* CSS */}
       <style>{`
         @keyframes rcPulse {
           0%, 100% { opacity: 0.3; transform: scale(0.8); }

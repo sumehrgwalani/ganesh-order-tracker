@@ -61,7 +61,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Not a member of this organization' })
     }
 
-    // Use last sync time, or fall back to 24 hours ago
     const since = membership.gmail_last_sync || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const lastSyncTime = membership.gmail_last_sync || null
 
@@ -74,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .gte('created_at', since)
       .order('created_at', { ascending: false })
 
-    // 2. Orders updated since last sync
+    // 2. Orders updated since last sync (stage changes etc)
     const { data: updatedOrders } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier, product, current_stage, updated_at')
@@ -83,11 +82,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .gte('updated_at', since)
       .order('updated_at', { ascending: false })
 
-    // Filter out orders that were also new (avoid duplicates)
     const newOrderIds = new Set((newOrders || []).map(o => o.id))
     const pureUpdates = (updatedOrders || []).filter(o => !newOrderIds.has(o.id))
 
-    // 3. New emails/history since last sync
+    // 3. New emails since last sync
     const { data: allOrgOrders } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier')
@@ -96,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const orgOrderIds = (allOrgOrders || []).map(o => o.id)
     let recentEmails: any[] = []
-    let emailOrderMap: Record<string, any> = {}
+    const emailOrderMap: Record<string, any> = {}
 
     if (orgOrderIds.length > 0) {
       for (const o of (allOrgOrders || [])) {
@@ -109,46 +107,107 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .in('order_id', orgOrderIds)
         .gte('created_at', since)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(100)
 
       recentEmails = emailData || []
     }
 
-    const changes = {
-      newOrders: (newOrders || []).map(o => ({
-        orderId: o.order_id,
-        company: o.company,
-        supplier: o.supplier,
-        product: o.product,
-        stage: STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`,
-        timestamp: o.created_at,
-      })),
-      stageUpdates: pureUpdates.map(o => ({
-        orderId: o.order_id,
-        company: o.company,
-        supplier: o.supplier,
-        product: o.product,
-        stage: STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`,
-        timestamp: o.updated_at,
-      })),
-      newEmails: (recentEmails || []).map(e => {
-        const order = emailOrderMap[e.order_id]
-        return {
-          orderId: order?.order_id || 'Unknown',
-          company: order?.company || '',
-          supplier: order?.supplier || '',
-          stage: STAGE_NAMES[e.stage] || `Stage ${e.stage}`,
-          subject: e.subject,
-          from: e.from_address,
-          timestamp: e.timestamp,
-          hasAttachment: e.has_attachment,
-        }
-      }),
+    // === BUILD SUMMARY ===
+    const summary: { icon: string; text: string; detail?: string; orderId?: string }[] = []
+
+    // New orders
+    if ((newOrders || []).length > 0) {
+      const count = newOrders!.length
+      const poList = newOrders!.map(o => o.order_id).join(', ')
+      summary.push({
+        icon: 'new_order',
+        text: `${count} new order${count > 1 ? 's' : ''} created`,
+        detail: poList,
+      })
     }
 
-    const totalChanges = changes.newOrders.length + changes.stageUpdates.length + changes.newEmails.length
+    // Stage updates — group by stage
+    const stageGroups: Record<string, string[]> = {}
+    for (const o of pureUpdates) {
+      const stageName = STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`
+      if (!stageGroups[stageName]) stageGroups[stageName] = []
+      stageGroups[stageName].push(o.order_id)
+    }
+    for (const [stage, orders] of Object.entries(stageGroups)) {
+      summary.push({
+        icon: 'stage_update',
+        text: `${orders.length} order${orders.length > 1 ? 's' : ''} moved to ${stage}`,
+        detail: orders.join(', '),
+      })
+    }
 
-    return res.status(200).json({ changes, totalChanges, lastSyncTime })
+    // Emails — group by stage to summarize actions
+    const emailsByStage: Record<number, Set<string>> = {}
+    const emailsWithAttachments: string[] = []
+    const uniqueOrdersEmailed = new Set<string>()
+
+    for (const e of recentEmails) {
+      const order = emailOrderMap[e.order_id]
+      const poNum = order?.order_id || 'Unknown'
+      uniqueOrdersEmailed.add(poNum)
+
+      if (!emailsByStage[e.stage]) emailsByStage[e.stage] = new Set()
+      emailsByStage[e.stage].add(poNum)
+
+      if (e.has_attachment) emailsWithAttachments.push(poNum)
+    }
+
+    // Summarize emails by stage type
+    for (const [stageNum, poSet] of Object.entries(emailsByStage)) {
+      const stage = Number(stageNum)
+      const stageName = STAGE_NAMES[stage] || `Stage ${stage}`
+      const pos = [...poSet]
+
+      let action = ''
+      switch (stage) {
+        case 1: action = `PO confirmation emails received`; break
+        case 2: action = `Proforma invoice emails received`; break
+        case 3: action = `Artwork emails received`; break
+        case 4: action = `Artwork approval emails received`; break
+        case 5: action = `Quality check emails received`; break
+        case 6: action = `Schedule confirmation emails received`; break
+        case 7: action = `Draft document emails received`; break
+        case 8: action = `Final document emails received`; break
+        case 9: action = `DHL/AWB tracking emails received`; break
+        default: action = `${stageName} emails received`; break
+      }
+
+      summary.push({
+        icon: 'email',
+        text: `${pos.length} ${action}`,
+        detail: pos.join(', '),
+      })
+    }
+
+    // Attachments summary
+    if (emailsWithAttachments.length > 0) {
+      const unique = [...new Set(emailsWithAttachments)]
+      summary.push({
+        icon: 'attachment',
+        text: `${emailsWithAttachments.length} email${emailsWithAttachments.length > 1 ? 's' : ''} with attachments`,
+        detail: unique.join(', '),
+      })
+    }
+
+    // Total emails
+    const totalEmails = recentEmails.length
+    const totalOrders = uniqueOrdersEmailed.size
+
+    return res.status(200).json({
+      summary,
+      stats: {
+        newOrders: (newOrders || []).length,
+        stageUpdates: pureUpdates.length,
+        emailsReceived: totalEmails,
+        ordersAffected: totalOrders,
+      },
+      lastSyncTime,
+    })
   } catch (err: any) {
     console.error('[RECENT-CHANGES] Error:', err)
     return res.status(500).json({ error: err.message || 'Something went wrong' })
