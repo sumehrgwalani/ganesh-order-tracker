@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { ORDER_STAGES } from '../data/constants';
-import PageHeader from '../components/PageHeader';
 import StageFilter from '../components/StageFilter';
 import OrderRow from '../components/OrderRow';
 import type { Order } from '../types';
@@ -12,18 +11,49 @@ interface Props {
   onDeleteOrder?: (orderId: string) => Promise<void>;
 }
 
+type Tab = 'active' | 'completed' | 'all';
+
 function OrdersPage({ orders, onDeleteOrder }: Props) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as Tab) || 'active';
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [filterStage, setFilterStage] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [sortBy, setSortBy] = useState<'po-asc' | 'po-desc' | 'stage-asc' | 'stage-desc' | 'date-desc' | 'date-asc'>('po-desc');
-  const activeOrders = orders.filter(o => o.currentStage < 9);
 
-  // Get unique companies from active orders
-  const companies = [...new Set(activeOrders.map(o => o.company))].sort();
+  // Sync tab from URL param
+  useEffect(() => {
+    const urlTab = searchParams.get('tab') as Tab;
+    if (urlTab && ['active', 'completed', 'all'].includes(urlTab)) {
+      setActiveTab(urlTab);
+    }
+  }, [searchParams]);
 
-  const filteredOrders = activeOrders.filter(order => {
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    setFilterStage(null);
+    setFilterCompany('all');
+    setSearchTerm('');
+    if (tab === 'active') {
+      setSearchParams({});
+    } else {
+      setSearchParams({ tab });
+    }
+  };
+
+  // Filter orders by tab
+  const tabOrders = orders.filter(o => {
+    if (activeTab === 'active') return o.currentStage < 9;
+    if (activeTab === 'completed') return o.currentStage === 9;
+    return true; // all
+  });
+
+  // Get unique companies
+  const companies = [...new Set(tabOrders.map(o => o.company))].sort();
+
+  const filteredOrders = tabOrders.filter(order => {
     const matchesSearch = !searchTerm ||
       order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -33,7 +63,6 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
     return matchesSearch && matchesStage && matchesCompany;
   });
 
-  // Extract numeric PO number for sorting (e.g. "3027" from "GI/PO/25-26/3027")
   const getPoNum = (id: string) => {
     const m = id.match(/(\d{4,})/)
     return m ? parseInt(m[1]) : 0
@@ -49,22 +78,108 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
       case 'date-desc': return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
       default: return 0
     }
-  })
+  });
 
   const hasActiveFilters = filterStage !== null || filterCompany !== 'all' || searchTerm;
 
+  const activeCount = orders.filter(o => o.currentStage < 9).length;
+  const completedCount = orders.filter(o => o.currentStage === 9).length;
+
+  const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: 'active', label: 'Active Orders', count: activeCount },
+    { key: 'completed', label: 'Completed', count: completedCount },
+    { key: 'all', label: 'All Orders', count: orders.length },
+  ];
+
   return (
     <div>
-      <PageHeader
-        title="Active Orders"
-        subtitle={`${activeOrders.length} orders in progress`}
-        onBack={() => navigate('/')}
-        actions={
-          <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate('/')} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <Icon name="ArrowLeft" size={20} className="text-gray-600" />
           </button>
-        }
-      />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Orders</h1>
+            <p className="text-gray-500 text-sm mt-0.5">{tabOrders.length} orders</p>
+          </div>
+        </div>
+        <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span>
+        </button>
+      </div>
+
+      {/* Tabs - dark theme matching dashboard */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+          borderRadius: '16px',
+          border: '1px solid rgba(56, 189, 248, 0.15)',
+          boxShadow: '0 0 30px rgba(56, 189, 248, 0.05), 0 4px 20px rgba(0,0,0,0.15)',
+          padding: '6px',
+          marginBottom: '16px',
+          display: 'flex',
+          gap: '4px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Top glow */}
+        <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent)' }} />
+
+        {tabs.map(tab => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => handleTabChange(tab.key)}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                borderRadius: '12px',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s',
+                background: isActive
+                  ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(168, 85, 247, 0.15))'
+                  : 'transparent',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                borderColor: isActive ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
+              }}
+              onMouseOver={e => {
+                if (!isActive) e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)';
+              }}
+              onMouseOut={e => {
+                if (!isActive) e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <span style={{
+                fontSize: '13px',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#e2e8f0' : '#64748b',
+                letterSpacing: '0.025em',
+              }}>
+                {tab.label}
+              </span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '10px',
+                background: isActive ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.15)',
+                color: isActive ? '#38bdf8' : '#64748b',
+              }}>
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Search Bar + Sort */}
       <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
@@ -96,61 +211,65 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
       </div>
 
       {/* Company Filter */}
-      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Filter by Company</p>
-          {hasActiveFilters && (
+      {companies.length > 1 && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Filter by Company</p>
+            {hasActiveFilters && (
+              <button
+                onClick={() => { setFilterStage(null); setFilterCompany('all'); setSearchTerm(''); }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+              >
+                <Icon name="X" size={12} />
+                Clear all filters
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => { setFilterStage(null); setFilterCompany('all'); setSearchTerm(''); }}
-              className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+              onClick={() => setFilterCompany('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                filterCompany === 'all'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              <Icon name="X" size={12} />
-              Clear all filters
+              All Companies ({tabOrders.length})
             </button>
+            {companies.map(company => {
+              const count = tabOrders.filter(o => o.company === company).length;
+              return (
+                <button
+                  key={company}
+                  onClick={() => setFilterCompany(company)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                    filterCompany === company
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {company} ({count})
+                </button>
+              );
+            })}
+          </div>
+          {hasActiveFilters && (
+            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-100">
+              Showing {filteredOrders.length} of {tabOrders.length} orders
+            </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilterCompany('all')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              filterCompany === 'all'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            All Companies ({activeOrders.length})
-          </button>
-          {companies.map(company => {
-            const count = activeOrders.filter(o => o.company === company).length;
-            return (
-              <button
-                key={company}
-                onClick={() => setFilterCompany(company)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  filterCompany === company
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {company} ({count})
-              </button>
-            );
-          })}
-        </div>
-        {hasActiveFilters && (
-          <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-100">
-            Showing {filteredOrders.length} of {activeOrders.length} orders
-          </p>
-        )}
-      </div>
+      )}
 
-      {/* Clickable Stage Filter - same as dashboard */}
-      <StageFilter
-        stages={ORDER_STAGES.slice(0, 8)}
-        orders={filterCompany === 'all' ? activeOrders : activeOrders.filter(o => o.company === filterCompany)}
-        selectedStage={filterStage}
-        onStageSelect={setFilterStage}
-      />
+      {/* Stage Filter - only show for active or all tabs */}
+      {activeTab !== 'completed' && (
+        <StageFilter
+          stages={ORDER_STAGES.slice(0, 8)}
+          orders={filterCompany === 'all' ? tabOrders : tabOrders.filter(o => o.company === filterCompany)}
+          selectedStage={filterStage}
+          onStageSelect={setFilterStage}
+        />
+      )}
 
       {/* Orders List */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -168,7 +287,9 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
             <div className="text-center py-12 text-gray-500">
               <Icon name="Package" size={48} className="mx-auto mb-4 text-gray-300" />
               <p className="font-medium">No orders found</p>
-              <p className="text-sm mt-1">Try adjusting your search or filter</p>
+              <p className="text-sm mt-1">
+                {hasActiveFilters ? 'Try adjusting your search or filter' : activeTab === 'completed' ? 'No completed orders yet' : 'Create a new order to get started'}
+              </p>
             </div>
           )}
         </div>

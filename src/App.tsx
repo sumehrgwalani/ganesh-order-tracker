@@ -5,7 +5,6 @@ import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
 import DashboardContent from './pages/Dashboard';
 import OrdersPage from './pages/OrdersPage';
-import CompletedPage from './pages/CompletedPage';
 import POGeneratorPage from './pages/POGeneratorPage';
 import InquiriesPage from './pages/InquiriesPage';
 import ContactsPage from './pages/ContactsPage';
@@ -90,7 +89,6 @@ function App() {
   // UI state that doesn't need routing
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedStage, setSelectedStage] = useState<number | null>(null);
   const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
@@ -141,17 +139,6 @@ function App() {
       </div>
     );
   }
-
-  // Filter orders by search term AND selected stage
-  const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.product.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStage = selectedStage === null || order.currentStage === selectedStage;
-
-    return matchesSearch && matchesStage;
-  });
 
   const stats: Stats = {
     active: orders.filter(o => o.currentStage < 9).length,
@@ -237,13 +224,7 @@ function App() {
             <Routes>
               <Route path="/" element={
                 <DashboardContent
-                  orders={orders}
                   stats={stats}
-                  filteredOrders={filteredOrders}
-                  selectedStage={selectedStage}
-                  setSelectedStage={setSelectedStage}
-                  onDeleteOrder={handleDeleteOrder}
-                  productInquiries={productInquiries}
                   orgId={orgId}
                 />
               } />
@@ -265,11 +246,7 @@ function App() {
                   onDeleteOrder={handleDeleteOrder}
                 />
               } />
-              <Route path="/completed" element={
-                <CompletedPage
-                  orders={orders}
-                />
-              } />
+              <Route path="/completed" element={<Navigate to="/orders?tab=completed" replace />} />
               <Route path="/mailbox" element={<MailboxPage orgId={orgId} orders={orders} userId={user?.id} />} />
               <Route path="/create-po" element={
                 <POGeneratorPage

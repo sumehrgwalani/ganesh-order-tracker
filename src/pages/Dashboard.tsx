@@ -1,45 +1,16 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Icon from '../components/Icon';
 import StatsCard from '../components/StatsCard';
-import StageFilter from '../components/StageFilter';
-import OrderRow from '../components/OrderRow';
 import AIChatBox from '../components/AIChatBox';
 import RecentChangesBox from '../components/RecentChangesBox';
-import { ORDER_STAGES } from '../data/constants';
-import type { Order, Stats, ProductInquiry } from '../types';
+import type { Stats } from '../types';
 
 interface Props {
-  orders: Order[];
   stats: Stats;
-  filteredOrders: Order[];
-  selectedStage: number | null;
-  setSelectedStage: (stage: number | null) => void;
-  onDeleteOrder?: (orderId: string) => Promise<void>;
-  productInquiries: ProductInquiry[];
   orgId?: string | null;
 }
 
-function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSelectedStage, onDeleteOrder, productInquiries, orgId }: Props) {
+function DashboardContent({ stats, orgId }: Props) {
   const navigate = useNavigate();
-  const [sortBy, setSortBy] = useState<'po-asc' | 'po-desc' | 'stage-asc' | 'stage-desc' | 'date-desc' | 'date-asc'>('po-desc');
-
-  const getPoNum = (id: string) => {
-    const m = id.match(/(\d{4,})/)
-    return m ? parseInt(m[1]) : 0
-  }
-
-  const sortedOrders = [...filteredOrders].sort((a, b) => {
-    switch (sortBy) {
-      case 'po-asc': return getPoNum(a.id) - getPoNum(b.id)
-      case 'po-desc': return getPoNum(b.id) - getPoNum(a.id)
-      case 'stage-asc': return a.currentStage - b.currentStage
-      case 'stage-desc': return b.currentStage - a.currentStage
-      case 'date-asc': return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
-      case 'date-desc': return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
-      default: return 0
-    }
-  })
 
   return (
     <>
@@ -52,83 +23,10 @@ function DashboardContent({ orders, stats, filteredOrders, selectedStage, setSel
       )}
       <div className="grid grid-cols-5 gap-4 mb-8">
         <StatsCard icon="Package" title="Active Orders" value={stats.active} color="primary" onClick={() => navigate('/orders')} trend="+2 this week" />
-        <StatsCard icon="CheckCircle" title="Completed" value={stats.completed} color="secondary" onClick={() => navigate('/completed')} />
+        <StatsCard icon="CheckCircle" title="Completed" value={stats.completed} color="secondary" onClick={() => navigate('/orders?tab=completed')} />
         <StatsCard icon="MessageSquare" title="Inquiries" value={stats.inquiries} color="secondary" onClick={() => navigate('/inquiries')} />
         <StatsCard icon="Users" title="Contacts" value={stats.contacts} color="secondary" onClick={() => navigate('/contacts')} />
         <StatsCard icon="Box" title="Products" value={stats.products} color="secondary" onClick={() => navigate('/products')} />
-      </div>
-      <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-800">
-            {selectedStage ? `Orders at "${ORDER_STAGES[selectedStage-1]?.name}"` : 'Active Orders'}
-            <span className="ml-2 text-sm font-normal text-gray-500">({filteredOrders.length} orders)</span>
-          </h2>
-          <div className="flex items-center gap-3">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium appearance-none cursor-pointer hover:bg-gray-700 pr-8"
-              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
-            >
-              <option value="po-desc">PO # (Newest)</option>
-              <option value="po-asc">PO # (Oldest)</option>
-              <option value="stage-asc">Stage (Earliest)</option>
-              <option value="stage-desc">Stage (Latest)</option>
-              <option value="date-desc">Date (Newest)</option>
-              <option value="date-asc">Date (Oldest)</option>
-            </select>
-            <button onClick={() => navigate('/create-po')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16} /><span className="text-sm font-medium">New Order</span></button>
-          </div>
-        </div>
-
-        {/* Clickable Stage Filter */}
-        <StageFilter
-          stages={ORDER_STAGES}
-          orders={orders}
-          selectedStage={selectedStage}
-          onStageSelect={setSelectedStage}
-        />
-
-        <div className="space-y-0">
-          {sortedOrders.length > 0 ? (
-            sortedOrders.map(order => (
-              <OrderRow key={order.id} order={order} onClick={() => navigate('/orders/' + encodeURIComponent(order.id))} onDelete={onDeleteOrder} />
-            ))
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              <Icon name="Package" size={48} className="mx-auto mb-4 text-gray-300" />
-              <p className="font-medium">No orders found</p>
-              <p className="text-sm mt-1">
-                {selectedStage
-                  ? `No orders at stage "${ORDER_STAGES[selectedStage-1]?.name}"`
-                  : 'Create a new order to get started'
-                }
-              </p>
-              {selectedStage && (
-                <button
-                  onClick={() => setSelectedStage(null)}
-                  className="mt-4 text-blue-600 hover:text-blue-700 font-medium text-sm"
-                >
-                  Clear filter to see all orders
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
-          <h3 className="font-semibold text-gray-800 mb-4">Active Shipments</h3>
-          <div className="bg-gradient-to-br from-blue-50 via-green-50 to-blue-50 rounded-xl h-64 flex items-center justify-center">
-            <div className="text-center"><Icon name="MapPin" className="mx-auto text-blue-500 mb-3" size={40} /><p className="text-gray-600 font-medium">Shipment Routes</p><p className="text-sm text-gray-400 mt-1">India → Spain</p></div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
-          <div className="flex justify-between items-center mb-4"><h3 className="font-semibold text-gray-800">Product Inquiries</h3><div className="flex gap-1 bg-gray-100 rounded-lg p-1"><span className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md">Received</span></div></div>
-          <div className="space-y-3 max-h-56 overflow-y-auto">
-            {productInquiries.map((inq) => (<div key={inq.product + '-' + inq.from} className="flex justify-between items-start p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => navigate('/inquiries')}><div><p className="font-medium text-gray-800">{inq.product}</p>{inq.brand && <p className="text-xs text-purple-600 mt-1">{inq.brand}</p>}{inq.sizes && inq.sizes.map((s) => <p key={s} className="text-xs text-gray-500">{s}</p>)}</div><div className="text-right"><p className="font-bold text-gray-800">{inq.total}</p><p className="text-xs text-gray-500">From: {inq.from}</p><button onClick={(e) => { e.stopPropagation(); navigate('/inquiries'); }} className="mt-2 px-3 py-1 text-xs border border-gray-300 rounded-lg hover:bg-white" aria-label={`Respond to ${inq.product} inquiry from ${inq.from}`}>Respond</button></div></div>))}
-          </div>
-        </div>
       </div>
     </>
   );
