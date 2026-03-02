@@ -1051,11 +1051,27 @@ async function processEmailAttachments(
         } else {
           const senderName = email.from_name || email.from_email?.split('@')[0] || 'Unknown'
           const senderEmail = email.from_email || 'unknown'
+          const emailSubject = email.subject || ''
+          // Get supplier name from the order for extra context
+          const { data: orderInfo } = await supabase.from('orders')
+            .select('supplier, company').eq('order_id', matchedOrderId).eq('organization_id', organizationId).maybeSingle()
+          const supplierName = orderInfo?.supplier || ''
+          const piNum = piNumber || ''
+          // Build a more informative title and message
+          const titleParts = [piNum ? `PI ${piNum}` : 'PI', supplierName ? `from ${supplierName}` : (senderName !== 'Unknown' ? `from ${senderName}` : '')]
+          const notifTitle = titleParts.filter(Boolean).join(' ') || `PI for ${matchedOrderId}`
+          const notifMessage = [
+            senderEmail !== 'unknown' ? `Sender: ${senderName} (${senderEmail})` : '',
+            emailSubject ? `Subject: ${emailSubject.substring(0, 120)}` : '',
+            `Order: ${matchedOrderId}`,
+            supplierName ? `Supplier: ${supplierName}` : '',
+            'Not in contacts — add them?',
+          ].filter(Boolean).join('\n')
           await supabase.from('notifications').insert({
             user_id: userId, organization_id: organizationId, type: 'unknown_contact',
-            title: `PI from ${senderName}`,
-            message: `${senderName} (${senderEmail}) sent a Proforma Invoice for order ${matchedOrderId}. Add to contacts?`,
-            data: { from_email: senderEmail, from_name: senderName, order_id: matchedOrderId, stage: 2 },
+            title: notifTitle,
+            message: notifMessage,
+            data: { from_email: senderEmail, from_name: senderName, order_id: matchedOrderId, stage: 2, subject: emailSubject, supplier: supplierName, pi_number: piNum },
             read: false,
           })
         }

@@ -133,7 +133,11 @@ function NotificationPanel({
                     )}
                   </div>
                   {notif.message && (
-                    <p className="text-xs text-gray-500 mt-0.5">{notif.message}</p>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {notif.message.split('\n').map((line: string, i: number) => (
+                        <p key={i} className={line.startsWith('Subject:') ? 'font-medium text-gray-600 truncate' : ''}>{line}</p>
+                      ))}
+                    </div>
                   )}
                   <p className="text-xs text-gray-400 mt-1">
                     <Icon name="Clock" size={10} className="inline mr-1" />
