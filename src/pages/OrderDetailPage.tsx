@@ -1547,18 +1547,29 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
                   <div>
                     <p className="font-semibold text-gray-700 mb-2">{pdfModal.title}</p>
                     <p className="text-sm text-gray-500 max-w-md">
-                      This document was received via email. Preview will be available once file storage is connected.
+                      This attachment hasn't been downloaded yet. Try syncing your emails to download it, or use the preview option below.
                     </p>
                   </div>
-                  {pdfModal.title.toLowerCase().includes('po') && (
-                    <button
-                      onClick={previewPOasPDF}
-                      className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
-                    >
-                      <Icon name="FileText" size={16} />
-                      Generate PO Preview Instead
-                    </button>
-                  )}
+                  <div className="flex gap-3">
+                    {(pdfModal.title.toLowerCase().includes('po') || pdfModal.title.toLowerCase().includes('purchase')) && (
+                      <button
+                        onClick={previewPOasPDF}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
+                      >
+                        <Icon name="FileText" size={16} />
+                        Generate PO Preview
+                      </button>
+                    )}
+                    {(pdfModal.title.toLowerCase().includes('pi') || pdfModal.title.toLowerCase().includes('proforma') || pdfModal.title.toLowerCase().includes('invoice')) && (
+                      <button
+                        onClick={previewPIasPDF}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
+                      >
+                        <Icon name="FileText" size={16} />
+                        Generate PI Preview
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

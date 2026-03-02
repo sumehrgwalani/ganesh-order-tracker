@@ -398,6 +398,7 @@ Field notes:
 - pricePerKg: price per kilogram. MUST be a number > 0. Read from Rate/Price/Precio column.
 - total: line total amount. MUST be a number > 0. Read from Amount/Total/Importe column. If missing, calculate as kilos × pricePerKg.
 - "Cases", "Cartons", "Ctns", "c/s", "Cajas", "Assortment" can all mean carton counts — use the container sanity check above.
+- brand: ONLY include a brand if it is explicitly written on the PO document as the product's label/brand name (e.g. a column labeled "Brand" or "Mark"). Do NOT guess the brand from logos, watermarks, company names, or product descriptions. If no brand column or brand label exists in the document, return empty string.
 - freezing: 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'
 - currency: 'USD' or 'EUR'. Default 'USD'
 
