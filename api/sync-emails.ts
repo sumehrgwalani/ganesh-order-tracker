@@ -1073,11 +1073,13 @@ async function processEmailAttachments(
               }
             }
           }
-          // Update supplier from PO extraction if currently unknown
+          // Update supplier from PO extraction if currently unknown (but never set supplier = company)
           if (extractedData.supplier && extractedData.supplier !== 'Unknown' && extractedData.supplier !== 'Ganesh International') {
             if (!orderRow?.supplier || orderRow.supplier === 'Unknown') {
-              updates.supplier = extractedData.supplier
-              console.log(`[PROCESS] Updated supplier for ${matchedOrderId}: "${extractedData.supplier}"`)
+              if (extractedData.supplier.toLowerCase() !== (orderRow?.company || '').toLowerCase()) {
+                updates.supplier = extractedData.supplier
+                console.log(`[PROCESS] Updated supplier for ${matchedOrderId}: "${extractedData.supplier}"`)
+              }
             }
           }
           await supabase.from('orders').update(updates).eq('id', orderUuid)
@@ -1600,12 +1602,19 @@ If truly unknown, return "Unknown" for that field.` }],
               }
             }
 
+            // Don't set supplier = company — that's always wrong
+            const normCompany = normalizeCompanyName(company)
+            let normSupplier = normalizeCompanyName(supplier)
+            if (normSupplier && normCompany && normSupplier.toLowerCase() === normCompany.toLowerCase()) {
+              console.log(`[DISCOVERY] Supplier "${normSupplier}" same as company — resetting to Unknown`)
+              normSupplier = 'Unknown'
+            }
             const { data: newOrder, error: createErr } = await supabase.from('orders').insert({
               organization_id,
               order_id: fullPO,
               po_number: fullPO,
-              company: normalizeCompanyName(company),
-              supplier: normalizeCompanyName(supplier),
+              company: normCompany,
+              supplier: normSupplier,
               product,
               current_stage: highestStage,
               status: 'sent',
@@ -2666,14 +2675,21 @@ If truly unknown, return "Unknown" for that field.` }],
             }
           }
 
+          // Don't set supplier = company — that's always wrong
+          const normCompany2 = normalizeCompanyName(company)
+          let normSupplier2 = normalizeCompanyName(supplier)
+          if (normSupplier2 && normCompany2 && normSupplier2.toLowerCase() === normCompany2.toLowerCase()) {
+            console.log(`[DISCOVERY] Supplier "${normSupplier2}" same as company — resetting to Unknown`)
+            normSupplier2 = 'Unknown'
+          }
           const { data: newOrder, error: createErr } = await supabase
             .from('orders')
             .insert({
               organization_id,
               order_id: fullPO,
               po_number: fullPO,
-              company: normalizeCompanyName(company),
-              supplier: normalizeCompanyName(supplier),
+              company: normCompany2,
+              supplier: normSupplier2,
               product: product,
               from_location: 'India',
               current_stage: highestStage,
@@ -3056,11 +3072,13 @@ If truly unknown, return "Unknown" for that field.` }],
           if (extractedData.destination && !order.to_location) updates.to_location = extractedData.destination
           if (extractedData.totalKilos > 0 && !order.total_kilos) updates.total_kilos = extractedData.totalKilos
           if (extractedData.totalValue > 0 && !order.total_value) updates.total_value = String(extractedData.totalValue)
-          // Only set supplier if order doesn't have one yet
+          // Only set supplier if order doesn't have one yet (and never set supplier = company)
           if (extractedData.supplier && extractedData.supplier !== 'Unknown' && extractedData.supplier !== 'Ganesh International') {
             if (!order.supplier || order.supplier === 'Unknown') {
-              updates.supplier = extractedData.supplier
-              console.log(`[BULK] Set supplier for ${order.order_id}: "${extractedData.supplier}"`)
+              if (extractedData.supplier.toLowerCase() !== (order.company || '').toLowerCase()) {
+                updates.supplier = extractedData.supplier
+                console.log(`[BULK] Set supplier for ${order.order_id}: "${extractedData.supplier}"`)
+              }
             }
           }
           // Update product from PO extraction — replaces generic keyword guesses with the real name
@@ -3370,6 +3388,13 @@ If truly unknown, return "Unknown" for that field.` }],
               .limit(5)
 
             if (textEmails && textEmails.length > 0) {
+              // Check if order already has line items before trying text extraction
+              const { count: existTextCount } = await supabase.from('order_line_items')
+                .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+              if (existTextCount && existTextCount > 0) {
+                console.log(`[RECOVER] Skipping text extraction for ${order.order_id} — already has ${existTextCount} line items`)
+                recResults.push({ order: order.order_id, status: 'ok', reason: `Already has ${existTextCount} line items`, emailsSynced: syncedCount })
+              } else {
               // Try extracting PO data from email body text
               for (const te of textEmails) {
                 if ((te.body_text || '').length < 50) continue
@@ -3403,6 +3428,7 @@ If truly unknown, return "Unknown" for that field.` }],
               if (!recResults.some(r => r.order === order.order_id && r.status === 'ok')) {
                 recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but no PO data found in email text or attachments', emailsSynced: syncedCount })
               }
+              } // end else (no existing line items)
             } else {
               recResults.push({ order: order.order_id, status: 'partial', reason: 'Emails synced but none have attachments', emailsSynced: syncedCount })
             }
@@ -3472,6 +3498,12 @@ If truly unknown, return "Unknown" for that field.` }],
                   const mimeType = urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg') ? 'image/jpeg'
                     : urlLower.endsWith('.png') ? 'image/png'
                     : pdfResp.headers.get('content-type') || 'application/pdf'
+                  // Check if order already has line items before PDF extraction
+                  const { count: existPdfCount } = await supabase.from('order_line_items')
+                    .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
+                  if (existPdfCount && existPdfCount > 0) {
+                    console.log(`[RECOVER] Skipping stored PDF extraction for ${order.order_id} — already has ${existPdfCount} line items`)
+                  } else {
                   const extractedData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '')
                   if (extractedData && extractedData.lineItems.length > 0) {
                     const lineItemRows = extractedData.lineItems.map((item: any, idx: number) => ({
@@ -3492,7 +3524,10 @@ If truly unknown, return "Unknown" for that field.` }],
                     if (extractedData.totalKilos > 0 && !order.total_kilos) updates.total_kilos = extractedData.totalKilos
                     if (extractedData.totalValue > 0 && !order.total_value) updates.total_value = String(extractedData.totalValue)
                     if (extractedData.supplier && extractedData.supplier !== 'Unknown' && (!order.supplier || order.supplier === 'Unknown')) {
-                      updates.supplier = extractedData.supplier
+                      // Don't set supplier = company
+                      if (extractedData.supplier.toLowerCase() !== (order.company || '').toLowerCase()) {
+                        updates.supplier = extractedData.supplier
+                      }
                     }
                     if (extractedData.lineItems.length > 0 && extractedData.lineItems[0].product !== 'Unknown') {
                       const genericNames = ['Unknown', 'Frozen Shrimp', 'Frozen Squid', 'Frozen Cuttlefish', 'Frozen Octopus', 'Frozen Fish']
@@ -3503,6 +3538,7 @@ If truly unknown, return "Unknown" for that field.` }],
                     recResults.push({ order: order.order_id, status: 'ok', emailsSynced: syncedCount, source: 'stored_pdf', lineItems: extractedData.lineItems.length })
                   }
                 }
+                  } // end else (no existing line items for PDF extraction)
               } catch (pdfErr) {
                 console.log(`[RECOVER] Stored PDF extraction failed for ${order.order_id}: ${pdfErr}`)
               }
