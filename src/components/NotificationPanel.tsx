@@ -133,9 +133,15 @@ function NotificationPanel({
                     )}
                   </div>
                   {notif.message && (
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="text-xs text-gray-500 mt-0.5 space-y-0.5">
                       {notif.message.split('\n').map((line: string, i: number) => (
-                        <p key={i} className={line.startsWith('Subject:') ? 'font-medium text-gray-600 truncate' : ''}>{line}</p>
+                        <p key={i} className={
+                          line.startsWith('Subject:') ? 'font-medium text-gray-600 truncate' :
+                          line.startsWith('Sender:') ? 'text-gray-600' :
+                          line.startsWith('Order:') ? 'font-medium text-blue-600' :
+                          line.startsWith('Supplier:') ? 'text-gray-600' :
+                          ''
+                        }>{line}</p>
                       ))}
                     </div>
                   )}

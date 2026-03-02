@@ -26,6 +26,17 @@ export function useNotifications(userId: string | null) {
       if (error) throw error
 
       const items = (data || []) as AppNotification[]
+      // Auto-clean old "Unknown" notifications that have no useful data
+      const unknownIds = items
+        .filter(n => n.type === 'unknown_contact' && n.title === 'PI from Unknown' && (!n.data?.from_email || n.data.from_email === 'unknown'))
+        .map(n => n.id)
+      if (unknownIds.length > 0) {
+        await supabase.from('notifications').delete().in('id', unknownIds)
+        const cleaned = items.filter(n => !unknownIds.includes(n.id))
+        setNotifications(cleaned)
+        setUnreadCount(cleaned.filter(n => !n.read).length)
+        return
+      }
       setNotifications(items)
       setUnreadCount(items.filter(n => !n.read).length)
     } catch (err) {

@@ -3284,7 +3284,7 @@ If truly unknown, return "Unknown" for that field.` }],
           // emails with Final Doc subjects (they almost always have attachments)
           const { data: orderEmails } = await supabase
             .from('synced_emails')
-            .select('id, gmail_id, subject, has_attachment, detected_stage, body_text')
+            .select('id, gmail_id, subject, from_name, from_email, has_attachment, detected_stage, body_text')
             .eq('organization_id', organization_id)
             .eq('matched_order_id', order.order_id)
             .limit(30)
