@@ -158,6 +158,8 @@ Answer the user's question based ONLY on the order data provided below. Be conci
 
 Format: Use plain text. For lists, use simple dashes. Keep responses short — a few sentences unless the user asks for detail.
 
+IMPORTANT: Always refer to orders by their FULL PO number (e.g. GI/PO/25-26/3038), never shortened forms like "PO 3038". The full PO number is clickable in the UI.
+
 ORDER STAGES (1-9):
 1=Order Confirmed, 2=Proforma Issued, 3=Artwork in Progress, 4=Artwork Confirmed, 5=Quality Check, 6=Schedule Confirmed, 7=Draft Documents, 8=Final Documents, 9=DHL Number
 
