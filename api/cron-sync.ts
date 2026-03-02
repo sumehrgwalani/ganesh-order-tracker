@@ -79,6 +79,7 @@ function extractEmail(emailStr: string): string {
   return match ? match[1] : emailStr
 }
 
+/**
  * Vercel Cron endpoint — runs daily at 6 AM UTC to keep emails up to date.
  * Authenticates via CRON_SECRET header, not user JWT.
  * Finds the first org member with a Gmail refresh token and runs:
