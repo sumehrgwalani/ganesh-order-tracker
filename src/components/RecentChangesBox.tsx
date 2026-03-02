@@ -25,19 +25,6 @@ interface Changes {
   newEmails: ChangeItem[]
 }
 
-const LAST_LOGIN_KEY = 'ganesh_last_login'
-
-function getLastLogin(): string {
-  const stored = localStorage.getItem(LAST_LOGIN_KEY)
-  if (stored) return stored
-  // Default: 24 hours ago
-  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-}
-
-function setLastLogin() {
-  localStorage.setItem(LAST_LOGIN_KEY, new Date().toISOString())
-}
-
 function timeAgo(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime()
   const mins = Math.floor(diff / 60000)
@@ -52,17 +39,14 @@ function timeAgo(ts: string): string {
 export default function RecentChangesBox({ orgId }: Props) {
   const [changes, setChanges] = useState<Changes | null>(null)
   const [totalChanges, setTotalChanges] = useState(0)
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const lastLogin = useRef(getLastLogin())
 
   useEffect(() => {
     fetchChanges()
-    // Update last login after a small delay so this session's view captures changes
-    const timer = setTimeout(() => setLastLogin(), 3000)
-    return () => clearTimeout(timer)
   }, [orgId])
 
   const fetchChanges = async () => {
@@ -71,13 +55,13 @@ export default function RecentChangesBox({ orgId }: Props) {
     try {
       const { data, error: err } = await apiCall('/api/recent-changes', {
         organization_id: orgId,
-        since: lastLogin.current,
       })
       if (err) {
         setError('Could not load updates')
       } else {
         setChanges(data.changes)
         setTotalChanges(data.totalChanges)
+        setLastSyncTime(data.lastSyncTime)
       }
     } catch {
       setError('Could not reach server')
@@ -252,6 +236,16 @@ export default function RecentChangesBox({ orgId }: Props) {
         </button>
       </div>
 
+      {/* Last sync indicator */}
+      {lastSyncTime && !loading && (
+        <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+          <span style={{ fontSize: '10px', color: '#64748b' }}>
+            Last sync: {timeAgo(lastSyncTime)}
+          </span>
+        </div>
+      )}
+
       {/* Content */}
       <div
         ref={scrollRef}
@@ -286,7 +280,7 @@ export default function RecentChangesBox({ orgId }: Props) {
           <div style={{ textAlign: 'center', padding: '30px 0' }}>
             <Icon name="CheckCircle" size={28} className="text-green-400 mx-auto" />
             <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '10px', fontWeight: 500 }}>All caught up!</p>
-            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>No changes since your last visit</p>
+            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>No changes since last sync</p>
           </div>
         )}
 

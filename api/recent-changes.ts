@@ -43,17 +43,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Authentication failed' })
     }
 
-    const { organization_id, since } = req.body || {}
-    if (!organization_id || !since) {
-      return res.status(400).json({ error: 'Missing organization_id or since' })
+    const { organization_id } = req.body || {}
+    if (!organization_id) {
+      return res.status(400).json({ error: 'Missing organization_id' })
     }
 
     const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-    // Verify org membership
+    // Get membership + last sync time
     const { data: membership } = await supabase
       .from('organization_members')
-      .select('id')
+      .select('id, gmail_last_sync')
       .eq('organization_id', organization_id)
       .eq('user_id', user.id)
       .single()
@@ -61,7 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Not a member of this organization' })
     }
 
-    // 1. New orders created since last login
+    // Use last sync time, or fall back to 24 hours ago
+    const since = membership.gmail_last_sync || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const lastSyncTime = membership.gmail_last_sync || null
+
+    // 1. New orders created since last sync
     const { data: newOrders } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier, product, current_stage, created_at')
@@ -70,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .gte('created_at', since)
       .order('created_at', { ascending: false })
 
-    // 2. Orders updated since last login
+    // 2. Orders updated since last sync
     const { data: updatedOrders } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier, product, current_stage, updated_at')
@@ -83,8 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const newOrderIds = new Set((newOrders || []).map(o => o.id))
     const pureUpdates = (updatedOrders || []).filter(o => !newOrderIds.has(o.id))
 
-    // 3. New emails/history since last login
-    // order_history doesn't have organization_id, so get all org order IDs first
+    // 3. New emails/history since last sync
     const { data: allOrgOrders } = await supabase
       .from('orders')
       .select('id, order_id, company, supplier')
@@ -145,7 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const totalChanges = changes.newOrders.length + changes.stageUpdates.length + changes.newEmails.length
 
-    return res.status(200).json({ changes, totalChanges })
+    return res.status(200).json({ changes, totalChanges, lastSyncTime })
   } catch (err: any) {
     console.error('[RECENT-CHANGES] Error:', err)
     return res.status(500).json({ error: err.message || 'Something went wrong' })
