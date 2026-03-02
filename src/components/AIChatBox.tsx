@@ -122,7 +122,7 @@ export default function AIChatBox({ orgId }: Props) {
   }
 
   return (
-    <div className="mb-6">
+    <div>
       <div
         style={{
           background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
@@ -131,6 +131,9 @@ export default function AIChatBox({ orgId }: Props) {
           boxShadow: '0 0 30px rgba(56, 189, 248, 0.05), 0 4px 20px rgba(0,0,0,0.15)',
           overflow: 'hidden',
           position: 'relative',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {/* Subtle top glow line */}
@@ -342,6 +345,7 @@ export default function AIChatBox({ orgId }: Props) {
             gap: '10px',
             padding: '14px 20px',
             borderTop: expanded && messages.length > 0 ? '1px solid rgba(56, 189, 248, 0.06)' : 'none',
+            marginTop: 'auto',
           }}
         >
           <div
