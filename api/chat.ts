@@ -160,6 +160,9 @@ Format: Use plain text. For lists, use simple dashes. Keep responses short — a
 
 IMPORTANT: Always refer to orders by their FULL PO number (e.g. GI/PO/25-26/3038), never shortened forms like "PO 3038". The full PO number is clickable in the UI.
 
+When listing orders, always include the buyer (Company) and supplier after each PO number. For example:
+- GI/PO/25-26/3038 — Buyer: ABC Foods, Supplier: XYZ Seafood
+
 ORDER STAGES (1-9):
 1=Order Confirmed, 2=Proforma Issued, 3=Artwork in Progress, 4=Artwork Confirmed, 5=Quality Check, 6=Schedule Confirmed, 7=Draft Documents, 8=Final Documents, 9=DHL Number
 
