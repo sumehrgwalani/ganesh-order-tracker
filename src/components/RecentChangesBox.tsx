@@ -22,8 +22,10 @@ interface SummaryItem {
 interface SyncStats {
   newOrders: number
   stageUpdates: number
-  emailsReceived: number
+  emailsProcessed: number
   ordersAffected: number
+  docsStored: number
+  lineItemsExtracted: number
 }
 
 function timeAgo(ts: string): string {
@@ -40,8 +42,10 @@ function timeAgo(ts: string): string {
 const ICONS: Record<string, { name: string; color: string }> = {
   new_order: { name: 'Plus', color: '#22c55e' },
   stage_update: { name: 'ArrowRight', color: '#3b82f6' },
-  email: { name: 'Mail', color: '#a855f7' },
-  attachment: { name: 'Paperclip', color: '#f59e0b' },
+  line_items: { name: 'List', color: '#f59e0b' },
+  document: { name: 'FileCheck', color: '#a855f7' },
+  details_updated: { name: 'Edit', color: '#06b6d4' },
+  email: { name: 'Mail', color: '#94a3b8' },
 }
 
 export default function RecentChangesBox({ orgId }: Props) {
@@ -91,7 +95,7 @@ export default function RecentChangesBox({ orgId }: Props) {
     }
   }
 
-  const totalActivity = stats ? stats.newOrders + stats.stageUpdates + stats.emailsReceived : 0
+  const totalActivity = stats ? stats.newOrders + stats.stageUpdates + stats.emailsProcessed : 0
 
   return (
     <div
@@ -159,23 +163,29 @@ export default function RecentChangesBox({ orgId }: Props) {
 
       {/* Quick stats bar */}
       {stats && !initialLoad && totalActivity > 0 && (
-        <div style={{ padding: '0 20px 12px', display: 'flex', gap: '12px' }}>
-          {stats.emailsReceived > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <Icon name="Mail" size={12} className="text-purple-400" />
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.emailsReceived} emails</span>
-            </div>
-          )}
+        <div style={{ padding: '0 20px 12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           {stats.ordersAffected > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <Icon name="Package" size={12} className="text-cyan-400" />
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.ordersAffected} orders</span>
             </div>
           )}
-          {stats.newOrders > 0 && (
+          {stats.docsStored > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <Icon name="Plus" size={12} className="text-green-400" />
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.newOrders} new</span>
+              <Icon name="FileCheck" size={12} className="text-purple-400" />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.docsStored} docs</span>
+            </div>
+          )}
+          {stats.lineItemsExtracted > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Icon name="List" size={12} className="text-amber-400" />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{stats.lineItemsExtracted} items</span>
+            </div>
+          )}
+          {stats.emailsProcessed > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Icon name="Mail" size={12} className="text-slate-400" />
+              <span style={{ fontSize: '11px', color: '#64748b' }}>{stats.emailsProcessed} emails</span>
             </div>
           )}
         </div>

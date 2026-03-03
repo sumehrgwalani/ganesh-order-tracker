@@ -20,6 +20,18 @@ const STAGE_NAMES: Record<number, string> = {
   9: 'DHL Number',
 }
 
+const DOC_STAGE_NAMES: Record<number, string> = {
+  1: 'PO',
+  2: 'Proforma Invoice',
+  3: 'Artwork',
+  4: 'Artwork Approval',
+  5: 'Quality Check',
+  6: 'Schedule',
+  7: 'Draft',
+  8: 'Final Document',
+  9: 'DHL/AWB',
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
@@ -54,159 +66,187 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const since = membership.gmail_last_sync || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const lastSyncTime = membership.gmail_last_sync || null
 
-    // 1. New orders created since last sync
-    const { data: newOrders } = await supabase
-      .from('orders')
-      .select('id, order_id, company, supplier, product, current_stage, created_at')
-      .eq('organization_id', organization_id)
-      .is('deleted_at', null)
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-
-    // 2. Orders updated since last sync (stage changes etc)
-    const { data: updatedOrders } = await supabase
-      .from('orders')
-      .select('id, order_id, company, supplier, product, current_stage, updated_at')
-      .eq('organization_id', organization_id)
-      .is('deleted_at', null)
-      .gte('updated_at', since)
-      .order('updated_at', { ascending: false })
-
-    const newOrderIds = new Set((newOrders || []).map(o => o.id))
-    const pureUpdates = (updatedOrders || []).filter(o => !newOrderIds.has(o.id))
-
-    // 3. New emails since last sync
+    // Get all org orders for lookups
     const { data: allOrgOrders } = await supabase
       .from('orders')
-      .select('id, order_id, company, supplier')
+      .select('id, order_id, company, supplier, product, current_stage, delivery_terms, payment_terms, commission, created_at, updated_at')
       .eq('organization_id', organization_id)
       .is('deleted_at', null)
 
     const orgOrderIds = (allOrgOrders || []).map(o => o.id)
-    let recentEmails: any[] = []
-    const emailOrderMap: Record<string, any> = {}
+    const poToId: Record<string, string> = {}
+    const idToPo: Record<string, string> = {}
+    for (const o of (allOrgOrders || [])) {
+      poToId[o.order_id] = o.id
+      idToPo[o.id] = o.order_id
+    }
 
+    // === QUERY 1: New orders created since last sync ===
+    const newOrders = (allOrgOrders || []).filter(o => o.created_at >= since)
+    const newOrderIds = new Set(newOrders.map(o => o.id))
+
+    // === QUERY 2: Orders that advanced stage (updated but not new) ===
+    const pureUpdates = (allOrgOrders || []).filter(o => !newOrderIds.has(o.id) && o.updated_at >= since)
+
+    // === QUERY 3: Line items extracted since last sync ===
+    let lineItemsByOrder: Record<string, number> = {}
     if (orgOrderIds.length > 0) {
-      for (const o of (allOrgOrders || [])) {
-        emailOrderMap[o.id] = { order_id: o.order_id, company: o.company, supplier: o.supplier }
-      }
-
-      const { data: emailData } = await supabase
-        .from('order_history')
-        .select('id, order_id, stage, subject, from_address, timestamp, has_attachment')
+      const { data: recentLineItems } = await supabase
+        .from('order_line_items')
+        .select('id, order_id')
         .in('order_id', orgOrderIds)
         .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(100)
 
-      recentEmails = emailData || []
+      for (const li of (recentLineItems || [])) {
+        const po = idToPo[li.order_id]
+        if (po) lineItemsByOrder[po] = (lineItemsByOrder[po] || 0) + 1
+      }
+    }
+
+    // === QUERY 4: Documents stored since last sync (order_history with attachments) ===
+    let docsByStage: Record<number, Set<string>> = {}
+    let totalDocsStored = 0
+    if (orgOrderIds.length > 0) {
+      const { data: recentDocs } = await supabase
+        .from('order_history')
+        .select('id, order_id, stage, attachments')
+        .in('order_id', orgOrderIds)
+        .gte('created_at', since)
+        .not('attachments', 'is', null)
+        .limit(200)
+
+      for (const doc of (recentDocs || [])) {
+        // Only count entries that actually have attachments
+        if (!doc.attachments || (Array.isArray(doc.attachments) && doc.attachments.length === 0)) continue
+        const po = idToPo[doc.order_id]
+        if (!po) continue
+        if (!docsByStage[doc.stage]) docsByStage[doc.stage] = new Set()
+        docsByStage[doc.stage].add(po)
+        totalDocsStored++
+      }
+    }
+
+    // === QUERY 5: Orders with details updated (delivery terms, payment, supplier, commission filled) ===
+    // These are orders that were updated since last sync and have key fields filled
+    const detailsUpdated: { po: string; id: string; fields: string[] }[] = []
+    for (const o of pureUpdates) {
+      const fields: string[] = []
+      if (o.delivery_terms) fields.push('delivery terms')
+      if (o.payment_terms) fields.push('payment')
+      if (o.supplier && o.supplier !== 'Unknown') fields.push('supplier')
+      if (o.commission) fields.push('commission')
+      if (fields.length > 0) {
+        detailsUpdated.push({ po: o.order_id, id: o.id, fields })
+      }
+    }
+
+    // === QUERY 6: Total emails processed (for stats bar) ===
+    let totalEmails = 0
+    let ordersWithEmails = new Set<string>()
+    if (orgOrderIds.length > 0) {
+      const { data: emailData } = await supabase
+        .from('order_history')
+        .select('id, order_id')
+        .in('order_id', orgOrderIds)
+        .gte('created_at', since)
+        .limit(200)
+
+      totalEmails = (emailData || []).length
+      for (const e of (emailData || [])) {
+        const po = idToPo[e.order_id]
+        if (po) ordersWithEmails.add(po)
+      }
     }
 
     // === BUILD SUMMARY ===
-    // Build a lookup from PO number to database UUID
-    const poToId: Record<string, string> = {}
-    for (const o of (allOrgOrders || [])) {
-      poToId[o.order_id] = o.id
-    }
-
     const summary: { icon: string; text: string; detail?: string; detailLinks?: { po: string; id: string }[] }[] = []
 
-    // New orders
-    if ((newOrders || []).length > 0) {
-      const count = newOrders!.length
-      const links = newOrders!.map(o => ({ po: o.order_id, id: o.id }))
+    // 1. New orders
+    if (newOrders.length > 0) {
+      const links = newOrders.map(o => ({ po: o.order_id, id: o.id }))
       summary.push({
         icon: 'new_order',
-        text: `${count} new order${count > 1 ? 's' : ''} created`,
+        text: `${newOrders.length} new order${newOrders.length > 1 ? 's' : ''} created`,
         detail: links.map(l => l.po).join(', '),
         detailLinks: links,
       })
     }
 
-    // Stage updates — group by stage
+    // 2. Stage advances — group by stage
     const stageGroups: Record<string, { po: string; id: string }[]> = {}
     for (const o of pureUpdates) {
       const stageName = STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`
       if (!stageGroups[stageName]) stageGroups[stageName] = []
-      stageGroups[stageName].push({ po: o.order_id, id: o.id })
+      // Avoid duplicates
+      if (!stageGroups[stageName].some(x => x.id === o.id)) {
+        stageGroups[stageName].push({ po: o.order_id, id: o.id })
+      }
     }
     for (const [stage, orders] of Object.entries(stageGroups)) {
       summary.push({
         icon: 'stage_update',
-        text: `${orders.length} order${orders.length > 1 ? 's' : ''} moved to ${stage}`,
+        text: `${orders.length} order${orders.length > 1 ? 's' : ''} advanced to ${stage}`,
         detail: orders.map(o => o.po).join(', '),
         detailLinks: orders,
       })
     }
 
-    // Emails — group by stage to summarize actions
-    const emailsByStage: Record<number, Set<string>> = {}
-    const emailsWithAttachments: string[] = []
-    const uniqueOrdersEmailed = new Set<string>()
-
-    for (const e of recentEmails) {
-      const order = emailOrderMap[e.order_id]
-      const poNum = order?.order_id || 'Unknown'
-      uniqueOrdersEmailed.add(poNum)
-
-      if (!emailsByStage[e.stage]) emailsByStage[e.stage] = new Set()
-      emailsByStage[e.stage].add(poNum)
-
-      if (e.has_attachment) emailsWithAttachments.push(poNum)
+    // 3. Line items extracted
+    const lineItemOrders = Object.keys(lineItemsByOrder)
+    if (lineItemOrders.length > 0) {
+      const totalItems = Object.values(lineItemsByOrder).reduce((a, b) => a + b, 0)
+      const links = lineItemOrders.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
+      summary.push({
+        icon: 'line_items',
+        text: `${totalItems} line item${totalItems > 1 ? 's' : ''} extracted for ${lineItemOrders.length} order${lineItemOrders.length > 1 ? 's' : ''}`,
+        detail: lineItemOrders.map(po => `${po} (${lineItemsByOrder[po]} items)`).join(', '),
+        detailLinks: links,
+      })
     }
 
-    // Summarize emails by stage type
-    for (const [stageNum, poSet] of Object.entries(emailsByStage)) {
+    // 4. Documents stored — group by doc type
+    for (const [stageNum, poSet] of Object.entries(docsByStage)) {
       const stage = Number(stageNum)
-      const stageName = STAGE_NAMES[stage] || `Stage ${stage}`
+      const docName = DOC_STAGE_NAMES[stage] || `Stage ${stage}`
       const pos = [...poSet]
       const links = pos.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
-
-      let action = ''
-      switch (stage) {
-        case 1: action = `PO confirmation emails received`; break
-        case 2: action = `Proforma invoice emails received`; break
-        case 3: action = `Artwork emails received`; break
-        case 4: action = `Artwork approval emails received`; break
-        case 5: action = `Quality check emails received`; break
-        case 6: action = `Schedule confirmation emails received`; break
-        case 7: action = `Draft document emails received`; break
-        case 8: action = `Final document emails received`; break
-        case 9: action = `DHL/AWB tracking emails received`; break
-        default: action = `${stageName} emails received`; break
-      }
-
       summary.push({
-        icon: 'email',
-        text: `${pos.length} ${action}`,
+        icon: 'document',
+        text: `${pos.length} ${docName} document${pos.length > 1 ? 's' : ''} stored`,
         detail: pos.join(', '),
         detailLinks: links,
       })
     }
 
-    // Attachments summary
-    if (emailsWithAttachments.length > 0) {
-      const unique = [...new Set(emailsWithAttachments)]
-      const links = unique.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
+    // 5. Order details updated
+    if (detailsUpdated.length > 0) {
+      const links = detailsUpdated.map(d => ({ po: d.po, id: d.id }))
       summary.push({
-        icon: 'attachment',
-        text: `${emailsWithAttachments.length} email${emailsWithAttachments.length > 1 ? 's' : ''} with attachments`,
-        detail: unique.join(', '),
+        icon: 'details_updated',
+        text: `Details updated for ${detailsUpdated.length} order${detailsUpdated.length > 1 ? 's' : ''}`,
+        detail: detailsUpdated.map(d => `${d.po} (${d.fields.join(', ')})`).join('; '),
         detailLinks: links,
       })
     }
 
-    // Total emails
-    const totalEmails = recentEmails.length
-    const totalOrders = uniqueOrdersEmailed.size
+    // 6. Email processing count (just for the stats bar, not a summary item)
+    if (totalEmails > 0 && summary.length === 0) {
+      // If nothing else to show but emails were processed, show a simple message
+      summary.push({
+        icon: 'email',
+        text: `${totalEmails} email${totalEmails > 1 ? 's' : ''} processed across ${ordersWithEmails.size} order${ordersWithEmails.size > 1 ? 's' : ''}`,
+      })
+    }
 
     return res.status(200).json({
       summary,
       stats: {
-        newOrders: (newOrders || []).length,
+        newOrders: newOrders.length,
         stageUpdates: pureUpdates.length,
-        emailsReceived: totalEmails,
-        ordersAffected: totalOrders,
+        emailsProcessed: totalEmails,
+        ordersAffected: ordersWithEmails.size,
+        docsStored: totalDocsStored,
+        lineItemsExtracted: Object.values(lineItemsByOrder).reduce((a, b) => a + b, 0),
       },
       lastSyncTime,
     })
