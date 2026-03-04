@@ -70,8 +70,19 @@ function buildCompositeImage(
   });
 }
 
+// Get total page count of a PDF
+async function getPdfPageCount(url: string): Promise<number> {
+  const isPdf = /\.pdf(\?|#|$)/i.test(url);
+  if (!isPdf) return 1;
+  const lib = await loadPdfJs();
+  const cleanUrl = url.split('#')[0];
+  const loadingTask = lib.getDocument(cleanUrl);
+  const pdf = await loadingTask.promise;
+  return pdf.numPages;
+}
+
 // Render a URL (PDF or image) to a data URL string
-async function urlToDataUrl(url: string): Promise<{ dataUrl: string; width: number; height: number }> {
+async function urlToDataUrl(url: string, pageNum: number = 1): Promise<{ dataUrl: string; width: number; height: number }> {
   const isPdf = /\.pdf(\?|#|$)/i.test(url);
 
   if (isPdf) {
@@ -79,7 +90,8 @@ async function urlToDataUrl(url: string): Promise<{ dataUrl: string; width: numb
     const cleanUrl = url.split('#')[0];
     const loadingTask = lib.getDocument(cleanUrl);
     const pdf = await loadingTask.promise;
-    const page = await pdf.getPage(1);
+    const safePage = Math.min(pageNum, pdf.numPages);
+    const page = await pdf.getPage(safePage);
     const scale = 2;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
@@ -722,6 +734,9 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
   const [newDataUrl, setNewDataUrl] = useState<string | null>(null);
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isPanning = useRef(false);
@@ -737,7 +752,23 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
   const newIsPdf = /\.pdf(\?|#|$)/i.test(newUrl);
   const bothPdf = refIsPdf && newIsPdf;
 
-  // Load images
+  // Detect total page count on first load
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [refPages, newPages] = await Promise.all([
+          getPdfPageCount(referenceUrl),
+          getPdfPageCount(newUrl),
+        ]);
+        if (cancelled) return;
+        setTotalPages(Math.max(refPages, newPages));
+      } catch { /* ignore — will default to 1 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [referenceUrl, newUrl]);
+
+  // Load images for the current page
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -745,8 +776,8 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
         setLoading(true);
         setError(null);
         const [refResult, newResult] = await Promise.all([
-          urlToDataUrl(referenceUrl),
-          urlToDataUrl(newUrl),
+          urlToDataUrl(referenceUrl, currentPage),
+          urlToDataUrl(newUrl, currentPage),
         ]);
         if (cancelled) return;
         setRefDataUrl(refResult.dataUrl);
@@ -760,7 +791,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       }
     })();
     return () => { cancelled = true; };
-  }, [referenceUrl, newUrl]);
+  }, [referenceUrl, newUrl, currentPage]);
 
   // Build highlight overlay (reacts to sensitivity changes)
   useEffect(() => {
@@ -793,8 +824,8 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       const [refLines, newLines, refData, newData] = await Promise.all([
         extractPdfText(referenceUrl),
         extractPdfText(newUrl),
-        urlToDataUrl(referenceUrl),
-        urlToDataUrl(newUrl),
+        urlToDataUrl(referenceUrl, currentPage),
+        urlToDataUrl(newUrl, currentPage),
       ]);
       const diffs = compareTextLines(refLines, newLines);
 
@@ -826,7 +857,7 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
       alert('Failed to generate report: ' + (err.message || 'Unknown error'));
     }
     setGeneratingReport(false);
-  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf, sensitivity]);
+  }, [referenceUrl, newUrl, referenceLabel, newLabel, diffPercent, bothPdf, sensitivity, currentPage]);
 
   // Pan handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -972,6 +1003,29 @@ export default function ArtworkCompare({ referenceUrl, referenceLabel, newUrl, n
             />
             <span className="text-xs text-gray-600 w-8">{Math.round((1 - (sensitivity - 0.05) / 0.45) * 100)}%</span>
           </div>
+
+          {/* Page navigation (only for multi-page PDFs) */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Icon name="ChevronLeft" size={16} className="text-gray-600" />
+              </button>
+              <span className="text-sm font-medium text-gray-700 min-w-[60px] text-center">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Icon name="ChevronRight" size={16} className="text-gray-600" />
+              </button>
+            </div>
+          )}
 
           {/* Generate Report button (only for PDFs) */}
           {bothPdf && (
