@@ -1322,13 +1322,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Get unprocessed emails (no matched_order_id, no user_linked_order_id, and no ai_summary yet)
       // Skip dismissed emails (newsletters, non-order emails marked by user)
+      // Note: use .or() to catch both NULL and empty-string ai_summary (some emails get "" instead of null)
       const { data: unmatchedEmails, error: fetchErr } = await supabase
         .from('synced_emails')
         .select('*')
         .eq('organization_id', organization_id)
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
-        .is('ai_summary', null)
+        .or('ai_summary.is.null,ai_summary.eq.')
         .neq('dismissed', true)
         .neq('reviewed', true)
         .order('date', { ascending: true })
@@ -2176,7 +2177,7 @@ Return VALID JSON only, no markdown. One result per email:
       if (needsAI.length === 0) {
         const { count: totalCount } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id)
         const { count: matchedTotal } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).not('matched_order_id', 'is', null)
-        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).is('ai_summary', null).neq('dismissed', true).neq('reviewed', true)
+        const { count: remaining } = await supabase.from('synced_emails').select('id', { count: 'exact', head: true }).eq('organization_id', organization_id).is('matched_order_id', null).is('user_linked_order_id', null).or('ai_summary.is.null,ai_summary.eq.').neq('dismissed', true).neq('reviewed', true)
         setCors(res)
         return res.status(200).json({
           mode: 'match', done: (remaining || 0) === 0, matched: regexMatchCount, created: createdOrderCount,
@@ -2749,13 +2750,14 @@ If truly unknown, return "Unknown" for that field.` }],
       }
 
       // Count remaining unprocessed (no match AND no summary yet)
+      // Note: .or() catches both NULL and empty-string ai_summary
       const { count: remainingCount } = await supabase
         .from('synced_emails')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organization_id)
         .is('matched_order_id', null)
         .is('user_linked_order_id', null)
-        .is('ai_summary', null)
+        .or('ai_summary.is.null,ai_summary.eq.')
         .neq('dismissed', true)
         .neq('reviewed', true)
 
