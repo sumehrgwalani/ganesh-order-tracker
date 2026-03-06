@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
@@ -23,9 +23,10 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'matched' | 'conversations' | 'reviewed'>('matched');
-  const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const readingPaneRef = useRef<HTMLDivElement>(null);
 
   // Two-phase sync state
   const [syncPhase, setSyncPhase] = useState<SyncPhase>('idle');
@@ -39,7 +40,8 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const handleDismiss = async (email: SyncedEmail) => {
     try {
       await dismissEmail(email.id);
-      showToast('Email dismissed — it won\'t appear again', 'success');
+      showToast('Email dismissed', 'success');
+      if (selectedEmailId === email.id) setSelectedEmailId(null);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Failed to dismiss email', 'error');
     }
@@ -54,7 +56,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     }
   };
 
-  // Build order options for the link modal
   const orderOptions = orders.map((o) => ({
     id: o.id,
     poNumber: o.poNumber || o.id,
@@ -66,7 +67,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     if (!linkingEmail) return;
     try {
       const originalAiMatch = linkingEmail.matched_order_id || null;
-      // If reassigning, clear old AI match first
       if (linkingEmail.matched_order_id) {
         await unlinkEmail(linkingEmail.id);
       }
@@ -80,9 +80,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
   const handleQuickSync = async () => {
     if (!orgId || !userId) return;
-
     try {
-      // Phase 1: Pull latest emails
       setSyncPhase('pulling');
       setSyncProgress('Fetching latest emails...');
       let pullDone = false;
@@ -98,7 +96,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         pullDone = pullData?.done !== false || (pullData?.synced || 0) === 0;
         if (!pullDone) await new Promise((r) => setTimeout(r, 500));
       }
-
       if (totalPulled === 0) {
         setSyncPhase('done');
         setSyncProgress('No new emails found');
@@ -107,8 +104,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 3000);
         return;
       }
-
-      // Phase 2: Match new emails to orders
       setSyncPhase('matching');
       let matchBatch = 0;
       let totalMatched = 0;
@@ -131,35 +126,30 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         matchDone = matchData?.done === true || remaining === 0;
         if (!matchDone) await new Promise((r) => setTimeout(r, 1000));
       }
-
-      // Phase 3: Process attachments for new emails
       setSyncPhase('reprocessing');
       let rpDone = false;
       let totalRp = 0;
       while (!rpDone && totalRp < 50) {
         const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
-        if (rpError) { console.error('Reprocess error:', rpError); setSyncProgress(`Error processing attachments: ${rpError.message}`); break; }
+        if (rpError) { console.error('Reprocess error:', rpError); break; }
         totalRp += rpData?.processed || 0;
         const rpRemaining = rpData?.remaining || 0;
         setSyncProgress(rpRemaining > 0 ? `Processing attachments: ${totalRp} done, ${rpRemaining} remaining...` : 'Attachments processed');
         rpDone = rpData?.done === true || rpRemaining === 0;
         if (!rpDone) await new Promise((r) => setTimeout(r, 500));
       }
-
-      // Phase 4: Extract line items from new POs
       setSyncPhase('extracting');
       let exDone = false;
       let totalEx = 0;
       while (!exDone && totalEx < 20) {
         const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
-        if (exError) { console.error('Extract error:', exError); setSyncProgress(`Error extracting line items: ${exError.message}`); break; }
+        if (exError) { console.error('Extract error:', exError); break; }
         totalEx += exData?.batchProcessed || 0;
         const exRemaining = exData?.remaining || 0;
         setSyncProgress(exRemaining > 0 ? `Extracting line items: ${totalEx} done, ${exRemaining} remaining...` : 'Line items extracted');
         exDone = exData?.done === true || exRemaining === 0;
         if (!exDone) await new Promise((r) => setTimeout(r, 500));
       }
-
       setSyncPhase('done');
       setSyncProgress(`Quick sync done — ${totalPulled} new emails processed`);
       setSyncSummary({
@@ -177,147 +167,81 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
   const handleFullSync = async () => {
     if (!orgId || !userId) return;
-
-    // Phase 1: Pull emails from Gmail
     setSyncPhase('pulling');
     setSyncProgress('Downloading emails from Gmail...');
-
     try {
-      // Pull loops until all emails are downloaded (400 per call with 300s timeout)
       let pullDone = false;
       let totalPulled = 0;
       let pullRound = 0;
-      const MAX_PULL_ROUNDS = 5;
-      while (!pullDone && pullRound < MAX_PULL_ROUNDS) {
+      while (!pullDone && pullRound < 5) {
         pullRound++;
         const { data: pullData, error: pullError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'pull' });
         if (pullError) throw pullError;
         totalPulled += pullData?.synced || 0;
-        const total = pullData?.total || 0;
         const pending = pullData?.pendingDownload || 0;
-        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails so far (${pending} remaining)...` : `Downloaded ${totalPulled} new emails (${total} total)`);
+        setSyncProgress(pending > 0 ? `Downloaded ${totalPulled} emails (${pending} remaining)...` : `Downloaded ${totalPulled} new emails`);
         pullDone = pullData?.done !== false || (pullData?.synced || 0) === 0;
         if (!pullDone) await new Promise((r) => setTimeout(r, 500));
       }
       showToast(`Phase 1 complete — ${totalPulled} emails downloaded`, 'success');
 
-      // Phase 2: AI matching in batches
       setSyncPhase('matching');
-      let batchNum = 0;
-      let isDone = false;
+      let batchNum = 0, isDone = false;
       let fSumRegex = 0, fSumThread = 0, fSumAI = 0, fSumCreated = 0, fSumTotalEmails = 0, fSumTotalMatched = 0, fSumDismissed = 0;
-
-      const MAX_BATCHES = 200; // Safety limit to prevent infinite loops
-      while (!isDone && batchNum < MAX_BATCHES) {
+      while (!isDone && batchNum < 200) {
         batchNum++;
         const { data: matchData, error: matchError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'match' });
         if (matchError) throw matchError;
-
         const remaining = matchData?.remaining || 0;
-        const totalEmails = matchData?.totalEmails || 0;
-        const totalMatched = matchData?.totalMatched || 0;
-        const created = matchData?.created || 0;
         fSumRegex += matchData?.regexMatched || 0;
         fSumThread += matchData?.threadMatched || 0;
         fSumAI += matchData?.aiMatched || 0;
-        fSumCreated += created;
-        fSumTotalEmails = totalEmails;
-        fSumTotalMatched = totalMatched;
+        fSumCreated += matchData?.created || 0;
+        fSumTotalEmails = matchData?.totalEmails || fSumTotalEmails;
+        fSumTotalMatched = matchData?.totalMatched || 0;
         fSumDismissed = matchData?.dismissed || fSumDismissed;
-
-        setMatchProgress({ matched: totalMatched, remaining, total: totalEmails });
-        setSyncProgress(
-          remaining > 0
-            ? `AI matching batch ${batchNum}: ${totalMatched} matched, ${remaining} remaining...`
-            : `Complete! ${totalMatched} emails matched to orders`
-        );
-
-        if (matchData?.message) {
-          showToast(matchData.message, 'info');
-        }
-
-        if (created > 0) {
-          showToast(`Discovered ${created} new orders from emails`, 'success');
-        }
-
+        setMatchProgress({ matched: fSumTotalMatched, remaining, total: fSumTotalEmails });
+        setSyncProgress(remaining > 0 ? `AI matching batch ${batchNum}: ${fSumTotalMatched} matched, ${remaining} remaining...` : `Complete! ${fSumTotalMatched} emails matched`);
+        if (matchData?.created > 0) showToast(`Discovered ${matchData.created} new orders`, 'success');
         isDone = matchData?.done === true || remaining === 0;
-
-        if (!isDone) {
-          // Small delay between batches
-          await new Promise((r) => setTimeout(r, 1000));
-        }
+        if (!isDone) await new Promise((r) => setTimeout(r, 1000));
       }
 
-      // Phase 3: Reprocess attachments (download + classify + upload, 5 emails per call)
       setSyncPhase('reprocessing');
-      let reprocessDone = false;
-      let totalReprocessed = 0;
-      const MAX_REPROCESS = 300;
-
-      while (!reprocessDone && totalReprocessed < MAX_REPROCESS) {
+      let reprocessDone = false, totalReprocessed = 0;
+      while (!reprocessDone && totalReprocessed < 300) {
         const { data: rpData, error: rpError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'reprocess' });
-        if (rpError) { console.error('Reprocess error:', rpError); setSyncProgress(`Error processing attachments: ${rpError.message}`); break; }
-
+        if (rpError) { console.error('Reprocess error:', rpError); break; }
         totalReprocessed += rpData?.processed || 0;
         const rpRemaining = rpData?.remaining || 0;
-        setSyncProgress(
-          rpRemaining > 0
-            ? `Processing attachments: ${totalReprocessed} done, ${rpRemaining} remaining...`
-            : `Attachments processed!`
-        );
-
+        setSyncProgress(rpRemaining > 0 ? `Processing attachments: ${totalReprocessed} done, ${rpRemaining} remaining...` : 'Attachments processed!');
         reprocessDone = rpData?.done === true || rpRemaining === 0;
-        if (!reprocessDone) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
+        if (!reprocessDone) await new Promise((r) => setTimeout(r, 500));
       }
 
-      // Phase 4: Extract line items from PO attachments (3 orders per call)
       setSyncPhase('extracting');
-      let extractDone = false;
-      let totalExtracted = 0;
-      const MAX_EXTRACT = 200;
-
-      while (!extractDone && totalExtracted < MAX_EXTRACT) {
+      let extractDone = false, totalExtracted = 0;
+      while (!extractDone && totalExtracted < 200) {
         const { data: exData, error: exError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'bulk-extract' });
-        if (exError) { console.error('Extract error:', exError); setSyncProgress(`Error extracting line items: ${exError.message}`); break; }
-
+        if (exError) { console.error('Extract error:', exError); break; }
         totalExtracted += exData?.batchProcessed || 0;
         const exRemaining = exData?.remaining || 0;
-        setSyncProgress(
-          exRemaining > 0
-            ? `Extracting line items: ${totalExtracted} done, ${exRemaining} remaining...`
-            : `Line items extracted!`
-        );
-
+        setSyncProgress(exRemaining > 0 ? `Extracting line items: ${totalExtracted} done, ${exRemaining} remaining...` : 'Line items extracted!');
         extractDone = exData?.done === true || exRemaining === 0;
-        if (!extractDone) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
+        if (!extractDone) await new Promise((r) => setTimeout(r, 500));
       }
 
-      // Phase 5: Recover — targeted Gmail search for orders still missing data
       setSyncPhase('recovering');
-      setSyncProgress('Recovering missing order data from Gmail...');
-      let recoverDone = false;
-      let totalRecovered = 0;
-
+      setSyncProgress('Recovering missing order data...');
+      let recoverDone = false, totalRecovered = 0;
       while (!recoverDone && totalRecovered < 50) {
         const { data: recData, error: recError } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'recover' });
         if (recError) { console.error('Recover error:', recError); break; }
-
         totalRecovered += recData?.recovered || 0;
         const recRemaining = recData?.remaining || 0;
-        setSyncProgress(
-          recRemaining > 0
-            ? `Recovering data: ${totalRecovered} orders recovered, ${recRemaining} remaining...`
-            : totalRecovered > 0 ? `Recovered data for ${totalRecovered} orders!` : 'No orders need recovery'
-        );
-
+        setSyncProgress(recRemaining > 0 ? `Recovering: ${totalRecovered} done, ${recRemaining} remaining...` : totalRecovered > 0 ? `Recovered ${totalRecovered} orders!` : 'No recovery needed');
         recoverDone = recData?.done === true || recRemaining === 0;
-        if (!recoverDone) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
+        if (!recoverDone) await new Promise((r) => setTimeout(r, 500));
       }
 
       setSyncPhase('done');
@@ -325,17 +249,10 @@ function MailboxPage({ orgId, orders, userId }: Props) {
       setSyncSummary({
         pulled: totalPulled, regexMatched: fSumRegex, threadMatched: fSumThread,
         aiMatched: fSumAI, created: fSumCreated, totalMatched: fSumTotalMatched,
-        totalEmails: fSumTotalEmails, dismissed: fSumDismissed,
-        recovered: totalRecovered,
+        totalEmails: fSumTotalEmails, dismissed: fSumDismissed, recovered: totalRecovered,
       });
       refetch();
-
-      // Reset after 15 seconds (longer so user can read summary)
-      setTimeout(() => {
-        setSyncPhase('idle');
-        setSyncProgress('');
-        setSyncSummary(null);
-      }, 15000);
+      setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }, 15000);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Sync failed', 'error');
       setSyncPhase('idle');
@@ -348,12 +265,17 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffDays = Math.floor(diffMs / 86400000);
-    if (diffDays === 0) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
+    if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const formatFullDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
   };
 
   const getOrderLabel = (email: SyncedEmail) => {
@@ -362,6 +284,14 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     const order = orders.find((o) => o.id === orderId);
     if (order) return `${order.poNumber || order.id} — ${order.company}`;
     return orderId;
+  };
+
+  const getSnippet = (body: string) => {
+    if (!body) return '';
+    // Strip common email noise and get first meaningful line
+    const cleaned = body.replace(/^(>.*\n?)+/gm, '').replace(/\n{2,}/g, '\n').trim();
+    const firstLine = cleaned.split('\n')[0] || '';
+    return firstLine.length > 120 ? firstLine.slice(0, 120) + '...' : firstLine;
   };
 
   const tabEmails = activeTab === 'matched' ? matchedEmails : activeTab === 'conversations' ? unmatchedEmails : reviewedEmails;
@@ -378,6 +308,22 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     : tabEmails;
   const isSyncing = syncPhase !== 'idle' && syncPhase !== 'done';
 
+  const selectedEmail = currentEmails.find(e => e.id === selectedEmailId) || null;
+
+  // Auto-select first email when tab changes
+  useEffect(() => {
+    if (currentEmails.length > 0 && !currentEmails.find(e => e.id === selectedEmailId)) {
+      setSelectedEmailId(currentEmails[0].id);
+    }
+  }, [activeTab, currentEmails.length]);
+
+  // Scroll reading pane to top when email changes
+  useEffect(() => {
+    if (readingPaneRef.current) {
+      readingPaneRef.current.scrollTop = 0;
+    }
+  }, [selectedEmailId]);
+
   if (loading) {
     return (
       <div>
@@ -390,7 +336,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   }
 
   return (
-    <div>
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
       <PageHeader
         title="Mailbox"
         subtitle="Email integration for order tracking"
@@ -401,9 +347,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
               onClick={handleQuickSync}
               disabled={isSyncing}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                isSyncing
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                isSyncing ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
               }`}
             >
               <Icon name="Download" size={15} className={syncPhase === 'pulling' ? 'animate-bounce' : ''} />
@@ -413,9 +357,7 @@ function MailboxPage({ orgId, orders, userId }: Props) {
               onClick={handleFullSync}
               disabled={isSyncing}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                isSyncing
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                isSyncing ? 'bg-blue-50 text-blue-600' : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
               <Icon name="RefreshCw" size={15} className={isSyncing && syncPhase !== 'pulling' ? 'animate-spin' : ''} />
@@ -427,388 +369,316 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
       {/* Sync progress banner */}
       {syncPhase !== 'idle' && (
-        <div className={`mb-4 rounded-xl px-4 py-3 flex items-center gap-3 ${
+        <div className={`mb-3 rounded-xl px-4 py-3 flex items-center gap-3 flex-shrink-0 ${
           syncPhase === 'done' ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'
         }`}>
-          {syncPhase !== 'done' && (
-            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          )}
+          {syncPhase !== 'done' && <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
           {syncPhase === 'done' && <Icon name="CheckCircle" size={20} className="text-green-600 flex-shrink-0" />}
           <div className="flex-1">
-            <p className={`text-sm font-medium ${syncPhase === 'done' ? 'text-green-800' : 'text-blue-800'}`}>
-              {syncProgress}
-            </p>
-            {/* Progress bar during matching */}
+            <p className={`text-sm font-medium ${syncPhase === 'done' ? 'text-green-800' : 'text-blue-800'}`}>{syncProgress}</p>
             {syncPhase === 'matching' && matchProgress.total > 0 && (
               <div className="mt-2">
                 <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.round(((matchProgress.total - matchProgress.remaining) / matchProgress.total) * 100)}%` }}
-                  />
+                  <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${Math.round(((matchProgress.total - matchProgress.remaining) / matchProgress.total) * 100)}%` }} />
                 </div>
-                <p className="text-xs text-blue-600 mt-1">
-                  {matchProgress.total - matchProgress.remaining} of {matchProgress.total} processed
-                </p>
+                <p className="text-xs text-blue-600 mt-1">{matchProgress.total - matchProgress.remaining} of {matchProgress.total} processed</p>
               </div>
             )}
-            {/* Sync results summary */}
             {syncPhase === 'done' && syncSummary && (
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {syncSummary.pulled > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-green-700">{syncSummary.pulled}</p>
-                    <p className="text-xs text-gray-500">New emails</p>
-                  </div>
-                )}
-                {syncSummary.regexMatched > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-blue-700">{syncSummary.regexMatched}</p>
-                    <p className="text-xs text-gray-500">By PO number</p>
-                  </div>
-                )}
-                {syncSummary.threadMatched > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-purple-700">{syncSummary.threadMatched}</p>
-                    <p className="text-xs text-gray-500">By thread</p>
-                  </div>
-                )}
-                {syncSummary.aiMatched > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-amber-700">{syncSummary.aiMatched}</p>
-                    <p className="text-xs text-gray-500">By AI</p>
-                  </div>
-                )}
-                {syncSummary.created > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-green-600">{syncSummary.created}</p>
-                    <p className="text-xs text-gray-500">Orders created</p>
-                  </div>
-                )}
-                <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                  <p className="text-lg font-bold text-gray-700">{syncSummary.totalMatched}/{syncSummary.totalEmails}</p>
-                  <p className="text-xs text-gray-500">Total matched</p>
-                </div>
-                {syncSummary.dismissed > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-gray-400">{syncSummary.dismissed}</p>
-                    <p className="text-xs text-gray-500">Dismissed</p>
-                  </div>
-                )}
-                {syncSummary.recovered > 0 && (
-                  <div className="bg-white rounded-lg px-3 py-2 border border-green-100">
-                    <p className="text-lg font-bold text-orange-600">{syncSummary.recovered}</p>
-                    <p className="text-xs text-gray-500">Recovered</p>
-                  </div>
-                )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {syncSummary.pulled > 0 && <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-green-700">{syncSummary.pulled}</strong> new</span>}
+                {syncSummary.regexMatched > 0 && <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-blue-700">{syncSummary.regexMatched}</strong> by PO</span>}
+                {syncSummary.threadMatched > 0 && <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-purple-700">{syncSummary.threadMatched}</strong> by thread</span>}
+                {syncSummary.aiMatched > 0 && <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-amber-700">{syncSummary.aiMatched}</strong> by AI</span>}
+                {syncSummary.created > 0 && <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-green-600">{syncSummary.created}</strong> orders created</span>}
+                <span className="text-xs bg-white px-2 py-1 rounded border border-green-100"><strong className="text-gray-700">{syncSummary.totalMatched}/{syncSummary.totalEmails}</strong> total</span>
               </div>
             )}
           </div>
-          {syncPhase === 'done' && syncSummary && (
-            <button onClick={() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }} className="text-gray-400 hover:text-gray-600 flex-shrink-0 self-start mt-1">
+          {syncPhase === 'done' && (
+            <button onClick={() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
               <Icon name="X" size={16} />
             </button>
           )}
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
-        <button
-          onClick={() => setActiveTab('matched')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === 'matched' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Matched
-          <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-            {matchedEmails.length}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab('conversations')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === 'conversations' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Conversations
-          <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-            {unmatchedEmails.length}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab('reviewed')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === 'reviewed' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Reviewed
-          <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-            {reviewedEmails.length}
-          </span>
-        </button>
-      </div>
-
-      {/* Search bar */}
-      <div className="relative mb-4">
-        <Icon name="Search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search emails by subject, sender, content, or order..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-        />
-        {searchTerm && (
-          <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            <Icon name="X" size={14} />
-          </button>
-        )}
-      </div>
-
-      {/* Email list */}
-      {currentEmails.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Icon name={activeTab === 'matched' ? 'FileText' : activeTab === 'reviewed' ? 'CheckCircle' : 'MessageSquare'} size={32} className="text-blue-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">
-            {activeTab === 'matched' ? 'No matched emails yet' : activeTab === 'reviewed' ? 'No reviewed emails' : 'No conversations'}
-          </h3>
-          <p className="text-gray-500 text-sm">
-            {activeTab === 'matched'
-              ? 'Click "Full Sync" to pull emails from Gmail and match them to orders.'
-              : activeTab === 'reviewed'
-              ? 'Emails you\'ve reviewed will appear here and won\'t be re-parsed during sync.'
-              : 'General emails that don\'t match any order will show up here.'}
-          </p>
+      {/* Tabs + Search row */}
+      <div className="flex items-center gap-3 mb-3 flex-shrink-0">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+          {[
+            { key: 'matched' as const, label: 'Inbox', count: matchedEmails.length, icon: 'Inbox' },
+            { key: 'conversations' as const, label: 'Unmatched', count: unmatchedEmails.length, icon: 'MessageSquare' },
+            { key: 'reviewed' as const, label: 'Reviewed', count: reviewedEmails.length, icon: 'CheckCircle' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                activeTab === tab.key ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon name={tab.icon as any} size={14} />
+              {tab.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
+              }`}>{tab.count}</span>
+            </button>
+          ))}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {currentEmails.map((email) => {
-            const isExpanded = expandedEmail === email.id;
-            const orderLabel = getOrderLabel(email);
-            const isUserLinked = !!email.user_linked_order_id;
+        <div className="relative flex-1">
+          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search emails..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <Icon name="X" size={14} />
+            </button>
+          )}
+        </div>
+      </div>
 
-            return (
-              <div key={email.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                {/* Compact row */}
+      {/* Split pane: Email list + Reading pane */}
+      <div className="flex-1 flex gap-0 min-h-0 rounded-xl border border-gray-200 overflow-hidden bg-white">
+        {/* Left: Email list */}
+        <div className="w-[420px] flex-shrink-0 border-r border-gray-200 overflow-y-auto bg-white">
+          {currentEmails.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Icon name="Mail" size={24} className="text-gray-300" />
+              </div>
+              <p className="text-sm text-gray-500">
+                {activeTab === 'matched' ? 'No matched emails yet' : activeTab === 'reviewed' ? 'No reviewed emails' : 'No unmatched conversations'}
+              </p>
+            </div>
+          ) : (
+            currentEmails.map((email) => {
+              const isSelected = selectedEmailId === email.id;
+              const orderLabel = getOrderLabel(email);
+              const isUserLinked = !!email.user_linked_order_id;
+
+              return (
                 <button
-                  onClick={() => setExpandedEmail(isExpanded ? null : email.id)}
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+                  key={email.id}
+                  onClick={() => setSelectedEmailId(email.id)}
+                  className={`w-full text-left px-4 py-3 border-b border-gray-100 transition-colors ${
+                    isSelected
+                      ? 'bg-blue-50 border-l-2 border-l-blue-500'
+                      : 'hover:bg-gray-50 border-l-2 border-l-transparent'
+                  }`}
                 >
-                  {/* Avatar */}
-                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-blue-700 text-sm font-medium">
-                      {(email.from_name || email.from_email || '?')[0].toUpperCase()}
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                      isSelected ? 'bg-blue-200' : 'bg-gray-100'
+                    }`}>
+                      <span className={`text-xs font-semibold ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>
+                        {(email.from_name || email.from_email || '?')[0].toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      {/* Row 1: Sender + Date */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-gray-800 truncate">
+                          {email.from_name || email.from_email}
+                        </span>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(email.date)}</span>
+                      </div>
+
+                      {/* Row 2: Subject + attachment icon */}
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-sm text-gray-700 truncate">{email.subject}</p>
+                        {email.has_attachment && <Icon name="Paperclip" size={12} className="text-gray-400 flex-shrink-0" />}
+                      </div>
+
+                      {/* Row 3: Body snippet */}
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{getSnippet(email.body_text)}</p>
+
+                      {/* Row 4: Order badge */}
+                      {orderLabel && (
+                        <div className="mt-1.5 flex items-center gap-1">
+                          <span className={`text-xs px-2 py-0.5 rounded-full truncate max-w-[280px] ${
+                            isUserLinked
+                              ? 'bg-green-50 text-green-700 border border-green-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            {isUserLinked && <Icon name="Link" size={10} className="inline mr-1" />}
+                            {orderLabel}
+                          </span>
+                          {!isUserLinked && email.ai_confidence && (
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              email.ai_confidence === 'high' ? 'bg-green-500' :
+                              email.ai_confidence === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Suggested match (conversations tab) */}
+                      {!orderLabel && email.ai_suggested_order_id && activeTab === 'conversations' && (
+                        <div className="mt-1.5">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
+                            Suggested: {orders.find(o => o.id === email.ai_suggested_order_id)?.poNumber || email.ai_suggested_order_id}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Right: Reading pane */}
+        <div ref={readingPaneRef} className="flex-1 overflow-y-auto">
+          {selectedEmail ? (
+            <div className="p-6">
+              {/* Email header */}
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">{selectedEmail.subject}</h2>
+
+                <div className="flex items-start gap-3">
+                  {/* Sender avatar */}
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-700 font-semibold">
+                      {(selectedEmail.from_name || selectedEmail.from_email || '?')[0].toUpperCase()}
                     </span>
                   </div>
 
-                  {/* Sender + subject */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-800 truncate">
-                        {email.from_name || email.from_email}
-                      </span>
-                      {email.has_attachment && (
-                        <Icon name="Paperclip" size={14} className="text-gray-400 flex-shrink-0" />
-                      )}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-semibold text-gray-800">{selectedEmail.from_name || selectedEmail.from_email}</span>
+                        <span className="text-sm text-gray-400 ml-2">&lt;{selectedEmail.from_email}&gt;</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{formatFullDate(selectedEmail.date)}</span>
                     </div>
-                    <p className="text-sm text-gray-500 truncate">{email.subject}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      To: {selectedEmail.to_email}
+                      {selectedEmail.detected_stage && (
+                        <span className="ml-3 text-blue-600">Stage {selectedEmail.detected_stage}</span>
+                      )}
+                    </p>
                   </div>
+                </div>
 
-                  {/* Order badge (matched tab) */}
-                  {orderLabel && (
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        isUserLinked
-                          ? 'bg-green-50 text-green-700 border border-green-200'
-                          : 'bg-blue-50 text-blue-700 border border-blue-200'
-                      }`}>
-                        {isUserLinked && <Icon name="Link" size={10} className="inline mr-1" />}
-                        {orderLabel}
-                      </span>
-                      {!isUserLinked && email.ai_confidence && (
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          email.ai_confidence === 'high' ? 'bg-green-500' :
-                          email.ai_confidence === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
-                        }`} title={`AI confidence: ${email.ai_confidence}`} />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Suggested match badge (low confidence, in conversations tab) */}
-                  {!orderLabel && email.ai_suggested_order_id && activeTab === 'conversations' && (
-                    <span className="text-xs px-2 py-1 rounded-full flex-shrink-0 bg-orange-50 text-orange-700 border border-orange-200">
-                      Suggested: {orders.find(o => o.id === email.ai_suggested_order_id)?.poNumber || email.ai_suggested_order_id}
-                    </span>
-                  )}
-
-                  {/* Link + Reviewed + Dismiss buttons (conversations tab) */}
-                  {activeTab === 'conversations' && (
-                    <>
+                {/* Order link bar */}
+                {getOrderLabel(selectedEmail) && (
+                  <div className="mt-4 flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-2">
+                    <Icon name="Package" size={14} className="text-blue-600" />
+                    <span className="text-sm text-blue-700 font-medium">{getOrderLabel(selectedEmail)}</span>
+                    <div className="ml-auto flex items-center gap-2">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLinkingEmail(email);
+                        onClick={() => {
+                          const orderId = selectedEmail.matched_order_id || selectedEmail.user_linked_order_id;
+                          if (orderId) navigate(`/orders/${encodeURIComponent(orderId)}`);
                         }}
-                        className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex-shrink-0 flex items-center gap-1"
+                        className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-1"
                       >
-                        <Icon name="Link" size={12} />
-                        Link
+                        <Icon name="ExternalLink" size={12} />
+                        View Order
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          markReviewed(email.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed to mark reviewed', 'error'));
-                        }}
-                        className="text-xs px-2 py-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg flex-shrink-0 flex items-center gap-1"
-                        title="Mark as reviewed — won't be re-parsed during sync"
+                        onClick={() => setLinkingEmail(selectedEmail)}
+                        className="text-xs px-2.5 py-1 bg-white text-orange-600 border border-orange-200 rounded-md hover:bg-orange-50 flex items-center gap-1"
                       >
-                        <Icon name="CheckCircle" size={12} />
+                        <Icon name="RefreshCw" size={12} />
+                        Reassign
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDismiss(email);
-                        }}
-                        className="text-xs px-2 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg flex-shrink-0 flex items-center gap-1"
-                        title="Not an order email — dismiss"
+                        onClick={() => handleUnlink(selectedEmail)}
+                        className="text-xs px-2.5 py-1 bg-white text-red-500 border border-red-200 rounded-md hover:bg-red-50 flex items-center gap-1"
                       >
                         <Icon name="X" size={12} />
+                        Delink
                       </button>
-                    </>
-                  )}
-
-                  {/* Move back button (reviewed tab) */}
-                  {activeTab === 'reviewed' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        unmarkReviewed(email.id).then(() => showToast('Moved back to Conversations', 'success')).catch(() => showToast('Failed', 'error'));
-                      }}
-                      className="text-xs px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 flex-shrink-0 flex items-center gap-1"
-                      title="Move back to Conversations"
-                    >
-                      <Icon name="Undo2" size={12} />
-                      Move back
-                    </button>
-                  )}
-
-                  {/* Date */}
-                  <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
-                    {formatDate(email.date)}
-                  </span>
-
-                  <Icon
-                    name="ChevronRight"
-                    size={16}
-                    className={`text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                  />
-                </button>
-
-                {/* Expanded content */}
-                {isExpanded && (
-                  <div className="px-4 pb-4 border-t border-gray-50">
-                    <div className="mt-3 space-y-3">
-                      {/* Email details */}
-                      <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
-                        <div>
-                          <span className="font-medium text-gray-600">From:</span> {email.from_name || ''} &lt;{email.from_email}&gt;
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">To:</span> {email.to_email}
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">Date:</span>{' '}
-                          {new Date(email.date).toLocaleString()}
-                        </div>
-                        {email.detected_stage && (
-                          <div>
-                            <span className="font-medium text-gray-600">Detected Stage:</span> {email.detected_stage}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Full email body */}
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
-                          {email.body_text}
-                        </pre>
-                      </div>
-
-                      {/* Auto-advanced badge */}
-                      {email.auto_advanced && (
-                        <div className="flex items-center gap-1.5 text-xs text-green-700">
-                          <Icon name="CheckCircle" size={14} />
-                          <span>Auto-advanced order stage</span>
-                        </div>
-                      )}
-
-                      {/* Actions for conversations tab */}
-                      {activeTab === 'conversations' && (
-                        <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setLinkingEmail(email)}
-                          className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                        >
-                          <Icon name="Link" size={14} />
-                          Link to Order
-                        </button>
-                        <button
-                          onClick={() => markReviewed(email.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed', 'error'))}
-                          className="text-sm px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 flex items-center gap-2"
-                        >
-                          <Icon name="CheckCircle" size={14} />
-                          Mark Reviewed
-                        </button>
-                        <button
-                          onClick={() => handleDismiss(email)}
-                          className="text-sm px-4 py-2 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 flex items-center gap-2"
-                        >
-                          <Icon name="X" size={14} />
-                          Not an order
-                        </button>
-                        </div>
-                      )}
-
-                      {/* Actions for matched tab: View, Reassign, Delink */}
-                      {orderLabel && (
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <button
-                            onClick={() => {
-                              const orderId = email.matched_order_id || email.user_linked_order_id;
-                              if (orderId) navigate(`/orders/${encodeURIComponent(orderId)}`);
-                            }}
-                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                          >
-                            <Icon name="ExternalLink" size={14} />
-                            View Order
-                          </button>
-                          <button
-                            onClick={() => setLinkingEmail(email)}
-                            className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
-                          >
-                            <Icon name="RefreshCw" size={14} />
-                            Reassign
-                          </button>
-                          <button
-                            onClick={() => handleUnlink(email)}
-                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                          >
-                            <Icon name="X" size={14} />
-                            Delink
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
+
+                {/* Actions for conversations/reviewed tabs */}
+                {activeTab === 'conversations' && !getOrderLabel(selectedEmail) && (
+                  <div className="mt-4 flex items-center gap-2">
+                    <button
+                      onClick={() => setLinkingEmail(selectedEmail)}
+                      className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      <Icon name="Link" size={14} />
+                      Link to Order
+                    </button>
+                    <button
+                      onClick={() => markReviewed(selectedEmail.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed', 'error'))}
+                      className="text-sm px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 flex items-center gap-2"
+                    >
+                      <Icon name="CheckCircle" size={14} />
+                      Mark Reviewed
+                    </button>
+                    <button
+                      onClick={() => handleDismiss(selectedEmail)}
+                      className="text-sm px-4 py-2 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+                    >
+                      <Icon name="X" size={14} />
+                      Not an order
+                    </button>
+                  </div>
+                )}
+
+                {activeTab === 'reviewed' && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => unmarkReviewed(selectedEmail.id).then(() => showToast('Moved back', 'success')).catch(() => showToast('Failed', 'error'))}
+                      className="text-sm px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+                    >
+                      <Icon name="Undo2" size={14} />
+                      Move back to Unmatched
+                    </button>
+                  </div>
+                )}
               </div>
-            );
-          })}
+
+              {/* Divider */}
+              <div className="border-t border-gray-100 mb-4" />
+
+              {/* Email body */}
+              <div className="prose prose-sm max-w-none">
+                <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed bg-transparent p-0 m-0 border-none">
+                  {selectedEmail.body_text}
+                </pre>
+              </div>
+
+              {/* Auto-advanced badge */}
+              {selectedEmail.auto_advanced && (
+                <div className="mt-6 flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                  <Icon name="CheckCircle" size={16} />
+                  <span>This email auto-advanced the order stage</span>
+                </div>
+              )}
+
+              {/* AI summary */}
+              {selectedEmail.ai_summary && (
+                <div className="mt-4 flex items-start gap-2 text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                  <Icon name="Zap" size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>{selectedEmail.ai_summary}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="text-center">
+                <Icon name="Mail" size={48} className="mx-auto mb-3 text-gray-200" />
+                <p className="text-sm">Select an email to read</p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Link Email Modal */}
       {linkingEmail && (
