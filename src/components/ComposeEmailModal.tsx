@@ -15,7 +15,17 @@ interface ComposeProps {
   inReplyToMessageId?: string;
   attachmentBlobs?: Array<{ filename: string; blob: Blob; mimeType: string }>;
   onSent?: () => void;
+  orderId?: string; // For AI Draft feature
 }
+
+const AI_INTENTS = [
+  { value: 'follow_up', label: 'Follow Up' },
+  { value: 'request_pi', label: 'Request PI' },
+  { value: 'confirm_artwork', label: 'Confirm Artwork' },
+  { value: 'request_schedule', label: 'Request Schedule' },
+  { value: 'ask_for_docs', label: 'Ask for Docs' },
+  { value: 'payment_reminder', label: 'Payment Reminder' },
+];
 
 // Convert Blob to base64 string
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -39,7 +49,7 @@ function formatFileSize(bytes: number): string {
 export default function ComposeEmailModal({
   isOpen, onClose, orgId, contacts,
   prefillTo, prefillSubject, prefillBody, inReplyToMessageId,
-  attachmentBlobs, onSent
+  attachmentBlobs, onSent, orderId
 }: ComposeProps) {
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -51,10 +61,38 @@ export default function ComposeEmailModal({
   const [success, setSuccess] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ email: string; name: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [aiDrafting, setAiDrafting] = useState(false);
+  const [showIntentPicker, setShowIntentPicker] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const toInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAiDraft = async (intent: string) => {
+    if (!orgId || !orderId) return;
+    setAiDrafting(true);
+    setShowIntentPicker(false);
+    setError('');
+    try {
+      const { data, error: err } = await apiCall('/api/agents', {
+        organization_id: orgId,
+        mode: 'compose',
+        order_id: orderId,
+        intent,
+      });
+      if (err) throw err;
+      if (data?.subject) setSubject(data.subject);
+      if (data?.body) setBody(data.body);
+      if (data?.suggested_recipients?.length > 0) {
+        const newRecipients = data.suggested_recipients.filter((r: string) => !recipients.includes(r));
+        if (newRecipients.length > 0) setRecipients(prev => [...prev, ...newRecipients]);
+      }
+    } catch (err: any) {
+      setError('AI draft failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      if (mountedRef.current) setAiDrafting(false);
+    }
+  };
 
   // Pre-fill values when modal opens
   useEffect(() => {
@@ -324,6 +362,42 @@ export default function ComposeEmailModal({
               onChange={handleFileSelect}
               className="hidden"
             />
+            {/* AI Draft button */}
+            {orderId && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowIntentPicker(!showIntentPicker)}
+                  disabled={aiDrafting}
+                  className="flex items-center gap-1 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50"
+                  title="Generate email draft using AI"
+                >
+                  {aiDrafting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+                      Drafting...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="Zap" size={16} />
+                      AI Draft
+                    </>
+                  )}
+                </button>
+                {showIntentPicker && (
+                  <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-48 py-1">
+                    {AI_INTENTS.map(intent => (
+                      <button
+                        key={intent.value}
+                        onClick={() => handleAiDraft(intent.value)}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700"
+                      >
+                        {intent.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">

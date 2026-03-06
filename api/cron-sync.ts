@@ -350,6 +350,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('[CRON] Extract call failed:', err)
       }
       console.log(`[CRON] Extract done: ${extractedCount} orders extracted`)
+
+      // Phase 5: Run AI agents (follow-up, payment, briefing)
+      const agentUrl = `${BASE_URL}/api/agents`
+      const agentModes = ['follow_up', 'payment', 'briefing']
+      // Run supplier scoring only on Mondays
+      if (new Date().getDay() === 1) agentModes.push('supplier_score')
+
+      for (const agentMode of agentModes) {
+        try {
+          const agentRes = await fetch(agentUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${userToken}`,
+            },
+            body: JSON.stringify({ organization_id, user_id, mode: agentMode }),
+          })
+          const agentData = await agentRes.json()
+          console.log(`[CRON] Agent ${agentMode}: ${agentData.processed || 0} insights`)
+        } catch (err) {
+          console.error(`[CRON] Agent ${agentMode} failed:`, err)
+        }
+      }
+      console.log('[CRON] Phase 5 (agents) done')
     } else {
       console.log(`[CRON] Could not generate user token for match/reprocess/extract phases: ${linkErr?.message || 'no token'}`)
     }
