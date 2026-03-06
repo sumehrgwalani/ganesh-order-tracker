@@ -148,11 +148,17 @@ Keep draft emails concise (3-5 sentences), professional, and specific to the ord
   let insights: any[] = []
   try {
     const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
-    if (jsonMatch) insights = JSON.parse(jsonMatch[0])
+    if (jsonMatch) {
+      insights = JSON.parse(jsonMatch[0])
+    } else {
+      console.log('[AGENTS] No JSON array found in AI response. Response preview:', aiResponse.substring(0, 500))
+    }
   } catch (e) {
-    console.error('[AGENTS] Failed to parse follow-up response:', e)
+    console.error('[AGENTS] Failed to parse follow-up response:', e, 'Response preview:', aiResponse.substring(0, 500))
     return { processed: 0, error: 'parse_failed' }
   }
+
+  console.log(`[AGENTS] Parsed ${insights.length} insights from AI. PO numbers:`, insights.map((i: any) => i.po_number))
 
   // Clear old follow-up insights for this org (keep last 24h only)
   await supabase
@@ -162,18 +168,29 @@ Keep draft emails concise (3-5 sentences), professional, and specific to the ord
     .eq('agent_type', 'follow_up')
     .lt('created_at', new Date(now - 24 * 60 * 60 * 1000).toISOString())
 
-  // Build order_id lookup
+  // Build order_id lookup (exact and cleaned)
   const poToUuid: Record<string, string> = {}
-  for (const o of orders) poToUuid[o.order_id] = o.id
+  for (const o of orders) {
+    poToUuid[o.order_id] = o.id
+    // Also add cleaned version (no spaces, lowercase)
+    poToUuid[o.order_id.trim().toLowerCase()] = o.id
+  }
 
   // Insert new insights
   let insertCount = 0
   for (const insight of insights) {
-    const orderId = poToUuid[insight.po_number]
-    if (!orderId) continue
+    // Try exact match first, then cleaned match
+    const poNum = insight.po_number || ''
+    const orderId = poToUuid[poNum] || poToUuid[poNum.trim().toLowerCase()] ||
+      // Fuzzy: find order whose order_id contains or is contained in the AI's po_number
+      orders.find((o: any) => poNum.includes(o.order_id) || o.order_id.includes(poNum))?.id
+    if (!orderId) {
+      console.log(`[AGENTS] Could not match PO "${poNum}" to any order`)
+      continue
+    }
 
     // Find supplier contact email for this order
-    const order = orders.find((o: any) => o.order_id === insight.po_number)
+    const order = orders.find((o: any) => o.id === orderId)
     const recipients = order ? [latestEmail[orderId]?.from].filter(Boolean) : []
 
     await supabase.from('agent_insights').insert({
@@ -352,11 +369,17 @@ If no payment concerns, return empty array [].`
   let insights: any[] = []
   try {
     const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
-    if (jsonMatch) insights = JSON.parse(jsonMatch[0])
+    if (jsonMatch) {
+      insights = JSON.parse(jsonMatch[0])
+    } else {
+      console.log('[AGENTS] Payment: No JSON array found. Response preview:', aiResponse.substring(0, 500))
+    }
   } catch (e) {
-    console.error('[AGENTS] Failed to parse payment response:', e)
+    console.error('[AGENTS] Failed to parse payment response:', e, 'Preview:', aiResponse.substring(0, 500))
     return { processed: 0, error: 'parse_failed' }
   }
+
+  console.log(`[AGENTS] Payment: Parsed ${insights.length} insights. POs:`, insights.map((i: any) => i.po_number))
 
   // Clear old payment insights
   const now = Date.now()
@@ -368,12 +391,20 @@ If no payment concerns, return empty array [].`
     .lt('created_at', new Date(now - 24 * 60 * 60 * 1000).toISOString())
 
   const poToUuid: Record<string, string> = {}
-  for (const o of orders) poToUuid[o.order_id] = o.id
+  for (const o of orders) {
+    poToUuid[o.order_id] = o.id
+    poToUuid[o.order_id.trim().toLowerCase()] = o.id
+  }
 
   let insertCount = 0
   for (const insight of insights) {
-    const oid = poToUuid[insight.po_number]
-    if (!oid) continue
+    const poNum = insight.po_number || ''
+    const oid = poToUuid[poNum] || poToUuid[poNum.trim().toLowerCase()] ||
+      orders.find((o: any) => poNum.includes(o.order_id) || o.order_id.includes(poNum))?.id
+    if (!oid) {
+      console.log(`[AGENTS] Payment: Could not match PO "${poNum}"`)
+      continue
+    }
     await supabase.from('agent_insights').insert({
       organization_id: orgId,
       agent_type: 'payment',
@@ -479,11 +510,17 @@ Respond as JSON array:
   let scores: any[] = []
   try {
     const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
-    if (jsonMatch) scores = JSON.parse(jsonMatch[0])
+    if (jsonMatch) {
+      scores = JSON.parse(jsonMatch[0])
+    } else {
+      console.log('[AGENTS] Supplier: No JSON array found. Response preview:', aiResponse.substring(0, 500))
+    }
   } catch (e) {
-    console.error('[AGENTS] Failed to parse supplier score response:', e)
+    console.error('[AGENTS] Failed to parse supplier score response:', e, 'Preview:', aiResponse.substring(0, 500))
     return { processed: 0, error: 'parse_failed' }
   }
+
+  console.log(`[AGENTS] Supplier: Parsed ${scores.length} scores for suppliers:`, scores.map((s: any) => s.supplier))
 
   // Clear old supplier scores
   await supabase
