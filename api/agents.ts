@@ -684,10 +684,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'AI not configured' })
     }
 
-    const { organization_id, mode, order_id, intent } = req.body || {}
+    const { organization_id, mode, order_id, intent: rawIntent } = req.body || {}
     if (!organization_id || !mode) {
       return res.status(400).json({ error: 'Missing organization_id or mode' })
     }
+
+    // Whitelist valid intents to prevent prompt injection
+    const VALID_INTENTS = ['follow_up', 'request_pi', 'request_docs', 'schedule_inquiry', 'payment_reminder', 'general']
+    const intent = VALID_INTENTS.includes(rawIntent) ? rawIntent : 'follow_up'
 
     // Verify membership
     const { data: membership } = await supabase

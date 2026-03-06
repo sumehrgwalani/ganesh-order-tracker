@@ -332,7 +332,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const cases = k
             const kilos = cases * kgPerCase
             const price = parseFloat(li.pricePerKg) || 0
-            return { ...li, cases, kilos, total: (kilos * price).toFixed(2) }
+            return { ...li, cases, kilos, total: Math.round(kilos * price * 100) / 100 }
           }
           return li
         })
@@ -355,7 +355,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const kilos = Math.round(k / kgPerCase)
             const cases = Math.round(kilos / kgPerCase)
             const price = parseFloat(li.pricePerKg) || 0
-            return { ...li, cases, kilos, total: (kilos * price).toFixed(2) }
+            return { ...li, cases, kilos, total: Math.round(kilos * price * 100) / 100 }
           }
           return li
         })
