@@ -3,11 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 
 // ===== GMAIL HELPERS =====
 
-// Decode base64url encoded Gmail message body
+// Decode base64url encoded Gmail message body (UTF-8 safe)
 function decodeBase64Url(data: string): string {
   const base64 = data.replace(/-/g, '+').replace(/_/g, '/')
   try {
-    return atob(base64)
+    return Buffer.from(base64, 'base64').toString('utf-8')
   } catch {
     return ''
   }
