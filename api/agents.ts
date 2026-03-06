@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 // ===== CONSTANTS =====
 
 const ALLOWED_ORIGIN = 'https://ganesh-order-tracker.vercel.app'
-const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250514'
+const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
 
 const STAGE_NAMES: Record<number, string> = {
   1: 'Order Confirmed (PO Sent)',
