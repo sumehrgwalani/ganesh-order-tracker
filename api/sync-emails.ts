@@ -5039,6 +5039,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (tokenData.error) throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`)
     const accessToken = tokenData.access_token
 
+    // ── Backfill HTML mode: re-fetch HTML body for existing emails ──
+    if (syncMode === 'backfill-html') {
+      const BATCH = 20
+      const { data: emailsToFix, error: fetchErr } = await supabase
+        .from('synced_emails')
+        .select('id, gmail_id')
+        .eq('organization_id', organization_id)
+        .is('body_html', null)
+        .order('date', { ascending: false })
+        .limit(BATCH)
+
+      if (fetchErr || !emailsToFix || emailsToFix.length === 0) {
+        return res.status(200).json({ mode: 'backfill-html', done: true, updated: 0, remaining: 0 })
+      }
+
+      // Count total remaining
+      const { count: totalRemaining } = await supabase
+        .from('synced_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization_id)
+        .is('body_html', null)
+
+      let updated = 0
+      for (const email of emailsToFix) {
+        try {
+          const msgRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.gmail_id}?format=full`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          if (!msgRes.ok) continue
+          const msg = await msgRes.json()
+          const html = extractHtmlBody(msg.payload)
+          if (html) {
+            await supabase.from('synced_emails')
+              .update({ body_html: html.substring(0, 50000) })
+              .eq('id', email.id)
+            updated++
+          }
+        } catch (err) {
+          console.error(`Failed to backfill HTML for ${email.gmail_id}:`, err)
+        }
+      }
+
+      const remaining = (totalRemaining || 0) - updated
+      return res.status(200).json({
+        mode: 'backfill-html', done: remaining <= 0, updated, remaining: Math.max(0, remaining),
+      })
+    }
+
     // For pull mode: always do deep sync (6 months)
     const isPull = syncMode === 'pull'
     const lookbackDays = isPull ? 180 : 7
