@@ -408,7 +408,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 // Extract PO data from an image (scanned PO) using Claude vision
 async function extractPODataFromImage(
   imageBase64: string, mimeType: string, orderCompany: string, orderSupplier: string, orgRoleDesc: string, orgType: string = 'intermediary'
-): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number, supplier?: string } | null> {
+): Promise<{ lineItems: any[], deliveryTerms: string, payment: string, commission: string, destination: string, totalKilos: number, totalValue: number, supplier?: string, buyer?: string } | null> {
   try {
     const isImage = mimeType.startsWith('image/')
     const isPdf = mimeType.includes('pdf')
@@ -645,8 +645,9 @@ Rules:
 
     const quantityNote = parsed.quantityInterpretation ? String(parsed.quantityInterpretation) : ''
     const supplier = String(parsed.supplier || '')
-    console.log(`[PO-VISION] Final: supplier="${supplier}", totalKilos=${totalKilos}, quantityInterpretation="${quantityNote}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
-    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, supplier }
+    const buyer = String(parsed.buyer || '')
+    console.log(`[PO-VISION] Final: supplier="${supplier}", buyer="${buyer}", totalKilos=${totalKilos}, quantityInterpretation="${quantityNote}", commission="${commission}", delivery="${deliveryTerms}", payment="${payment}", dest="${destination}"`)
+    return { lineItems, deliveryTerms, payment, commission, destination, totalKilos, totalValue: Math.round(totalValue * 100) / 100, supplier, buyer }
   } catch (err) {
     console.error('PO vision extraction error:', err)
     return null
@@ -3151,6 +3152,16 @@ If truly unknown, return "Unknown" for that field.` }],
               }
             }
           }
+          // Auto-correct buyer for intermediary/supplier orgs
+          if (extractedData.buyer && extractedData.buyer !== 'Unknown' && extractedData.buyer !== companyName) {
+            const currentCompany = (order.company || '').toLowerCase()
+            const shouldFixBuyer = (orgType === 'intermediary' && (!order.company || currentCompany === 'unknown' || currentCompany === companyName.toLowerCase())) ||
+                                    (orgType === 'supplier' && (!order.company || currentCompany === 'unknown'))
+            if (shouldFixBuyer) {
+              updates.company = normalizeCompanyName(extractedData.buyer)
+              console.log(`[BULK] Updated buyer for ${order.order_id}: "${order.company}" → "${updates.company}"`)
+            }
+          }
           // Update product from PO extraction — replaces generic keyword guesses with the real name
           if (extractedData.lineItems.length > 0) {
             const mainProduct = extractedData.lineItems[0].product
@@ -3606,6 +3617,16 @@ If truly unknown, return "Unknown" for that field.` }],
                       // Don't set supplier = company
                       if (extractedData.supplier.toLowerCase() !== (order.company || '').toLowerCase()) {
                         updates.supplier = extractedData.supplier
+                      }
+                    }
+                    // Auto-correct buyer for intermediary/supplier orgs
+                    if (extractedData.buyer && extractedData.buyer !== 'Unknown' && extractedData.buyer !== companyName) {
+                      const currentCompany = (order.company || '').toLowerCase()
+                      const shouldFixBuyer = (orgType === 'intermediary' && (!order.company || currentCompany === 'unknown' || currentCompany === companyName.toLowerCase())) ||
+                                              (orgType === 'supplier' && (!order.company || currentCompany === 'unknown'))
+                      if (shouldFixBuyer) {
+                        updates.company = normalizeCompanyName(extractedData.buyer)
+                        console.log(`[RECOVER] Updated buyer for ${order.order_id}: "${order.company}" → "${updates.company}"`)
                       }
                     }
                     if (extractedData.lineItems.length > 0 && extractedData.lineItems[0].product !== 'Unknown') {
