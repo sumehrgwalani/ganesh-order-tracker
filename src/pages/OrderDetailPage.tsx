@@ -1772,7 +1772,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           onClose={() => setComposeOpen(false)}
           orgId={orgId}
           contacts={contacts}
-          orderId={order.id}
+          orderId={order.uuid}
         />
       )}
     </div>
