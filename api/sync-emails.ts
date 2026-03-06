@@ -2987,10 +2987,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             else if (allEmailText.includes('OCTOPUS') || allEmailText.includes('PULPO')) product = 'Frozen Octopus'
             else if (allEmailText.includes('FISH') || allEmailText.includes('SURIMI')) product = 'Frozen Fish'
 
-            // Detect highest stage from all emails
+            // Detect highest stage from all emails — use AI first, keyword fallback
+            const autoCreateStageMap = await detectStagesWithAI(emails)
             let highestStage = 1
             for (const e of emails) {
-              const detected = detectStageFromSubject(e.subject, e.body_text)
+              const detected = autoCreateStageMap.get(e.id) || detectStageFromSubject(e.subject, e.body_text)
               if (detected) highestStage = Math.max(highestStage, detected)
             }
 
@@ -3034,9 +3035,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               createdOrderCount++
               ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier, product, currentStage: highestStage, skippedStages: [] })
 
-              // Log each email in order history with real details
+              // Log each email in order history with real details (AI stages already computed above)
               for (const e of emails) {
-                const emailStage = detectStageFromSubject(e.subject, e.body_text)
+                const emailStage = autoCreateStageMap.get(e.id) || detectStageFromSubject(e.subject, e.body_text)
                 // Link email to the new order
                 await supabase.from('synced_emails').update({
                   matched_order_id: fullPO,
@@ -3304,6 +3305,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // PASS 1: Re-check previously unmatched emails (have ai_summary but no matched_order_id)
       // These were processed by AI earlier but the order didn't exist yet at that time
       let regexMatchCount = 0
+      const pass1Matched: { email: any, order: any }[] = []
       if (ordersList.length > 0) {
         const { data: prevUnmatched } = await supabase
           .from('synced_emails')
@@ -3318,33 +3320,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           for (const email of prevUnmatched) {
             const order = tryRegexMatch(email)
             if (order) {
-              const detectedStage = detectStageFromSubject(email.subject, email.body_text)
-
-              await supabase.from('synced_emails').update({
-                matched_order_id: order.id,
-                detected_stage: detectedStage,
-                ai_summary: `Auto-matched by PO number (re-scan)`,
-              }).eq('id', email.id)
-
-              // Create order_history entry so email shows on order detail page (dedup check)
-              await insertHistoryIfNew({
-                organization_id,
-                order_id: order.uuid,
-                stage: detectedStage || 1,
-                from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
-                subject: email.subject || 'No subject',
-                body: (email.body_text || '').substring(0, 5000),
-                timestamp: email.date || new Date().toISOString(),
-                has_attachment: email.has_attachment || false,
-              })
-
-              regexMatchCount++
+              pass1Matched.push({ email, order })
             }
           }
-          if (regexMatchCount > 0) {
-            console.log(`[REGEX PASS 1] Re-matched ${regexMatchCount} previously unmatched emails (with history entries)`)
-          }
         }
+      }
+      // Use AI to detect stages for PASS 1 re-matched emails (not just keywords)
+      if (pass1Matched.length > 0) {
+        const pass1StageMap = await detectStagesWithAI(pass1Matched.map(p => p.email))
+        for (const { email, order } of pass1Matched) {
+          const detectedStage = pass1StageMap.get(email.id) || detectStageFromSubject(email.subject, email.body_text)
+
+          await supabase.from('synced_emails').update({
+            matched_order_id: order.id,
+            detected_stage: detectedStage,
+            ai_summary: `Auto-matched by PO number (re-scan)`,
+          }).eq('id', email.id)
+
+          await insertHistoryIfNew({
+            organization_id,
+            order_id: order.uuid,
+            stage: detectedStage || 1,
+            from_address: email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email || 'Unknown',
+            subject: email.subject || 'No subject',
+            body: (email.body_text || '').substring(0, 5000),
+            timestamp: email.date || new Date().toISOString(),
+            has_attachment: email.has_attachment || false,
+          })
+
+          regexMatchCount++
+        }
+        console.log(`[REGEX PASS 1] Re-matched ${regexMatchCount} previously unmatched emails (AI stage detection)`)
       }
 
       // PASS 2: Regex-match the current batch of unprocessed emails (after thread matching)
@@ -3886,28 +3892,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           let company = 'Pescados E. Guillem S.L.'
           if (toEmail.includes('eguillem')) company = 'Pescados E. Guillem S.L.'
 
-          // Detect highest stage from all emails — use the shared detectStageFromSubject helper
+          // Detect highest stage from all emails — use AI first, keyword fallback
+          const autoCreate2StageMap = await detectStagesWithAI(emails)
           let highestStage = 1
+          const emailStageResults = new Map<string, number>()
           for (const e of emails) {
-            const detected = detectStageFromSubject(e.subject, e.body_text)
-            if (detected) highestStage = Math.max(highestStage, detected)
+            const detected = autoCreate2StageMap.get(e.id) || detectStageFromSubject(e.subject, e.body_text)
+            if (detected) {
+              emailStageResults.set(e.id, detected)
+              highestStage = Math.max(highestStage, detected)
+            }
           }
 
-          // Calculate skipped stages
+          // Calculate skipped stages based on AI-detected stages
           const skippedStages: number[] = []
+          const detectedStagesSet = new Set(emailStageResults.values())
           for (let s = 2; s < highestStage; s++) {
-            const hasEvidence = emails.some((e: any) => {
-              const subj = (e.subject || '').toUpperCase()
-              if (s === 2) return subj.includes('PROFORMA')
-              if (s === 3) return subj.includes('ARTWORK') || subj.includes('LABEL')
-              if (s === 4) return subj.includes('ARTWORK APPROVED') || subj.includes('ARTWORK CONFIRMED') || subj.includes('LABELS APPROVED')
-              if (s === 5) return subj.includes('QUALITY') || subj.includes('INSPECTION')
-              if (s === 6) return subj.includes('SCHEDULE') || subj.includes('VESSEL')
-              if (s === 7) return subj.includes('DRAFT')
-              if (s === 8) return subj.includes('FINAL') || subj.includes('ORIGINAL')
-              return false
-            })
-            if (!hasEvidence) skippedStages.push(s)
+            if (!detectedStagesSet.has(s)) skippedStages.push(s)
           }
 
           // Product: basic keyword scan across ALL emails
@@ -3970,9 +3971,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ordersList.push({ uuid: newOrder.id, id: fullPO, company, supplier, product, currentStage: highestStage, skippedStages })
             existingPOs.add(fullPO)
 
-            // Match all emails for this PO to the new order and log each one in history
+            // Match all emails for this PO to the new order and log each one in history (AI stages already computed)
             for (const e of emails) {
-              const emailStage = detectStageFromSubject(e.subject, e.body_text)
+              const emailStage = emailStageResults.get(e.id) || detectStageFromSubject(e.subject, e.body_text)
               const updateData: any = { matched_order_id: fullPO, ai_summary: `Auto-matched to newly created order ${fullPO}` }
               if (emailStage) updateData.detected_stage = emailStage
               await supabase
