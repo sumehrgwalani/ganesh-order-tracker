@@ -86,6 +86,7 @@ export interface OrderLineItem {
 
 export interface Order {
   id: string;
+  uuid?: string;
   poNumber: string;
   piNumber?: string;
   company: string;

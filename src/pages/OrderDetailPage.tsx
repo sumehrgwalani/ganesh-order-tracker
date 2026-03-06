@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { buildPOHtml, buildPIHtml, orderToPdfData } from '../utils/pdfBuilders';
 import type { CatalogProduct } from '../hooks/useProducts';
 import ArtworkCompare from '../components/ArtworkCompare';
+import DocumentChecklist from '../components/DocumentChecklist';
 import { apiCall } from '../utils/api';
 
 interface Props {
@@ -475,6 +476,9 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
             <div className="bg-amber-50 rounded-lg p-3">
               <p className="text-sm text-amber-700">Draft shipping documents for review before finalization. Check all details match the PO and PI.</p>
             </div>
+            {orgId && order.uuid && (
+              <DocumentChecklist orderId={order.uuid} orgId={orgId} destination={order.to} stage="draft" />
+            )}
             {renderAttachments(7)}
           </div>
         );
@@ -505,6 +509,9 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
             <div className="bg-green-50 rounded-lg p-3">
               <p className="text-sm text-green-700">Final shipping and export documents for this consignment.</p>
             </div>
+            {orgId && order.uuid && (
+              <DocumentChecklist orderId={order.uuid} orgId={orgId} destination={order.to} stage="final" />
+            )}
             {renderAttachments(8)}
           </div>
         );

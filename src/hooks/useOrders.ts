@@ -85,6 +85,7 @@ export function useOrders(orgId: string | null) {
   const convertRows = (orderRows: DbOrderRow[]): Order[] => {
     return orderRows.map((row: DbOrderRow) => ({
       id: row.order_id,
+      uuid: row.id,
       poNumber: row.po_number || '',
       piNumber: row.pi_number || undefined,
       company: row.company,
