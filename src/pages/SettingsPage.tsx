@@ -31,7 +31,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   const isOwner = userRole === 'owner';
 
   // Organization tab
-  const [orgFormData, setOrgFormData] = useState({ name: '', companyName: '', contactName: '', address: '', city: '', country: '', phone: '', gstNumber: '', taxId: '' });
+  const [orgFormData, setOrgFormData] = useState({ name: '', companyName: '', contactName: '', orgType: 'intermediary' as 'buyer' | 'intermediary' | 'supplier', address: '', city: '', country: '', phone: '', gstNumber: '', taxId: '' });
 
   // Profile tab
   const [profileFormData, setProfileFormData] = useState({ displayName: '', phone: '' });
@@ -134,6 +134,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
         ...prev,
         companyName: orgSettings.company_name || '',
         contactName: orgSettings.contact_name || '',
+        orgType: orgSettings.organization_type || 'intermediary',
         address: orgSettings.address || '',
         city: orgSettings.city || '',
         country: orgSettings.country || '',
@@ -181,6 +182,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const { error: settingsError } = await updateOrgSettings({
       company_name: orgFormData.companyName || null,
       contact_name: orgFormData.contactName || null,
+      organization_type: orgFormData.orgType,
       address: orgFormData.address || null,
       city: orgFormData.city || null,
       country: orgFormData.country || null,
@@ -378,6 +380,31 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
                     <input type="text" value={orgFormData.contactName} onChange={(e) => setOrgFormData({ ...orgFormData, contactName: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Sumehr Gwalani" />
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Organization Type</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { value: 'buyer', label: 'Buyer', desc: 'You buy directly from suppliers' },
+                      { value: 'intermediary', label: 'Intermediary', desc: 'You broker between buyers & suppliers' },
+                      { value: 'supplier', label: 'Supplier', desc: 'You sell directly to buyers' }
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setOrgFormData({ ...orgFormData, orgType: opt.value as any })}
+                        className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                          orgFormData.orgType === opt.value
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="font-medium text-sm">{opt.label}</div>
+                        <div className="text-xs text-gray-500 mt-1">{opt.desc}</div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 

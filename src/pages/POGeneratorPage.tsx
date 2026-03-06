@@ -1198,6 +1198,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <label className="block text-sm font-medium text-gray-700 mb-1">Delivery / Shipment Date</label>
                   <input type="date" value={poData.deliveryDate} onChange={(e) => setPOData({...poData, deliveryDate: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
+                {(!orgSettings?.organization_type || orgSettings.organization_type === 'intermediary') && (<>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Commission</label>
                   <input type="text" value={poData.commission} onChange={(e) => setPOData({...poData, commission: e.target.value})} placeholder="Commission" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
@@ -1212,6 +1213,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
                   <input type="text" value={poData.overseasCommissionCompany} onChange={(e) => setPOData({...poData, overseasCommissionCompany: e.target.value})} placeholder="Company name for payment" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
                 )}
+                </>)}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
                   <input type="text" value={poData.payment} onChange={(e) => setPOData({...poData, payment: e.target.value})} placeholder="Payment terms" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />

@@ -210,6 +210,7 @@ export interface OrganizationSettings {
   organization_id: string;
   company_name: string | null;
   contact_name: string | null;
+  organization_type: 'buyer' | 'intermediary' | 'supplier' | null;
   logo_url: string | null;
   address: string | null;
   city: string | null;
