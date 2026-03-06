@@ -224,6 +224,16 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         exDone = d?.done === true || (d?.remaining || 0) === 0;
         if (!exDone) await new Promise(r => setTimeout(r, 500));
       }
+      // Backfill HTML for emails missing it (runs silently in background)
+      setSyncProgress('Fetching rich email content...');
+      let htmlDone = false, htmlRounds = 0;
+      while (!htmlDone && htmlRounds < 5) {
+        htmlRounds++;
+        const { data: d } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'backfill-html' });
+        htmlDone = d?.done === true || (d?.remaining || 0) === 0;
+        if (!htmlDone) await new Promise(r => setTimeout(r, 500));
+      }
+
       setSyncPhase('done');
       setSyncProgress(`Synced ${totalPulled} new emails`);
       setSyncSummary({ pulled: totalPulled, regexMatched: sR, threadMatched: sT, aiMatched: sA, created: sC, totalMatched, totalEmails: sTE, dismissed: sD, recovered: 0 });
