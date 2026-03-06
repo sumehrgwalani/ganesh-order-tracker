@@ -188,6 +188,15 @@ function MailboxPage({ orgId, orders, userId }: Props) {
         if (!pullDone) await new Promise(r => setTimeout(r, 500));
       }
       if (totalPulled === 0) {
+        // Still backfill HTML for existing emails even when no new ones
+        setSyncProgress('Fetching rich email content...');
+        let htmlDone = false, htmlRounds = 0;
+        while (!htmlDone && htmlRounds < 5) {
+          htmlRounds++;
+          const { data: d } = await apiCall('/api/sync-emails', { organization_id: orgId, user_id: userId, mode: 'backfill-html' });
+          htmlDone = d?.done === true || (d?.remaining || 0) === 0;
+          if (!htmlDone) await new Promise(r => setTimeout(r, 500));
+        }
         setSyncPhase('done'); setSyncProgress('No new emails found'); showToast('No new emails', 'info'); refetch();
         setTimeout(() => { setSyncPhase('idle'); setSyncProgress(''); }, 3000); return;
       }
