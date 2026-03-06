@@ -7,7 +7,7 @@ import PODocumentPreview from '../components/PODocumentPreview';
 import { ORDER_STAGES, BUYER_CODES } from '../data/constants';
 import { supabase } from '../lib/supabase';
 import { apiCall } from '../utils/api';
-import type { ContactsMap, Order, LineItem, POFormData } from '../types';
+import type { ContactsMap, Order, LineItem, POFormData, OrganizationSettings } from '../types';
 import { parsePackingKg, calculateLineItem, recalculateAllLineItems, calcGrandTotal, calcTotalKilos, calcTotalCases } from '../utils/lineItemCalcs';
 import {
   getNextPONumber, getNextLoteNumber, incrementPONumber, getCurrentBulkPONumber,
@@ -20,6 +20,7 @@ interface Props {
   setOrders?: (updater: (prev: Order[]) => Order[]) => void;
   onOrderCreated?: (order: Order) => void;
   orgId?: string | null;
+  orgSettings?: OrganizationSettings | null;
 }
 
 interface POLineItem {
@@ -43,7 +44,7 @@ interface Notification {
   message: string;
 }
 
-function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated, orgId }: Props) {
+function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated, orgId, orgSettings }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const amendmentOrder = (location.state as any)?.amendmentOrder as Order | undefined;
@@ -265,7 +266,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         })
         .map(([email, c]) => ({ company: c.company, email, country: c.country }));
 
-      const { data, error } = await apiCall('/api/parse-po', { rawText: text, suppliers: suppliersList, buyers: buyersList });
+      const { data, error } = await apiCall('/api/parse-po', { rawText: text, suppliers: suppliersList, buyers: buyersList, organization_id: orgId });
 
       if (error) throw new Error(error.message || 'Failed to call AI parser');
       if (data?.error) throw new Error(data.error);
@@ -560,7 +561,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           {
             stage: 1,
             timestamp: new Date().toISOString(),
-            from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+            from: `${orgSettings?.company_name || 'Trading Company'} <${orgSettings?.smtp_from_email || 'info@example.com'}>`,
             to: sendTo || poData.supplierEmail,
             subject: `AMENDED PO ${poData.poNumber}`,
             body: `Purchase Order ${poData.poNumber} has been amended.\n\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nAmended on: ${new Date().toLocaleString()}`,
@@ -586,7 +587,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         await sendEmailWithPdf(
           amendRecipient, ccEmails,
           `AMENDED PO ${poData.poNumber}`,
-          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Amended Purchase Order.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Amended Purchase Order.\n\nPO Number: ${poData.poNumber}\nBuyer: ${poData.buyer}\nUpdated Total Value: USD ${grandTotal}\nUpdated Total Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\n${orgSettings?.contact_name || 'Manager'}\n${orgSettings?.company_name || 'Trading Company'}`,
           pdfBlob, primaryFilename
         );
       }
@@ -627,10 +628,10 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
           {
             stage: 1,
             timestamp: new Date().toISOString(),
-            from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+            from: `${orgSettings?.company_name || 'Trading Company'} <${orgSettings?.smtp_from_email || 'info@example.com'}>`,
             to: sendTo || poData.supplierEmail,
             subject: `NEW PO ${currentPONumber}`,
-            body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+            body: `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${currentPONumber}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\n${orgSettings?.contact_name || 'Manager'}\n${orgSettings?.company_name || 'Trading Company'}`,
             hasAttachment: true,
             attachments: [{ name: `${currentPONumber.replace(/\//g, '_')}.pdf`, meta }]
           }
@@ -668,7 +669,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
         await sendEmailWithPdf(
           recipient, ccEmails,
           `NEW PO ${poNum}`,
-          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poNum}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\nSumehr Rajnish Gwalani\nGanesh International`,
+          `Dear Sir/Madam,\n\nGood Day!\n\nPlease find attached the Purchase Order for ${poData.product || 'Frozen Seafood'}.\n\nPO Number: ${poNum}\nBuyer: ${poData.buyer}\nTotal Value: USD ${grandTotal}\nTotal Quantity: ${totalKilos} Kg\n\nKindly confirm receipt and proceed at the earliest.\n\nThanking you,\nBest regards,\n\n${orgSettings?.contact_name || 'Manager'}\n${orgSettings?.company_name || 'Trading Company'}`,
           pdfBlob, filename
         );
       }
@@ -794,6 +795,7 @@ function POGeneratorPage({ contacts = {}, orders = [], setOrders, onOrderCreated
             status={status}
             currentPreviewPONumber={currentPreviewPONumber}
             displayDate={(bulkCreate && bulkDates[bulkPreviewIndex]) ? bulkDates[bulkPreviewIndex] : poData.date}
+            orgSettings={orgSettings}
           />
 
           {/* Bottom Action Bar */}

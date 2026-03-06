@@ -5,7 +5,8 @@ import ComposeEmailModal from './ComposeEmailModal';
 import PODocumentPreview from './PODocumentPreview';
 import { getAttachmentMeta } from '../types';
 import { supabase } from '../lib/supabase';
-import type { Order } from '../types';
+import { useSettings } from '../hooks/useSettings';
+import type { Order, OrganizationSettings } from '../types';
 // Note: buildPOHtml/orderToPdfData not needed — we use PODocumentPreview (same as PO generator)
 
 interface Props {
@@ -36,6 +37,9 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         .then(({ data }) => { if (data?.organization_id) setOrgId(data.organization_id); });
     });
   }, []);
+
+  // Get organization settings
+  const { orgSettings } = useSettings(orgId);
 
   const hasBrand = amendItems.some(i => i.brand);
   const hasSize = amendItems.some(i => i.size);
@@ -114,7 +118,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
     const updatedHistory = {
       stage: 1,
       timestamp: new Date().toISOString(),
-      from: 'Ganesh International <ganeshintnlmumbai@gmail.com>',
+      from: `${orgSettings?.company_name || 'Trading Company'} <${orgSettings?.smtp_from_email || 'info@example.com'}>`,
       to: '',
       subject: `REVISED PO ${order.id}`,
       body: `Purchase Order ${order.id} revised.\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos} Kg`,
@@ -221,6 +225,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
                   currentPreviewPONumber={order.id}
                   displayDate={displayDate}
                   isRevised={true}
+                  orgSettings={orgSettings}
                 />
               </div>
             </div>
@@ -292,7 +297,7 @@ export default function AmendPOModal({ order, onUpdateOrder, onClose }: Props) {
         onClose={handleEmailClose}
         orgId={orgId}
         prefillSubject={`Revised PO - ${order.id} - ${amendItems.map(li => li.product).filter(Boolean).join(', ')}`}
-        prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\nGanesh International`}
+        prefillBody={`Dear Sir/Madam,\n\nPlease find attached the Revised Purchase Order ${order.id}.\n\nUpdated Total: USD ${amendGrandTotal.toFixed(2)}\nUpdated Qty: ${amendTotalKilos.toLocaleString()} Kg (${amendTotalCases.toLocaleString()} cases)\n\nRegards,\n${orgSettings?.company_name || 'Trading Company'}`}
         attachmentBlobs={[{
           filename: `REVISED_${order.id.replace(/\//g, '_')}.pdf`,
           blob: pdfBlob,

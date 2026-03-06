@@ -20,6 +20,7 @@ import { useContacts } from './hooks/useContacts';
 import { useOrders } from './hooks/useOrders';
 import { useProducts } from './hooks/useProducts';
 import { useNotifications } from './hooks/useNotifications';
+import { useSettings } from './hooks/useSettings';
 import { useToast } from './components/Toast';
 
 class ErrorBoundary extends React.Component<
@@ -66,6 +67,7 @@ function App() {
   }, [location.pathname]);
   const { contacts: dbContacts, loading: contactsLoading, addContact, updateContact, deleteContact, bulkUpsertContacts, bulkDeleteContacts, refetch: refetchContacts } = useContacts(orgId);
   const { orders: dbOrders, setOrders, loading: ordersLoading, createOrder, deleteOrder, updateOrderStage, updateOrder } = useOrders(orgId);
+  const { orgSettings } = useSettings(orgId);
   const { showToast } = useToast();
   const { inquiries: productInquiries, products: dbProducts } = useProducts(orgId);
 
@@ -254,6 +256,7 @@ function App() {
                   orders={orders}
                   setOrders={setOrders}
                   orgId={orgId}
+                  orgSettings={orgSettings}
                   onOrderCreated={(newOrder) => {
                     const isExisting = orders.some(o => o.id === newOrder.id);
                     if (isExisting && orgId && updateOrder) {

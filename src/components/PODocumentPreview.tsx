@@ -2,6 +2,7 @@
 import { forwardRef } from 'react';
 import { GILogo } from './Logos';
 import { formatDate } from '../utils/poHelpers';
+import type { OrganizationSettings } from '../types';
 
 interface POLineItem {
   product: string;
@@ -46,11 +47,12 @@ interface Props {
   currentPreviewPONumber: string;
   displayDate: string;  // already resolved for bulk mode
   isRevised?: boolean;
+  orgSettings?: OrganizationSettings | null;
 }
 
 const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
   poData, lineItems, grandTotal, totalKilos, totalCases,
-  signatureData, status, currentPreviewPONumber, displayDate, isRevised,
+  signatureData, status, currentPreviewPONumber, displayDate, isRevised, orgSettings,
 }, ref) => {
   // Determine which optional columns have data
   const hasBrand = lineItems.some(i => i.brand);
@@ -91,9 +93,9 @@ const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
       {/* Header with Logo */}
       <div className="flex items-center justify-between mb-2 pb-1.5 border-b-2 border-gray-200">
         <div>
-          <h2 className="text-lg font-bold text-gray-800" style={{ marginBottom: '1px' }}>GANESH INTERNATIONAL</h2>
-          <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-          <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+          <h2 className="text-lg font-bold text-gray-800" style={{ marginBottom: '1px' }}>{(orgSettings?.company_name || 'GANESH INTERNATIONAL').toUpperCase()}</h2>
+          <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>{orgSettings?.address || 'Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034'}</p>
+          <p className="text-gray-500" style={{ fontSize: '10px', lineHeight: '1.3' }}>Tel: {orgSettings?.phone || '+91 22 2351 2345'} | Email: {orgSettings?.smtp_from_email || 'ganeshintnlmumbai@gmail.com'}</p>
         </div>
         <div className="ml-4 flex-shrink-0">
           <GILogo size={60} />
@@ -227,8 +229,8 @@ const PODocumentPreview = forwardRef<HTMLDivElement, Props>(({
             <img src={signatureData} alt="Signature" className="h-10 object-contain" style={{ maxWidth: '150px' }} />
           </div>
         )}
-        <p className="font-bold text-gray-800" style={{ fontSize: '11px' }}>Sumehr Rajnish Gwalani</p>
-        <p className="text-gray-600" style={{ fontSize: '11px' }}>GANESH INTERNATIONAL</p>
+        <p className="font-bold text-gray-800" style={{ fontSize: '11px' }}>{orgSettings?.contact_name || 'Sumehr Rajnish Gwalani'}</p>
+        <p className="text-gray-600" style={{ fontSize: '11px' }}>{(orgSettings?.company_name || 'GANESH INTERNATIONAL').toUpperCase()}</p>
         {(status === 'approved' || status === 'sent') && signatureData ? (
           <div className="mt-0.5 inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded" style={{ fontSize: '10px' }}>
             ✓ Digitally Signed & Approved

@@ -31,7 +31,7 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   const isOwner = userRole === 'owner';
 
   // Organization tab
-  const [orgFormData, setOrgFormData] = useState({ name: '', address: '', city: '', country: '', phone: '', gstNumber: '', taxId: '' });
+  const [orgFormData, setOrgFormData] = useState({ name: '', companyName: '', contactName: '', address: '', city: '', country: '', phone: '', gstNumber: '', taxId: '' });
 
   // Profile tab
   const [profileFormData, setProfileFormData] = useState({ displayName: '', phone: '' });
@@ -130,6 +130,17 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
   useEffect(() => {
     if (orgName) setOrgFormData(prev => ({ ...prev, name: orgName }));
     if (orgSettings) {
+      setOrgFormData(prev => ({
+        ...prev,
+        companyName: orgSettings.company_name || '',
+        contactName: orgSettings.contact_name || '',
+        address: orgSettings.address || '',
+        city: orgSettings.city || '',
+        country: orgSettings.country || '',
+        phone: orgSettings.phone || '',
+        gstNumber: orgSettings.gst_number || '',
+        taxId: orgSettings.tax_id || '',
+      }));
       setCurrencyFormData({
         currency: orgSettings.default_currency || 'USD',
         weightUnit: orgSettings.weight_unit || 'kg',
@@ -168,6 +179,8 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
       return;
     }
     const { error: settingsError } = await updateOrgSettings({
+      company_name: orgFormData.companyName || null,
+      contact_name: orgFormData.contactName || null,
       address: orgFormData.address || null,
       city: orgFormData.city || null,
       country: orgFormData.country || null,
@@ -353,8 +366,19 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
             {isOwner && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                  <input type="text" value={orgFormData.name} onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
+                  <input type="text" value={orgFormData.name} onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Display name for your organization" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Trading Company Name</label>
+                    <input type="text" value={orgFormData.companyName} onChange={(e) => setOrgFormData({ ...orgFormData, companyName: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Ganesh International" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                    <input type="text" value={orgFormData.contactName} onChange={(e) => setOrgFormData({ ...orgFormData, contactName: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Sumehr Gwalani" />
+                  </div>
                 </div>
 
                 <div>

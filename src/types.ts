@@ -208,6 +208,8 @@ export interface Invitation {
 export interface OrganizationSettings {
   id: string;
   organization_id: string;
+  company_name: string | null;
+  contact_name: string | null;
   logo_url: string | null;
   address: string | null;
   city: string | null;

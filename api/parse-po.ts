@@ -25,7 +25,7 @@ interface Buyer {
   country?: string;
 }
 
-const SYSTEM_PROMPT = `You are an expert seafood trading order parser for Ganesh International, a frozen foods trading company. Your task is to extract structured purchase order data from natural language input.
+function getSystemPrompt(companyName: string) { return `You are an expert seafood trading order parser for ${companyName}, a frozen foods trading company. Your task is to extract structured purchase order data from natural language input.
 
 CRITICAL: Return ONLY valid JSON. No explanation, no markdown, no code fences. Just the JSON object.
 
@@ -160,7 +160,7 @@ When quantity is determined to be kilos:
 - Use the container sanity check (17,000–22,000 kg per container) to determine which format the input uses
 - "kilos" and "pricePerKg" should be numbers, not strings
 - If glaze is mentioned with "marked as" or "marked", put in glazeMarked
-- If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`;
+- If only one glaze percentage, put it in "glaze" and leave "glazeMarked" empty`; }
 
 
 
@@ -190,13 +190,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured.' })
     }
 
-    let rawText: string, suppliers: any[], buyers: any[]
+    let rawText: string, suppliers: any[], buyers: any[], organizationId: string | undefined
     try {
       rawText = req.body.rawText
       suppliers = Array.isArray(req.body.suppliers) ? req.body.suppliers : []
       buyers = Array.isArray(req.body.buyers) ? req.body.buyers : []
+      organizationId = req.body.organization_id
     } catch {
       return res.status(400).json({ error: 'Invalid request body.' })
+    }
+
+    // Fetch org company name
+    let companyName = 'Unknown Trading Company'
+    if (organizationId) {
+      const supabaseService = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnon)
+      const { data: orgRow } = await supabaseService.from('organization_settings').select('company_name').eq('organization_id', organizationId).single()
+      if (orgRow?.company_name) companyName = orgRow.company_name
     }
 
     if (!rawText || !rawText.trim()) {
@@ -228,7 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 4096,
-          system: SYSTEM_PROMPT,
+          system: getSystemPrompt(companyName),
           messages: [
             { role: 'user', content: userMessage }
           ],

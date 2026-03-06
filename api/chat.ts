@@ -56,6 +56,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Not a member of this organization' })
     }
 
+    // Fetch company name for AI context
+    const { data: orgSettingsRow } = await supabase.from('organization_settings').select('company_name').eq('organization_id', organization_id).single()
+    const companyName = orgSettingsRow?.company_name || 'Unknown Trading Company'
+
     // Fetch all orders with history and line items
     let orders: any[] = []
     const { data: orderData, error: orderErr } = await supabase
@@ -142,7 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return summary
     }).join('\n\n')
 
-    const systemPrompt = `You are an AI assistant for Ganesh International, a global frozen seafood trading company. You help the user search through and understand their purchase orders.
+    const systemPrompt = `You are an AI assistant for ${companyName}, a global frozen seafood trading company. You help the user search through and understand their purchase orders.
 
 Answer the user's question based ONLY on the order data provided below. Be concise and specific. If you can't find the answer in the data, say so.
 

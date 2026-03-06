@@ -97,23 +97,31 @@ function buildTotalRow(cols: ReturnType<typeof detectColumns>, totalCases: numbe
 }
 
 // Company header block (shared between PO and PI)
-function companyHeader(): string {
+function companyHeader(orgSettings?: { company_name?: string | null; address?: string | null; phone?: string | null; smtp_from_email?: string | null } | null): string {
+  const companyName = orgSettings?.company_name || 'GANESH INTERNATIONAL';
+  const address = orgSettings?.address || 'Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034';
+  const phone = orgSettings?.phone || '+91 22 2351 2345';
+  const email = orgSettings?.smtp_from_email || 'ganeshintnlmumbai@gmail.com';
+
   return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">
     <div>
-      <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0;">GANESH INTERNATIONAL</h2>
-      <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Office no. 226, 2nd Floor, Arun Chambers, Tardeo Road, Mumbai 400034</p>
-      <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Tel: +91 22 2351 2345 | Email: ganeshintnlmumbai@gmail.com</p>
+      <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0;">${companyName.toUpperCase()}</h2>
+      <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">${address}</p>
+      <p style="font-size:10px;color:#6b7280;margin:1px 0 0;line-height:1.3;">Tel: ${phone} | Email: ${email}</p>
     </div>
-    <img src="${GI_LOGO_URL}" alt="Ganesh International" style="width:60px;height:60px;object-fit:contain;" crossorigin="anonymous" />
+    <img src="${GI_LOGO_URL}" alt="${companyName}" style="width:60px;height:60px;object-fit:contain;" crossorigin="anonymous" />
   </div>`;
 }
 
 // Signature block (shared between PO and PI)
-function signatureBlock(): string {
+function signatureBlock(orgSettings?: { company_name?: string | null; contact_name?: string | null } | null): string {
+  const contactName = orgSettings?.contact_name || 'Sumehr Rajnish Gwalani';
+  const companyName = orgSettings?.company_name || 'GANESH INTERNATIONAL';
+
   return `<div style="margin-top:6px;page-break-inside:avoid;">
     ${getSignatureHtml()}
-    <p style="font-weight:700;margin:0;color:#1f2937;font-size:11px;">Sumehr Rajnish Gwalani</p>
-    <p style="color:#4b5563;margin:1px 0 0;font-size:11px;">GANESH INTERNATIONAL</p>
+    <p style="font-weight:700;margin:0;color:#1f2937;font-size:11px;">${contactName}</p>
+    <p style="color:#4b5563;margin:1px 0 0;font-size:11px;">${companyName.toUpperCase()}</p>
     <div style="margin-top:2px;display:inline-block;padding:2px 6px;background:#dcfce7;color:#15803d;border-radius:4px;font-size:9px;">&#10003; Digitally Signed &amp; Approved</div>
   </div>`;
 }
@@ -146,6 +154,7 @@ export interface PdfData {
   totalCases: number;
   piNumber?: string;
   isRevised?: boolean;
+  orgSettings?: { company_name?: string | null; contact_name?: string | null; address?: string | null; phone?: string | null; smtp_from_email?: string | null } | null;
 }
 
 export function buildPOHtml(d: PdfData): string {
@@ -157,7 +166,7 @@ export function buildPOHtml(d: PdfData): string {
 
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
-      ${companyHeader()}
+      ${companyHeader(d.orgSettings)}
 
       ${d.isRevised ? `<div style="text-align:center;margin-bottom:6px;"><span style="background:#dc2626;color:#fff;padding:3px 14px;border-radius:4px;font-weight:700;font-size:13px;letter-spacing:1px;">REVISED</span></div>` : ''}
 
@@ -231,7 +240,7 @@ export function buildPOHtml(d: PdfData): string {
         <p style="margin:4px 0 0;">Thanking You,</p>
       </div>
 
-      ${signatureBlock()}
+      ${signatureBlock(d.orgSettings)}
 
       <!-- Footer -->
       <div style="margin-top:8px;padding-top:4px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;">
@@ -252,7 +261,7 @@ export function buildPIHtml(d: PdfData): string {
 
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;padding:12px 20px;max-width:800px;margin:0 auto;color:#1f2937;font-size:11px;line-height:1.35;">
-      ${companyHeader()}
+      ${companyHeader(d.orgSettings)}
 
       <!-- Title -->
       <div style="text-align:center;margin-bottom:10px;">
@@ -310,7 +319,7 @@ export function buildPIHtml(d: PdfData): string {
         <p style="margin:4px 0 0;">Thanking You,</p>
       </div>
 
-      ${signatureBlock()}
+      ${signatureBlock(d.orgSettings)}
 
       <!-- Footer -->
       <div style="margin-top:8px;padding-top:4px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;">
