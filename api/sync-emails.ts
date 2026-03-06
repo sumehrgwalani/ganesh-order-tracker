@@ -474,12 +474,12 @@ Calculate for each line item:
 - If quantity = kilos: cases = kilos / kg_per_case (round to nearest whole number), total = kilos × pricePerKg
 
 Known context:
-- Buyer: ${orderCompany || 'Unknown'}
+- Buyer: ${orgType === 'intermediary' ? 'Unknown — must be extracted from document (NOT ${companyName}, they are the intermediary)' : (orderCompany || 'Unknown')}
 
 Return this JSON structure:
 {
   "supplier": "The supplier/seller company name from the document",
-  "buyer": "The buyer/importer company name from the document. Look for company names in the 'BUYER', 'IMPORTER', 'CONSIGNEE', 'NOTIFY PARTY', 'CUSTOMER' or 'FOR' field. ${buyerRoleNote}. Common buyers: Pescados E. Guillem S.L., Silver Sea Food, etc.",
+  "buyer": "The buyer/importer company name from the document. Look for company names in the 'BUYER', 'IMPORTER', 'CONSIGNEE', 'NOTIFY PARTY', 'CUSTOMER' or 'FOR' field. Also check letter headers like 'Dear [Company]' or 'Attn: [Company]'. ${buyerRoleNote}. ${orgType === 'intermediary' ? `IMPORTANT: ${companyName} is NOT the buyer — they issued this PO as an intermediary. The buyer is whoever ${companyName} is buying on behalf of.` : ''} Common buyers: Pescados E. Guillem S.L., Silver Sea Food, etc.",
   "quantityInterpretation": "cartons or kilos — which interpretation you chose and why (brief)",
   "lineItems": [
     {
@@ -3641,6 +3641,40 @@ If truly unknown, return "Unknown" for that field.` }],
                   } // end else (no existing line items for PDF extraction)
               } catch (pdfErr) {
                 console.log(`[RECOVER] Stored PDF extraction failed for ${order.order_id}: ${pdfErr}`)
+              }
+            }
+          }
+
+          // Fallback: if buyer is still companyName for intermediary orgs, try to detect from email senders
+          if (orgType === 'intermediary') {
+            const { data: currentOrder } = await supabase.from('orders').select('company').eq('id', order.id).single()
+            const curCompany = (currentOrder?.company || '').toLowerCase()
+            if (!currentOrder?.company || curCompany === 'unknown' || curCompany === companyName.toLowerCase()) {
+              // Look through emails for this order — find senders that aren't our company or the supplier
+              const { data: orderEmailsForBuyer } = await supabase
+                .from('synced_emails')
+                .select('from_name, from_email')
+                .eq('matched_order_id', order.order_id)
+                .eq('organization_id', organization_id)
+                .limit(20)
+              if (orderEmailsForBuyer) {
+                const supplierLower = (order.supplier || '').toLowerCase()
+                const companyLower = companyName.toLowerCase()
+                const companyFirst = companyLower.split(' ')[0]
+                for (const em of orderEmailsForBuyer) {
+                  const senderName = (em.from_name || '').trim()
+                  const senderLower = senderName.toLowerCase()
+                  if (!senderName || senderLower.includes(companyFirst) || senderLower.includes(supplierLower.split(' ')[0])) continue
+                  // Skip generic senders
+                  if (senderLower.includes('noreply') || senderLower.includes('mailer') || senderName.length < 3) continue
+                  // This sender is likely the buyer
+                  const buyerName = normalizeCompanyName(senderName)
+                  if (buyerName && buyerName !== 'Unknown') {
+                    await supabase.from('orders').update({ company: buyerName }).eq('id', order.id)
+                    console.log(`[RECOVER] Set buyer from email sender for ${order.order_id}: "${currentOrder?.company}" → "${buyerName}"`)
+                    break
+                  }
+                }
               }
             }
           }
