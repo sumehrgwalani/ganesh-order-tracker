@@ -1350,6 +1350,42 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
         </div>
       </div>
 
+      {/* Shipping Details Card — only shown when shipping data exists */}
+      {(order.containerNumber || order.vesselName || order.blNumber || order.etd || order.eta) && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Shipping Details</h2>
+          <div className="grid grid-cols-4 gap-6">
+            {order.containerNumber && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Container</p>
+                <p className="font-mono text-sm font-medium text-gray-800">{order.containerNumber}</p>
+                {order.sealNumber && <p className="text-xs text-gray-500 mt-0.5">Seal: {order.sealNumber}</p>}
+              </div>
+            )}
+            {order.vesselName && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vessel</p>
+                <p className="font-medium text-gray-800">{order.vesselName}</p>
+                {order.shippingLine && <p className="text-xs text-gray-500 mt-0.5">{order.shippingLine}</p>}
+              </div>
+            )}
+            {order.blNumber && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">B/L Number</p>
+                <p className="font-mono text-sm font-medium text-gray-800">{order.blNumber}</p>
+              </div>
+            )}
+            {(order.etd || order.eta) && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Schedule</p>
+                {order.etd && <p className="text-sm text-gray-800">ETD: <span className="font-medium">{new Date(order.etd).toLocaleDateString()}</span></p>}
+                {order.eta && <p className="text-sm text-gray-800">ETA: <span className="font-medium">{new Date(order.eta).toLocaleDateString()}</span></p>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Documents Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Documents</h2>

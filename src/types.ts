@@ -107,6 +107,13 @@ export interface Order {
   lineItems?: OrderLineItem[];
   metadata?: Record<string, any>;
   history: HistoryEntry[];
+  containerNumber?: string;
+  sealNumber?: string;
+  vesselName?: string;
+  blNumber?: string;
+  shippingLine?: string;
+  etd?: string;
+  eta?: string;
 }
 
 export interface ProductInquiry {

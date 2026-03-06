@@ -26,6 +26,8 @@ interface DbOrderRow {
   delivery_terms?: string; payment_terms?: string; commission?: string;
   metadata?: Record<string, unknown>; order_line_items?: DbLineItem[];
   order_history?: DbHistoryRow[];
+  container_number?: string; seal_number?: string; vessel_name?: string;
+  bl_number?: string; shipping_line?: string; etd?: string; eta?: string;
 }
 
 export function useOrders(orgId: string | null) {
@@ -102,6 +104,13 @@ export function useOrders(orgId: string | null) {
       payment_terms: row.payment_terms || '',
       commission: row.commission || '',
       metadata: row.metadata || undefined,
+      containerNumber: row.container_number || undefined,
+      sealNumber: row.seal_number || undefined,
+      vesselName: row.vessel_name || undefined,
+      blNumber: row.bl_number || undefined,
+      shippingLine: row.shipping_line || undefined,
+      etd: row.etd || undefined,
+      eta: row.eta || undefined,
       lineItems: (() => {
         const sorted = (row.order_line_items || [])
           .sort((a: DbLineItem, b: DbLineItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
