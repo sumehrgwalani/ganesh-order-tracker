@@ -18,17 +18,32 @@ const STAGE_NAMES: Record<number, string> = {
   9: 'DHL Number',
 }
 
-// Extract JSON array from AI response (handles markdown code blocks, preamble text, etc.)
+// Extract JSON array from AI response (handles markdown code blocks, preamble text, truncation)
 function extractJSONArray(text: string): any[] | null {
   // Strip markdown code fences
   const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim()
   // Find the first [ and last ] to extract the JSON array
   const start = cleaned.indexOf('[')
   const end = cleaned.lastIndexOf(']')
-  if (start === -1 || end <= start) return null
+  if (start === -1 || end <= start) {
+    console.log('[AGENTS] extractJSONArray: no brackets found. start:', start, 'end:', end)
+    return null
+  }
+  const jsonStr = cleaned.substring(start, end + 1)
   try {
-    return JSON.parse(cleaned.substring(start, end + 1))
-  } catch {
+    return JSON.parse(jsonStr)
+  } catch (e: any) {
+    console.log('[AGENTS] extractJSONArray: JSON.parse failed:', e.message)
+    // If truncated, try to salvage complete objects
+    const lastComplete = jsonStr.lastIndexOf('},')
+    if (lastComplete > 0) {
+      const salvaged = jsonStr.substring(0, lastComplete + 1) + ']'
+      try {
+        const result = JSON.parse(salvaged)
+        console.log(`[AGENTS] extractJSONArray: salvaged ${result.length} items from truncated response`)
+        return result
+      } catch { /* can't salvage */ }
+    }
     return null
   }
 }
@@ -143,7 +158,8 @@ async function runFollowUpAgent(supabase: any, orgId: string, apiKey: string, co
 STALLED ORDERS:
 ${orderSummaries}
 
-Respond as JSON array:
+IMPORTANT: Return ONLY a JSON array, no markdown fences, no extra text. Keep draft_body to 2-3 sentences max. Limit to the 8 most urgent orders.
+
 [{
   "po_number": "...",
   "title": "...",
@@ -154,10 +170,9 @@ Respond as JSON array:
   "recipient_role": "supplier|buyer|both"
 }]
 
-Priority guide: high = stage 1-3 stalled 5+ days, medium = stage 4-5 stalled 3+ days, low = stage 6.
-Keep draft emails concise (3-5 sentences), professional, and specific to the order context.`
+Priority guide: high = stage 1-3 stalled 5+ days, medium = stage 4-5 stalled 3+ days, low = stage 6.`
 
-  const aiResponse = await callAI(apiKey, prompt, systemPrompt, 2000)
+  const aiResponse = await callAI(apiKey, prompt, systemPrompt, 4000)
 
   // Parse AI response
   let insights: any[] = []
