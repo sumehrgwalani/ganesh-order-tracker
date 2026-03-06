@@ -922,7 +922,7 @@ async function validatePOvsPI(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-3-5-20241022',
+        model: 'claude-sonnet-4-5-20250514',
         max_tokens: 10,
         messages: [{
           role: 'user',
