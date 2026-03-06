@@ -3289,6 +3289,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           /PO\s*(?:GI\/PO\/\d{2}-\d{2}\/)?(3\d{3})/gi,
           /GI\/PO\/\d{2}-\d{2}\/(3\d{3})/gi,
           /(?:purchase\s+order|PO)\s*#?\s*(3\d{3})/gi,
+          /EG[\s\-]*(3\d{3})/gi,                              // "SHIPMENT SCHEDULE-EG 3038"
           /(3\d{3})\s*(?:eguillem|guillem|label|artwork)/gi,  // "3034eguillem-label389"
         ]
         for (const pattern of poPatterns) {
@@ -3579,6 +3580,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Build set of existing order IDs for validation
       const existingOrderIdSet = new Set(ordersList.map((o: any) => o.id))
 
+      // Build sender→order history from already-matched emails for cross-validation
+      // If a sender has sent emails about an order before, we trust new AI matches to that order
+      const { data: senderHistory } = await supabase
+        .from('synced_emails')
+        .select('from_email, matched_order_id')
+        .eq('organization_id', organization_id)
+        .not('matched_order_id', 'is', null)
+        .not('from_email', 'is', null)
+      const senderOrderMap = new Map<string, Set<string>>()
+      for (const sh of (senderHistory || [])) {
+        const addr = (sh.from_email || '').toLowerCase()
+        if (!addr) continue
+        if (!senderOrderMap.has(addr)) senderOrderMap.set(addr, new Set())
+        senderOrderMap.get(addr)!.add(sh.matched_order_id)
+      }
+      // Also map email domains to orders (e.g. eguillem.com → orders from that domain)
+      const domainOrderMap = new Map<string, Set<string>>()
+      for (const [addr, orders] of senderOrderMap) {
+        const domain = addr.split('@')[1]
+        if (!domain) continue
+        if (!domainOrderMap.has(domain)) domainOrderMap.set(domain, new Set())
+        for (const oid of orders) domainOrderMap.get(domain)!.add(oid)
+      }
+
+      // Build order→supplier lookup for cross-validation
+      const orderSupplierMap = new Map<string, string>()
+      for (const order of ordersList) {
+        orderSupplierMap.set(order.id, (order.supplier || '').toLowerCase())
+      }
+
       for (const email of aiEmails) {
         const ai = aiMap.get(email.gmail_id) || {}
         let matchedOrderId = ai.matched_order_id || null
@@ -3619,6 +3650,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             })
             .eq('id', email.id)
           continue
+        }
+
+        // Cross-validate medium-confidence matches: verify sender has a connection to the order
+        // Skip validation for internal emails (from the org's own domain) and high-confidence matches
+        if (confidence === 'medium' && matchedOrderId) {
+          const senderAddr = (email.from_email || '').toLowerCase()
+          const senderDomain = senderAddr.split('@')[1] || ''
+          const orgDomains = ['ganeshinternational.com', 'ganeshintnlmumbai']  // internal domains
+          const isInternal = orgDomains.some(d => senderAddr.includes(d))
+
+          if (!isInternal) {
+            // Check: has this sender emailed about this order before?
+            const senderOrders = senderOrderMap.get(senderAddr) || new Set()
+            // Check: has anyone from this domain emailed about this order?
+            const domainOrders = domainOrderMap.get(senderDomain) || new Set()
+
+            if (!senderOrders.has(matchedOrderId) && !domainOrders.has(matchedOrderId)) {
+              // No prior connection — demote to suggestion
+              console.log(`[AI CROSSCHECK] Medium confidence "${email.subject}" → ${matchedOrderId} demoted: sender ${senderAddr} has no history with this order`)
+              await supabase
+                .from('synced_emails')
+                .update({
+                  ai_suggested_order_id: matchedOrderId,
+                  detected_stage: detectedStage,
+                  ai_summary: `[Needs review] ${summary || ''}`,
+                  ai_confidence: 'low',
+                })
+                .eq('id', email.id)
+              continue
+            }
+          }
         }
 
         // MEDIUM confidence: link but don't auto-advance stage
