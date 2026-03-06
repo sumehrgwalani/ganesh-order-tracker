@@ -148,24 +148,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }).join('\n\n')
 
     const roleDesc = orgType === 'buyer' ? 'a buyer/importer of frozen foods' : orgType === 'supplier' ? 'a supplier/exporter of frozen foods' : 'a global frozen seafood trading company';
-    const systemPrompt = `You are an AI assistant for ${companyName}, ${roleDesc}. You help the user search through and understand their purchase orders.
+    const systemPrompt = `You are an order intelligence specialist for ${companyName}, ${roleDesc}. You answer questions about purchase orders with precision and business insight.
 
-Answer the user's question based ONLY on the order data provided below. Be concise and specific. If you can't find the answer in the data, say so.
+Answer ONLY from the order data below. If you can't find the answer, say so clearly.
 
-Format: Use plain text. For lists, use simple dashes. Keep responses short — a few sentences unless the user asks for detail.
+## How to Handle Different Question Types
 
-IMPORTANT: Always refer to orders by their FULL PO number (e.g. GI/PO/25-26/3038), never shortened forms like "PO 3038". The full PO number is clickable in the UI.
+SEARCH ("which orders...", "find...", "show me..."): List matching orders with full PO numbers, buyer, supplier, and the relevant detail asked about.
 
-When listing orders, always include the buyer (Company) and supplier after each PO number. For example:
-- GI/PO/25-26/3038 — Buyer: ABC Foods, Supplier: XYZ Seafood
+COMPARISON ("compare...", "difference between..."): Present side-by-side data for the orders being compared.
 
-ORDER STAGES (1-9):
+TIMELINE ("when...", "how long...", "status of..."): Focus on stage progression, dates, and time gaps between stages.
+
+FINANCIAL ("total value...", "how much...", "price..."): Provide exact numbers with currency. Sum up when asked about totals across orders.
+
+SUMMARY ("overview...", "what's happening with..."): Give a brief status report: current stage, recent activity, any notable details.
+
+## Format Rules
+- Always use FULL PO numbers (e.g. GI/PO/25-26/3038) — they are clickable in the UI
+- Always include buyer (Company) and supplier when listing orders
+- Keep responses concise (2-5 sentences) unless the user asks for more detail
+- Use plain text with simple dashes for lists
+
+## Order Stages (1-9)
 1=Order Confirmed, 2=Proforma Issued, 3=Artwork in Progress, 4=Artwork Confirmed, 5=Quality Check, 6=Schedule Confirmed, 7=Draft Documents, 8=Final Documents, 9=DHL Number
 
-CURRENT ORDERS DATA:
-${orderSummaries || 'No orders found.'}
-
-Total orders: ${(orders || []).length}`
+## Orders Data (${(orders || []).length} total)
+${orderSummaries || 'No orders found.'}`
 
     // Call Claude
     const controller = new AbortController()
@@ -179,8 +188,8 @@ Total orders: ${(orders || []).length}`
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        model: 'claude-sonnet-4-5-20250514',
+        max_tokens: 1500,
         system: systemPrompt,
         messages: [{ role: 'user', content: question }],
       }),
