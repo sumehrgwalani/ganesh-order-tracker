@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from '../components/StatsCard';
 import AIChatBox from '../components/AIChatBox';
-import RecentChangesBox from '../components/RecentChangesBox';
-import AgentInsightsPanel from '../components/AgentInsightsPanel';
+import CommandCenter from '../components/CommandCenter';
 import ComposeEmailModal from '../components/ComposeEmailModal';
 import type { Stats } from '../types';
 
@@ -20,18 +19,13 @@ function DashboardContent({ stats, orgId }: Props) {
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
       {orgId && (
-        <>
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <AIChatBox orgId={orgId} />
-            <RecentChangesBox orgId={orgId} />
-          </div>
-          <div className="mb-6">
-            <AgentInsightsPanel
-              orgId={orgId}
-              onComposeEmail={(draft) => setComposeDraft(draft)}
-            />
-          </div>
-        </>
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <AIChatBox orgId={orgId} />
+          <CommandCenter
+            orgId={orgId}
+            onComposeEmail={(draft) => setComposeDraft(draft)}
+          />
+        </div>
       )}
       <div className="grid grid-cols-5 gap-4 mb-8">
         <StatsCard icon="Package" title="Active Orders" value={stats.active} color="primary" onClick={() => navigate('/orders')} trend="+2 this week" />
