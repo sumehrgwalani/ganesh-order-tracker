@@ -474,6 +474,7 @@ Known context:
 Return this JSON structure:
 {
   "supplier": "The supplier/seller company name from the document",
+  "buyer": "The buyer/importer company name from the document (NOT Ganesh International — they are the intermediary). Look for company names in the 'BUYER', 'IMPORTER', 'CONSIGNEE', 'NOTIFY PARTY', 'CUSTOMER' or 'FOR' field. Common buyers: Pescados E. Guillem S.L., Silver Sea Food, etc.",
   "quantityInterpretation": "cartons or kilos — which interpretation you chose and why (brief)",
   "lineItems": [
     {
@@ -1091,6 +1092,14 @@ async function processEmailAttachments(
               }
             }
           }
+          // Update buyer/company from PO extraction if currently wrong (Ganesh International is the intermediary, not the buyer)
+          if (extractedData.buyer && extractedData.buyer !== 'Unknown' && extractedData.buyer !== 'Ganesh International') {
+            const currentCompany = (orderRow?.company || '').toLowerCase()
+            if (!orderRow?.company || currentCompany === 'unknown' || currentCompany === 'ganesh international' || currentCompany.includes('ganesh')) {
+              updates.company = normalizeCompanyName(extractedData.buyer)
+              console.log(`[PROCESS] Updated buyer for ${matchedOrderId}: "${orderRow?.company}" → "${updates.company}"`)
+            }
+          }
           await supabase.from('orders').update(updates).eq('id', orderUuid)
 
           // Enrich stage 1 history with line item data
@@ -1533,8 +1542,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           for (const [shortPO, ref] of discoveredPOs) {
             const fullPO = `GI/PO/25-26/${shortPO}`
             const emails = discoveredPOEmails.get(shortPO) || []
-            // Guess company from sender
-            const company = ref.from_name || ref.from_email?.split('@')[1]?.split('.')[0] || 'Unknown'
+            // Don't guess company/buyer from sender — Ganesh International is the intermediary, not the buyer
+            // The buyer will be corrected later when the PO document is extracted
+            const senderName = ref.from_name || ref.from_email?.split('@')[1]?.split('.')[0] || ''
+            const isGanesh = senderName.toLowerCase().includes('ganesh')
+            const company = isGanesh ? 'Unknown' : (senderName || 'Unknown')
 
             // Extract supplier from email subjects (same logic as email_sync_auto)
             let supplier = 'Unknown'
