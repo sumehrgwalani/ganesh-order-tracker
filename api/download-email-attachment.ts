@@ -136,13 +136,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
     // 3. Find matching synced_email by subject + order
+    // Use .eq() instead of .ilike() for exact match to prevent SQL injection via wildcards
     const { data: syncedEmails } = await supabase
       .from('synced_emails')
       .select('gmail_id, subject, has_attachment')
       .eq('organization_id', organization_id)
       .eq('matched_order_id', order.order_id)
       .eq('has_attachment', true)
-      .ilike('subject', historyEntry.subject?.substring(0, 100) || '')
+      .eq('subject', historyEntry.subject?.substring(0, 100) || '')
       .limit(1)
 
     // Fallback: try broader match if exact subject didn't work

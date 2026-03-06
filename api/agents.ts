@@ -18,6 +18,11 @@ const STAGE_NAMES: Record<number, string> = {
   9: 'DHL Number',
 }
 
+// Strip markdown code blocks from AI response before JSON parsing
+function stripMarkdown(text: string): string {
+  return text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '')
+}
+
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
   res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type')
@@ -147,7 +152,7 @@ Keep draft emails concise (3-5 sentences), professional, and specific to the ord
   // Parse AI response
   let insights: any[] = []
   try {
-    const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
+    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       insights = JSON.parse(jsonMatch[0])
     } else {
@@ -239,11 +244,14 @@ async function runComposeAgent(supabase: any, orgId: string, apiKey: string, com
     .limit(5)
 
   // Fetch contacts for this order's supplier/company
+  // Sanitize values for Supabase .or() filter to prevent injection
+  const safeSup = (order.supplier || '').replace(/[%_,()]/g, '')
+  const safeCo = (order.company || '').replace(/[%_,()]/g, '')
   const { data: contacts } = await supabase
     .from('contacts')
     .select('email, name, company, role')
     .eq('organization_id', orgId)
-    .or(`company.ilike.%${order.supplier}%,company.ilike.%${order.company}%`)
+    .or(`company.ilike.%${safeSup}%,company.ilike.%${safeCo}%`)
     .limit(5)
 
   const emailTrail = (history || []).map((h: any) =>
@@ -368,7 +376,7 @@ If no payment concerns, return empty array [].`
 
   let insights: any[] = []
   try {
-    const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
+    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       insights = JSON.parse(jsonMatch[0])
     } else {
@@ -509,7 +517,7 @@ Respond as JSON array:
 
   let scores: any[] = []
   try {
-    const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
+    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       scores = JSON.parse(jsonMatch[0])
     } else {

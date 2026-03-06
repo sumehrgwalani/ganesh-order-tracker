@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
 import { apiCall } from '../utils/api';
 import type { Order } from '../types';
+import DOMPurify from 'dompurify';
 
 interface Props {
   orgId: string | null;
@@ -53,6 +54,15 @@ function EmailHtmlRenderer({ html }: { html: string }) {
     const doc = iframe.contentDocument;
     if (!doc) return;
 
+    // Sanitize the HTML to prevent XSS attacks
+    const clean = DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['b','i','em','strong','u','a','p','br','table','tr','td','th','thead','tbody','div','span','pre','code','blockquote','hr','img','ul','ol','li','h1','h2','h3','h4','h5','h6','font','center','small'],
+      ALLOWED_ATTR: ['href','src','alt','title','width','height','style','class','colspan','rowspan','align','valign','color','bgcolor','border','cellpadding','cellspacing'],
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script','iframe','object','embed','form','input','button','select','textarea','link','meta'],
+      FORBID_ATTR: ['onerror','onload','onclick','onmouseover','onfocus','onblur'],
+    });
+
     // Write the HTML with some base styling for dark theme readability
     doc.open();
     doc.write(`
@@ -81,7 +91,7 @@ function EmailHtmlRenderer({ html }: { html: string }) {
           hr { border: none; border-top: 1px solid rgba(56,189,248,0.08); margin: 16px 0; }
         </style>
       </head>
-      <body>${html}</body>
+      <body>${clean}</body>
       </html>
     `);
     doc.close();
@@ -101,7 +111,7 @@ function EmailHtmlRenderer({ html }: { html: string }) {
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-same-origin"
+      sandbox=""
       style={{
         width: '100%', border: 'none', minHeight: 200, background: 'transparent',
       }}
