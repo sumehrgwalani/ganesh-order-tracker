@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
-import PageHeader from '../components/PageHeader';
 import LinkEmailModal from '../components/LinkEmailModal';
 import { useSyncedEmails, SyncedEmail } from '../hooks/useSyncedEmails';
 import { useToast } from '../components/Toast';
@@ -19,6 +18,30 @@ type SyncPhase = 'idle' | 'pulling' | 'matching' | 'reprocessing' | 'extracting'
 type Folder = 'inbox' | 'sent' | 'drafts';
 type Filter = 'all' | 'matched' | 'unmatched' | 'reviewed';
 
+// ── Futuristic theme constants ──
+const theme = {
+  mainBg: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+  cardBg: 'rgba(15, 23, 42, 0.6)',
+  cardBorder: '1px solid rgba(56, 189, 248, 0.1)',
+  cardBorderHover: 'rgba(56, 189, 248, 0.25)',
+  outerBorder: '1px solid rgba(56, 189, 248, 0.15)',
+  outerShadow: '0 0 30px rgba(56, 189, 248, 0.05), 0 4px 20px rgba(0,0,0,0.15)',
+  glowLine: 'linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent)',
+  iconGradient: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+  iconGlow: '0 0 12px rgba(59, 130, 246, 0.3)',
+  activeBtn: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+  activeBtnGlow: '0 0 15px rgba(59, 130, 246, 0.25)',
+  textPrimary: '#e2e8f0',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  textCyan: '#38bdf8',
+  sidebarBg: 'rgba(15, 23, 42, 0.8)',
+  listBg: 'rgba(15, 23, 42, 0.4)',
+  divider: 'rgba(56, 189, 248, 0.08)',
+  selectedRow: 'rgba(56, 189, 248, 0.08)',
+  hoverRow: 'rgba(56, 189, 248, 0.04)',
+};
+
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
   const { inboxEmails, sentEmails, draftEmails, matchedEmails, unmatchedEmails, reviewedEmails, loading, linkEmailToOrder, unlinkEmail, dismissEmail, markReviewed, unmarkReviewed, refetch } = useSyncedEmails(orgId);
@@ -29,6 +52,9 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [linkingEmail, setLinkingEmail] = useState<SyncedEmail | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [hoveredEmailId, setHoveredEmailId] = useState<string | null>(null);
+  const [hoveredFolder, setHoveredFolder] = useState<Folder | null>(null);
+  const [hoveredFilter, setHoveredFilter] = useState<Filter | null>(null);
   const readingPaneRef = useRef<HTMLDivElement>(null);
 
   // Sync state
@@ -260,7 +286,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
     return list;
   }, [folderEmails, activeFilter, searchTerm]);
 
-  // Filter counts for current folder
   const folderMatchedCount = folderEmails.filter(e => e.matched_order_id || e.user_linked_order_id).length;
   const folderUnmatchedCount = folderEmails.filter(e => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && !e.reviewed).length;
   const folderReviewedCount = folderEmails.filter(e => e.reviewed && !e.matched_order_id && !e.user_linked_order_id).length;
@@ -268,7 +293,6 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const isSyncing = syncPhase !== 'idle' && syncPhase !== 'done';
   const selectedEmail = filteredEmails.find(e => e.id === selectedEmailId) || null;
 
-  // Auto-select first email when folder/filter changes
   useEffect(() => {
     if (filteredEmails.length > 0 && !filteredEmails.find(e => e.id === selectedEmailId)) {
       setSelectedEmailId(filteredEmails[0].id);
@@ -281,10 +305,14 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
   if (loading) {
     return (
-      <div>
-        <PageHeader title="Mailbox" subtitle="Email integration for order tracking" onBack={() => navigate('/')} />
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <div style={{ background: theme.mainBg, minHeight: '100vh', padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '80px' }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '3px solid rgba(56, 189, 248, 0.3)',
+            borderTopColor: '#38bdf8',
+            animation: 'spin 1s linear infinite',
+          }} />
         </div>
       </div>
     );
@@ -294,131 +322,198 @@ function MailboxPage({ orgId, orders, userId }: Props) {
   const isEmailUnmatched = (e: SyncedEmail) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && !e.reviewed;
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
-      {/* Header with sync buttons */}
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="text-gray-400 hover:text-gray-600">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 4 }}>
             <Icon name="ChevronLeft" size={20} />
           </button>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: theme.iconGradient, boxShadow: theme.iconGlow,
+          }}>
+            <Icon name="Mail" size={18} className="text-white" />
+          </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Mailbox</h1>
-            <p className="text-xs text-gray-400">Email integration for order tracking</p>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: theme.textPrimary, margin: 0, letterSpacing: '-0.01em' }}>Mailbox</h1>
+            <p style={{ fontSize: 11, color: theme.textMuted, margin: 0, marginTop: 1 }}>Email integration for order tracking</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleQuickSync} disabled={isSyncing}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isSyncing ? 'bg-gray-100 text-gray-400' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={handleQuickSync} disabled={isSyncing} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            border: theme.outerBorder, cursor: isSyncing ? 'default' : 'pointer',
+            background: isSyncing ? 'rgba(15, 23, 42, 0.4)' : theme.cardBg,
+            color: isSyncing ? theme.textMuted : theme.textSecondary,
+            transition: 'all 0.2s',
+          }}>
             <Icon name="Download" size={13} className={syncPhase === 'pulling' ? 'animate-bounce' : ''} />
             {syncPhase === 'pulling' ? 'Pulling...' : 'Quick Sync'}
           </button>
-          <button onClick={handleFullSync} disabled={isSyncing}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isSyncing ? 'bg-blue-50 text-blue-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+          <button onClick={handleFullSync} disabled={isSyncing} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            border: 'none', cursor: isSyncing ? 'default' : 'pointer',
+            background: isSyncing ? 'rgba(59, 130, 246, 0.2)' : theme.activeBtn,
+            boxShadow: isSyncing ? 'none' : theme.activeBtnGlow,
+            color: '#fff',
+            transition: 'all 0.2s',
+          }}>
             <Icon name="RefreshCw" size={13} className={isSyncing && syncPhase !== 'pulling' ? 'animate-spin' : ''} />
             {syncPhase === 'matching' ? 'Matching...' : syncPhase === 'reprocessing' ? 'Processing...' : syncPhase === 'extracting' ? 'Extracting...' : syncPhase === 'recovering' ? 'Recovering...' : syncPhase === 'done' ? 'Done!' : 'Full Sync'}
           </button>
         </div>
       </div>
 
-      {/* Sync progress banner */}
+      {/* ── Sync progress banner ── */}
       {syncPhase !== 'idle' && (
-        <div className={`mb-3 rounded-lg px-4 py-2.5 flex items-center gap-3 flex-shrink-0 ${syncPhase === 'done' ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'}`}>
-          {syncPhase !== 'done' && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-          {syncPhase === 'done' && <Icon name="CheckCircle" size={16} className="text-green-600 flex-shrink-0" />}
-          <div className="flex-1">
-            <p className={`text-xs font-medium ${syncPhase === 'done' ? 'text-green-800' : 'text-blue-800'}`}>{syncProgress}</p>
+        <div style={{
+          marginBottom: 12, borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+          background: syncPhase === 'done' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(56, 189, 248, 0.06)',
+          border: syncPhase === 'done' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(56, 189, 248, 0.15)',
+        }}>
+          {syncPhase !== 'done' && <div style={{ width: 16, height: 16, border: '2px solid #38bdf8', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+          {syncPhase === 'done' && <Icon name="CheckCircle" size={16} className="text-emerald-400" />}
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 500, color: syncPhase === 'done' ? '#34d399' : theme.textCyan, margin: 0 }}>{syncProgress}</p>
             {syncPhase === 'matching' && matchProgress.total > 0 && (
-              <div className="mt-1.5 h-1 bg-blue-200 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${Math.round(((matchProgress.total - matchProgress.remaining) / matchProgress.total) * 100)}%` }} />
+              <div style={{ marginTop: 6, height: 3, background: 'rgba(56, 189, 248, 0.1)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 4, transition: 'width 0.5s',
+                  background: theme.iconGradient,
+                  width: `${Math.round(((matchProgress.total - matchProgress.remaining) / matchProgress.total) * 100)}%`,
+                }} />
               </div>
             )}
             {syncPhase === 'done' && syncSummary && (
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {syncSummary.pulled > 0 && <span className="text-xs bg-white px-1.5 py-0.5 rounded border border-green-100"><b className="text-green-700">{syncSummary.pulled}</b> new</span>}
-                {syncSummary.totalMatched > 0 && <span className="text-xs bg-white px-1.5 py-0.5 rounded border border-green-100"><b className="text-blue-700">{syncSummary.totalMatched}</b>/{syncSummary.totalEmails} matched</span>}
-                {syncSummary.created > 0 && <span className="text-xs bg-white px-1.5 py-0.5 rounded border border-green-100"><b className="text-green-600">{syncSummary.created}</b> orders created</span>}
+              <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                {syncSummary.pulled > 0 && <span style={{ fontSize: 11, background: 'rgba(56, 189, 248, 0.08)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.1)', color: theme.textCyan }}><b>{syncSummary.pulled}</b> new</span>}
+                {syncSummary.totalMatched > 0 && <span style={{ fontSize: 11, background: 'rgba(56, 189, 248, 0.08)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.1)', color: theme.textCyan }}><b>{syncSummary.totalMatched}</b>/{syncSummary.totalEmails} matched</span>}
+                {syncSummary.created > 0 && <span style={{ fontSize: 11, background: 'rgba(16, 185, 129, 0.08)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.15)', color: '#34d399' }}><b>{syncSummary.created}</b> orders created</span>}
               </div>
             )}
           </div>
           {syncPhase === 'done' && (
-            <button onClick={() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }} className="text-gray-400 hover:text-gray-600">
+            <button onClick={() => { setSyncPhase('idle'); setSyncProgress(''); setSyncSummary(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 4 }}>
               <Icon name="X" size={14} />
             </button>
           )}
         </div>
       )}
 
-      {/* Main layout: Folder sidebar + Email list + Reading pane */}
-      <div className="flex-1 flex min-h-0 rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
+      {/* ── Main layout ── */}
+      <div style={{
+        flex: 1, display: 'flex', minHeight: 0, borderRadius: 16, overflow: 'hidden', position: 'relative',
+        border: theme.outerBorder, boxShadow: theme.outerShadow,
+        background: theme.mainBg,
+      }}>
+        {/* Top glow line */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 1, zIndex: 10,
+          background: theme.glowLine,
+        }} />
 
-        {/* Folder sidebar */}
-        <div className="w-[180px] flex-shrink-0 bg-gray-50 border-r border-gray-200 py-3 flex flex-col">
-          <div className="px-3 mb-2">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Folders</p>
+        {/* ── Folder sidebar ── */}
+        <div style={{
+          width: 180, flexShrink: 0, background: theme.sidebarBg, borderRight: `1px solid ${theme.divider}`,
+          padding: '14px 0', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{ padding: '0 14px', marginBottom: 8 }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Folders</p>
           </div>
-          {[
+          {([
             { key: 'inbox' as Folder, label: 'Inbox', icon: 'Inbox', count: inboxEmails.length },
             { key: 'sent' as Folder, label: 'Sent', icon: 'Send', count: sentEmails.length },
             { key: 'drafts' as Folder, label: 'Drafts', icon: 'Edit', count: draftEmails.length },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => { setActiveFolder(f.key); setActiveFilter('all'); setSelectedEmailId(null); }}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                activeFolder === f.key
-                  ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-600'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <Icon name={f.icon as any} size={16} />
-              <span className="text-sm font-medium flex-1">{f.label}</span>
-              <span className={`text-xs px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${
-                activeFolder === f.key ? 'bg-blue-200 text-blue-800' : 'bg-gray-200 text-gray-500'
-              }`}>{f.count}</span>
-            </button>
-          ))}
+          ]).map(f => {
+            const isActive = activeFolder === f.key;
+            const isHovered = hoveredFolder === f.key;
+            return (
+              <button
+                key={f.key}
+                onClick={() => { setActiveFolder(f.key); setActiveFilter('all'); setSelectedEmailId(null); }}
+                onMouseEnter={() => setHoveredFolder(f.key)}
+                onMouseLeave={() => setHoveredFolder(null)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
+                  textAlign: 'left', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                  background: isActive ? 'rgba(56, 189, 248, 0.1)' : isHovered ? 'rgba(56, 189, 248, 0.04)' : 'transparent',
+                  borderRight: isActive ? '2px solid #38bdf8' : '2px solid transparent',
+                  color: isActive ? theme.textCyan : theme.textSecondary,
+                }}
+              >
+                <Icon name={f.icon as any} size={16} />
+                <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{f.label}</span>
+                <span style={{
+                  fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 24, textAlign: 'center',
+                  background: isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.1)',
+                  color: isActive ? theme.textCyan : theme.textMuted,
+                }}>{f.count}</span>
+              </button>
+            );
+          })}
 
           {/* Divider */}
-          <div className="border-t border-gray-200 my-3 mx-3" />
+          <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '12px 14px' }} />
 
           {/* Status filters */}
-          <div className="px-3 mb-2">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</p>
+          <div style={{ padding: '0 14px', marginBottom: 8 }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Status</p>
           </div>
-          {[
+          {([
             { key: 'all' as Filter, label: 'All Emails', count: folderEmails.length },
             { key: 'matched' as Filter, label: 'Matched', count: folderMatchedCount },
             { key: 'unmatched' as Filter, label: 'Unmatched', count: folderUnmatchedCount },
             { key: 'reviewed' as Filter, label: 'Reviewed', count: folderReviewedCount },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => { setActiveFilter(f.key); setSelectedEmailId(null); }}
-              className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
-                activeFilter === f.key
-                  ? 'bg-gray-200 text-gray-800'
-                  : 'text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              <span className="text-xs font-medium flex-1">{f.label}</span>
-              <span className="text-xs text-gray-400">{f.count}</span>
-            </button>
-          ))}
+          ]).map(f => {
+            const isActive = activeFilter === f.key;
+            const isHovered = hoveredFilter === f.key;
+            return (
+              <button
+                key={f.key}
+                onClick={() => { setActiveFilter(f.key); setSelectedEmailId(null); }}
+                onMouseEnter={() => setHoveredFilter(f.key)}
+                onMouseLeave={() => setHoveredFilter(null)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px',
+                  textAlign: 'left', border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                  background: isActive ? 'rgba(56, 189, 248, 0.06)' : isHovered ? 'rgba(56, 189, 248, 0.03)' : 'transparent',
+                  color: isActive ? theme.textSecondary : theme.textMuted,
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 500, flex: 1 }}>{f.label}</span>
+                <span style={{ fontSize: 11, color: theme.textMuted }}>{f.count}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Email list */}
-        <div className="w-[380px] flex-shrink-0 border-r border-gray-200 flex flex-col bg-white">
+        {/* ── Email list ── */}
+        <div style={{
+          width: 380, flexShrink: 0, borderRight: `1px solid ${theme.divider}`, display: 'flex', flexDirection: 'column',
+          background: theme.listBg,
+        }}>
           {/* Search */}
-          <div className="p-2 border-b border-gray-100">
-            <div className="relative">
-              <Icon name="Search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div style={{ padding: 10, borderBottom: `1px solid ${theme.divider}` }}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }}>
+                <Icon name="Search" size={13} />
+              </div>
               <input
                 type="text" placeholder="Search emails..."
                 value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-7 py-1.5 border border-gray-200 rounded-lg text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                style={{
+                  width: '100%', paddingLeft: 32, paddingRight: 28, paddingTop: 7, paddingBottom: 7,
+                  borderRadius: 8, fontSize: 12, border: theme.cardBorder,
+                  background: theme.cardBg, color: theme.textPrimary, outline: 'none',
+                }}
               />
               {searchTerm && (
-                <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <button onClick={() => setSearchTerm('')} style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 2,
+                }}>
                   <Icon name="X" size={12} />
                 </button>
               )}
@@ -426,15 +521,21 @@ function MailboxPage({ orgId, orders, userId }: Props) {
           </div>
 
           {/* Email rows */}
-          <div className="flex-1 overflow-y-auto">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
             {filteredEmails.length === 0 ? (
-              <div className="p-8 text-center">
-                <Icon name="Mail" size={28} className="mx-auto mb-2 text-gray-200" />
-                <p className="text-xs text-gray-400">No emails in this view</p>
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: '50%', margin: '0 auto 12px',
+                  background: 'rgba(56, 189, 248, 0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Icon name="Mail" size={22} className="text-slate-600" />
+                </div>
+                <p style={{ fontSize: 12, color: theme.textMuted, margin: 0 }}>No emails in this view</p>
               </div>
             ) : (
               filteredEmails.map(email => {
                 const isSelected = selectedEmailId === email.id;
+                const isHovered = hoveredEmailId === email.id;
                 const orderLabel = getOrderLabel(email);
                 const isUserLinked = !!email.user_linked_order_id;
                 const isSent = email.email_type === 'sent';
@@ -443,54 +544,82 @@ function MailboxPage({ orgId, orders, userId }: Props) {
                   <button
                     key={email.id}
                     onClick={() => setSelectedEmailId(email.id)}
-                    className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition-all ${
-                      isSelected ? 'bg-blue-50 border-l-[3px] border-l-blue-500' : 'hover:bg-gray-50 border-l-[3px] border-l-transparent'
-                    }`}
+                    onMouseEnter={() => setHoveredEmailId(email.id)}
+                    onMouseLeave={() => setHoveredEmailId(null)}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '11px 14px', border: 'none', cursor: 'pointer',
+                      borderBottom: `1px solid ${theme.divider}`, transition: 'all 0.2s',
+                      borderLeft: isSelected ? '3px solid #38bdf8' : '3px solid transparent',
+                      background: isSelected ? theme.selectedRow : isHovered ? theme.hoverRow : 'transparent',
+                    }}
                   >
-                    <div className="flex items-start gap-2.5">
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       {/* Avatar */}
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold ${
-                        isSelected ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
-                      }`}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, fontSize: 12, fontWeight: 600,
+                        background: isSelected ? theme.iconGradient : 'rgba(148, 163, 184, 0.1)',
+                        color: isSelected ? '#fff' : theme.textMuted,
+                        boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.2)' : 'none',
+                      }}>
                         {(email.from_name || email.from_email || '?')[0].toUpperCase()}
                       </div>
 
-                      <div className="flex-1 min-w-0">
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         {/* Sender + Date */}
-                        <div className="flex items-center justify-between gap-1">
-                          <span className={`text-[13px] truncate ${isSelected ? 'font-semibold text-blue-900' : 'font-medium text-gray-800'}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                          <span style={{
+                            fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            fontWeight: isSelected ? 600 : 500,
+                            color: isSelected ? theme.textCyan : theme.textPrimary,
+                          }}>
                             {isSent ? `To: ${email.to_email?.split(',')[0]?.trim() || ''}` : (email.from_name || email.from_email)}
                           </span>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {email.has_attachment && <Icon name="Paperclip" size={10} className="text-gray-300" />}
-                            <span className="text-[10px] text-gray-400">{formatDate(email.date)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            {email.has_attachment && <Icon name="Paperclip" size={10} className="text-slate-500" />}
+                            <span style={{ fontSize: 10, color: theme.textMuted }}>{formatDate(email.date)}</span>
                           </div>
                         </div>
 
                         {/* Subject */}
-                        <p className={`text-xs truncate mt-0.5 ${isSelected ? 'text-blue-800' : 'text-gray-600'}`}>{email.subject}</p>
+                        <p style={{
+                          fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          marginTop: 2, margin: '2px 0 0',
+                          color: isSelected ? 'rgba(56, 189, 248, 0.7)' : theme.textSecondary,
+                        }}>{email.subject}</p>
 
                         {/* Snippet */}
-                        <p className="text-[11px] text-gray-400 truncate mt-0.5">{getSnippet(email.body_text)}</p>
+                        <p style={{
+                          fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          marginTop: 2, margin: '2px 0 0', color: theme.textMuted,
+                        }}>{getSnippet(email.body_text)}</p>
 
-                        {/* Order badge or suggested */}
+                        {/* Order badge */}
                         {orderLabel && (
-                          <div className="mt-1 flex items-center gap-1">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded truncate max-w-[260px] ${
-                              isUserLinked ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
-                            }`}>
-                              {orderLabel}
-                            </span>
+                          <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{
+                              fontSize: 10, padding: '2px 7px', borderRadius: 6,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
+                              background: isUserLinked ? 'rgba(16, 185, 129, 0.1)' : 'rgba(56, 189, 248, 0.08)',
+                              color: isUserLinked ? '#34d399' : theme.textCyan,
+                              border: isUserLinked ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid rgba(56, 189, 248, 0.1)',
+                            }}>{orderLabel}</span>
                             {!isUserLinked && email.ai_confidence && (
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                email.ai_confidence === 'high' ? 'bg-green-500' : email.ai_confidence === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
-                              }`} />
+                              <span style={{
+                                width: 6, height: 6, borderRadius: '50%', display: 'inline-block',
+                                background: email.ai_confidence === 'high' ? '#22c55e' : email.ai_confidence === 'medium' ? '#eab308' : '#ef4444',
+                                boxShadow: `0 0 4px ${email.ai_confidence === 'high' ? 'rgba(34,197,94,0.3)' : email.ai_confidence === 'medium' ? 'rgba(234,179,8,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                              }} />
                             )}
                           </div>
                         )}
                         {!orderLabel && email.ai_suggested_order_id && (
-                          <div className="mt-1">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-500">
+                          <div style={{ marginTop: 5 }}>
+                            <span style={{
+                              fontSize: 10, padding: '2px 7px', borderRadius: 6,
+                              background: 'rgba(249, 115, 22, 0.08)', color: '#fb923c',
+                              border: '1px solid rgba(249, 115, 22, 0.12)',
+                            }}>
                               Suggested: {orders.find(o => o.id === email.ai_suggested_order_id)?.poNumber || email.ai_suggested_order_id}
                             </span>
                           </div>
@@ -504,49 +633,76 @@ function MailboxPage({ orgId, orders, userId }: Props) {
           </div>
         </div>
 
-        {/* Reading pane */}
-        <div ref={readingPaneRef} className="flex-1 overflow-y-auto bg-white">
+        {/* ── Reading pane ── */}
+        <div ref={readingPaneRef} style={{ flex: 1, overflowY: 'auto', background: 'rgba(15, 23, 42, 0.3)' }}>
           {selectedEmail ? (
-            <div className="p-6">
+            <div style={{ padding: 28 }}>
               {/* Subject */}
-              <h2 className="text-lg font-semibold text-gray-900 mb-5 leading-snug">{selectedEmail.subject}</h2>
+              <h2 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, margin: '0 0 20px', lineHeight: 1.4, letterSpacing: '-0.01em' }}>{selectedEmail.subject}</h2>
 
               {/* Sender info */}
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold">
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, color: '#fff', fontWeight: 600,
+                  background: theme.iconGradient, boxShadow: theme.iconGlow,
+                }}>
                   {(selectedEmail.from_name || selectedEmail.from_email || '?')[0].toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <span className="text-sm font-semibold text-gray-800">{selectedEmail.from_name || selectedEmail.from_email}</span>
-                      <span className="text-xs text-gray-400 ml-2">&lt;{selectedEmail.from_email}&gt;</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary }}>{selectedEmail.from_name || selectedEmail.from_email}</span>
+                      <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 8 }}>&lt;{selectedEmail.from_email}&gt;</span>
                     </div>
-                    <span className="text-xs text-gray-400 flex-shrink-0 ml-3">{formatFullDate(selectedEmail.date)}</span>
+                    <span style={{ fontSize: 11, color: theme.textMuted, flexShrink: 0, marginLeft: 12 }}>{formatFullDate(selectedEmail.date)}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p style={{ fontSize: 12, color: theme.textMuted, margin: '3px 0 0' }}>
                     To: {selectedEmail.to_email}
-                    {selectedEmail.detected_stage && <span className="ml-2 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">Stage {selectedEmail.detected_stage}</span>}
+                    {selectedEmail.detected_stage && (
+                      <span style={{
+                        marginLeft: 8, padding: '1px 7px', borderRadius: 6, fontSize: 10, fontWeight: 500,
+                        background: 'rgba(56, 189, 248, 0.08)', color: theme.textCyan,
+                        border: '1px solid rgba(56, 189, 248, 0.1)',
+                      }}>Stage {selectedEmail.detected_stage}</span>
+                    )}
                   </p>
                 </div>
               </div>
 
               {/* Order link bar */}
               {getOrderLabel(selectedEmail) && (
-                <div className="mb-4 flex items-center gap-2 bg-gradient-to-r from-blue-50 to-blue-50/50 rounded-lg px-3 py-2 border border-blue-100">
-                  <Icon name="Package" size={14} className="text-blue-500" />
-                  <span className="text-sm text-blue-700 font-medium truncate">{getOrderLabel(selectedEmail)}</span>
-                  <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                <div style={{
+                  marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8,
+                  borderRadius: 10, padding: '8px 14px',
+                  background: 'rgba(56, 189, 248, 0.04)',
+                  border: '1px solid rgba(56, 189, 248, 0.12)',
+                }}>
+                  <Icon name="Package" size={14} className="text-sky-400" />
+                  <span style={{ fontSize: 13, color: theme.textCyan, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getOrderLabel(selectedEmail)}</span>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     <button onClick={() => { const oid = selectedEmail.matched_order_id || selectedEmail.user_linked_order_id; if (oid) navigate(`/orders/${encodeURIComponent(oid)}`); }}
-                      className="text-[11px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+                      style={{
+                        fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                        background: theme.activeBtn, color: '#fff', display: 'flex', alignItems: 'center', gap: 4,
+                        boxShadow: '0 0 8px rgba(59, 130, 246, 0.2)',
+                      }}>
                       <Icon name="ExternalLink" size={10} /> View
                     </button>
                     <button onClick={() => setLinkingEmail(selectedEmail)}
-                      className="text-[11px] px-2 py-1 bg-white text-orange-600 border border-orange-200 rounded hover:bg-orange-50 flex items-center gap-1">
+                      style={{
+                        fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                        background: 'rgba(249, 115, 22, 0.08)', color: '#fb923c',
+                        border: '1px solid rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', gap: 4,
+                      }}>
                       <Icon name="RefreshCw" size={10} /> Reassign
                     </button>
                     <button onClick={() => handleUnlink(selectedEmail)}
-                      className="text-[11px] px-2 py-1 bg-white text-red-500 border border-red-200 rounded hover:bg-red-50 flex items-center gap-1">
+                      style={{
+                        fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                        background: 'rgba(239, 68, 68, 0.06)', color: '#f87171',
+                        border: '1px solid rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', gap: 4,
+                      }}>
                       <Icon name="X" size={10} /> Delink
                     </button>
                   </div>
@@ -555,17 +711,29 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
               {/* Actions for unmatched */}
               {isEmailUnmatched(selectedEmail) && (
-                <div className="mb-4 flex items-center gap-2">
+                <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button onClick={() => setLinkingEmail(selectedEmail)}
-                    className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5">
+                    style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                      background: theme.activeBtn, color: '#fff', display: 'flex', alignItems: 'center', gap: 6,
+                      boxShadow: theme.activeBtnGlow,
+                    }}>
                     <Icon name="Link" size={12} /> Link to Order
                   </button>
                   <button onClick={() => markReviewed(selectedEmail.id).then(() => showToast('Moved to Reviewed', 'success')).catch(() => showToast('Failed', 'error'))}
-                    className="text-xs px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 flex items-center gap-1.5">
+                    style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: 'rgba(16, 185, 129, 0.08)', color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
                     <Icon name="CheckCircle" size={12} /> Reviewed
                   </button>
                   <button onClick={() => handleDismiss(selectedEmail)}
-                    className="text-xs px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 flex items-center gap-1.5">
+                    style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: 'rgba(148, 163, 184, 0.06)', color: theme.textMuted,
+                      border: `1px solid ${theme.divider}`, display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
                     <Icon name="X" size={12} /> Dismiss
                   </button>
                 </div>
@@ -573,23 +741,34 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
               {/* Reviewed actions */}
               {selectedEmail.reviewed && !isEmailMatched(selectedEmail) && (
-                <div className="mb-4">
+                <div style={{ marginBottom: 16 }}>
                   <button onClick={() => unmarkReviewed(selectedEmail.id).then(() => showToast('Moved back', 'success')).catch(() => showToast('Failed', 'error'))}
-                    className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 flex items-center gap-1.5">
+                    style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: 'rgba(148, 163, 184, 0.06)', color: theme.textSecondary,
+                      border: `1px solid ${theme.divider}`, display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
                     <Icon name="Inbox" size={12} /> Move back to Unmatched
                   </button>
                 </div>
               )}
 
               {/* Divider */}
-              <div className="border-t border-gray-100 my-4" />
+              <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0' }} />
 
               {/* Email body */}
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{selectedEmail.body_text}</pre>
+              <pre style={{
+                fontSize: 13, color: theme.textSecondary, whiteSpace: 'pre-wrap', fontFamily: 'inherit',
+                lineHeight: 1.7, margin: 0,
+              }}>{selectedEmail.body_text}</pre>
 
               {/* Auto-advanced */}
               {selectedEmail.auto_advanced && (
-                <div className="mt-5 flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                <div style={{
+                  marginTop: 20, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+                  padding: '8px 14px', borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.12)', color: '#34d399',
+                }}>
                   <Icon name="CheckCircle" size={14} />
                   <span>Auto-advanced the order stage</span>
                 </div>
@@ -597,19 +776,29 @@ function MailboxPage({ orgId, orders, userId }: Props) {
 
               {/* AI summary */}
               {selectedEmail.ai_summary && (
-                <div className="mt-3 flex items-start gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                  <Icon name="Zap" size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                <div style={{
+                  marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12,
+                  padding: '10px 14px', borderRadius: 10,
+                  background: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.08)', color: theme.textSecondary,
+                }}>
+                  <div style={{ flexShrink: 0, marginTop: 1 }}>
+                    <Icon name="Zap" size={14} className="text-amber-400" />
+                  </div>
                   <span>{selectedEmail.ai_summary}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Icon name="Mail" size={28} className="text-gray-200" />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 14px',
+                  background: 'rgba(56, 189, 248, 0.06)', border: '1px solid rgba(56, 189, 248, 0.08)',
+                }}>
+                  <Icon name="Mail" size={28} className="text-slate-600" />
                 </div>
-                <p className="text-sm text-gray-400">Select an email to read</p>
+                <p style={{ fontSize: 13, color: theme.textMuted, margin: 0 }}>Select an email to read</p>
               </div>
             </div>
           )}
