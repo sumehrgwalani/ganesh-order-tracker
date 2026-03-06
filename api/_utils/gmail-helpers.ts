@@ -46,6 +46,32 @@ export function extractBody(payload: any): string {
   return ''
 }
 
+// Extract HTML body from Gmail message payload (for rich rendering)
+export function extractHtmlBody(payload: any): string {
+  if (!payload) return ''
+
+  // Simple text/html part
+  if (payload.mimeType === 'text/html' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+  }
+
+  // Multipart: look through parts for HTML
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        return decodeBase64Url(part.body.data)
+      }
+      // Recurse into nested multipart
+      if (part.parts) {
+        const nested = extractHtmlBody(part)
+        if (nested) return nested
+      }
+    }
+  }
+
+  return ''
+}
+
 // Get header value from Gmail message headers
 export function getHeader(headers: any[], name: string): string {
   const h = headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())

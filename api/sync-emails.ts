@@ -102,6 +102,26 @@ function extractBody(payload: any): string {
   return ''
 }
 
+// Extract HTML body from Gmail message payload (for rich rendering)
+function extractHtmlBody(payload: any): string {
+  if (!payload) return ''
+  if (payload.mimeType === 'text/html' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        return decodeBase64Url(part.body.data)
+      }
+      if (part.parts) {
+        const nested = extractHtmlBody(part)
+        if (nested) return nested
+      }
+    }
+  }
+  return ''
+}
+
 // Get header value from Gmail message headers
 function getHeader(headers: any[], name: string): string {
   const h = headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())
@@ -4502,6 +4522,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               const to = getHeader(headers, 'To')
               const dateStr = getHeader(headers, 'Date')
               const bodyText = extractBody(msg.payload).substring(0, 5000)
+              const bodyHtml = extractHtmlBody(msg.payload).substring(0, 50000)
 
               // Check actual attachment parts (not just inline images)
               const attachParts = extractAttachmentParts(msg.payload)
@@ -4532,6 +4553,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 to_email: extractEmail(to),
                 subject,
                 body_text: bodyText,
+                body_html: bodyHtml || null,
                 date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
                 has_attachment: hasRealAttachment,
                 matched_order_id: order.order_id,
@@ -5085,6 +5107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const msg = await msgRes.json()
           const headers = msg.payload?.headers || []
           const body = extractBody(msg.payload)
+          const bodyHtml = extractHtmlBody(msg.payload)
           const attachmentParts = extractAttachmentParts(msg.payload)
 
           // Detect email type from Gmail labels
@@ -5102,6 +5125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             cc_emails: extractAllEmails(getHeader(headers, 'Cc')).join(', '),
             subject: getHeader(headers, 'Subject'),
             body_text: body.substring(0, 5000),
+            body_html: bodyHtml.substring(0, 50000) || null,
             date: getHeader(headers, 'Date'),
             has_attachment: attachmentParts.length > 0,
             email_type,
@@ -5127,6 +5151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           cc_emails: email.cc_emails || null,
           subject: email.subject,
           body_text: email.body_text,
+          body_html: email.body_html || null,
           date: new Date(email.date).toISOString(),
           has_attachment: email.has_attachment,
           email_type: email.email_type || 'inbox',

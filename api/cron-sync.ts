@@ -46,6 +46,26 @@ function extractBody(payload: any): string {
   return ''
 }
 
+// Extract HTML body from Gmail message payload (for rich rendering)
+function extractHtmlBody(payload: any): string {
+  if (!payload) return ''
+  if (payload.mimeType === 'text/html' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        return decodeBase64Url(part.body.data)
+      }
+      if (part.parts) {
+        const nested = extractHtmlBody(part)
+        if (nested) return nested
+      }
+    }
+  }
+  return ''
+}
+
 // Check if a filename is an inline email image (logos, signatures, etc.)
 function isInlineImage(filename: string): boolean {
   const lower = filename.toLowerCase()
@@ -222,6 +242,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const headers = msg.payload?.headers || []
             const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
             const body = extractBody(msg.payload)
+            const bodyHtml = extractHtmlBody(msg.payload)
             const attachmentParts = extractAttachmentParts(msg.payload)
 
             // Detect email type from Gmail labels
@@ -238,6 +259,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               to_email: extractEmail(getHeader('To')),
               subject: getHeader('Subject'),
               body_text: body.substring(0, 5000),
+              body_html: bodyHtml.substring(0, 50000) || null,
               date: getHeader('Date'),
               has_attachment: attachmentParts.length > 0,
               email_type,
@@ -261,6 +283,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             to_email: email.to_email,
             subject: email.subject,
             body_text: email.body_text,
+            body_html: email.body_html || null,
             date: new Date(email.date).toISOString(),
             has_attachment: email.has_attachment,
             email_type: email.email_type,

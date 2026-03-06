@@ -9,6 +9,7 @@ export interface SyncedEmail {
   to_email: string;
   subject: string;
   body_text: string;
+  body_html: string | null;
   date: string;
   has_attachment: boolean;
   matched_order_id: string | null;

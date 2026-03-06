@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import LinkEmailModal from '../components/LinkEmailModal';
@@ -41,6 +41,74 @@ const theme = {
   selectedRow: 'rgba(56, 189, 248, 0.08)',
   hoverRow: 'rgba(56, 189, 248, 0.04)',
 };
+
+// Renders HTML email content in a sandboxed iframe that auto-sizes
+function EmailHtmlRenderer({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+
+    // Write the HTML with some base styling for dark theme readability
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #cbd5e1;
+            background: transparent;
+            margin: 0;
+            padding: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          a { color: #38bdf8; }
+          img { max-width: 100%; height: auto; }
+          table { max-width: 100%; border-collapse: collapse; }
+          td, th { padding: 4px 8px; }
+          blockquote { border-left: 3px solid rgba(56,189,248,0.2); margin: 8px 0; padding-left: 12px; color: #94a3b8; }
+          pre, code { background: rgba(15,23,42,0.5); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+          hr { border: none; border-top: 1px solid rgba(56,189,248,0.08); margin: 16px 0; }
+        </style>
+      </head>
+      <body>${html}</body>
+      </html>
+    `);
+    doc.close();
+
+    // Auto-resize iframe to fit content
+    const resize = () => {
+      if (iframe.contentDocument?.body) {
+        iframe.style.height = iframe.contentDocument.body.scrollHeight + 20 + 'px';
+      }
+    };
+    // Resize after content loads (images etc.)
+    setTimeout(resize, 100);
+    setTimeout(resize, 500);
+    setTimeout(resize, 1500);
+  }, [html]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      sandbox="allow-same-origin"
+      style={{
+        width: '100%', border: 'none', minHeight: 200, background: 'transparent',
+      }}
+      title="Email content"
+    />
+  );
+}
 
 function MailboxPage({ orgId, orders, userId }: Props) {
   const navigate = useNavigate();
@@ -757,10 +825,14 @@ function MailboxPage({ orgId, orders, userId }: Props) {
               <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0' }} />
 
               {/* Email body */}
-              <pre style={{
-                fontSize: 13, color: theme.textSecondary, whiteSpace: 'pre-wrap', fontFamily: 'inherit',
-                lineHeight: 1.7, margin: 0,
-              }}>{selectedEmail.body_text}</pre>
+              {selectedEmail.body_html ? (
+                <EmailHtmlRenderer html={selectedEmail.body_html} />
+              ) : (
+                <pre style={{
+                  fontSize: 13, color: theme.textSecondary, whiteSpace: 'pre-wrap', fontFamily: 'inherit',
+                  lineHeight: 1.7, margin: 0,
+                }}>{selectedEmail.body_text}</pre>
+              )}
 
               {/* Auto-advanced */}
               {selectedEmail.auto_advanced && (
