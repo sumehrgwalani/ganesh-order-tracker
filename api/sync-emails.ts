@@ -1034,7 +1034,22 @@ async function processEmailAttachments(
           .select('id', { count: 'exact', head: true }).eq('order_id', orderUuid)
 
         if (existingItemCount && existingItemCount > 0) {
-          console.log(`[PROCESS] Skipping extraction for ${matchedOrderId} — already has ${existingItemCount} line items`)
+          console.log(`[PROCESS] Skipping line item extraction for ${matchedOrderId} — already has ${existingItemCount} line items`)
+          // Still check if buyer needs correction (buyer might be wrong even though line items exist)
+          if (orgType === 'intermediary' && poAttachment && (poAttachment.mimeType.startsWith('image/') || poAttachment.mimeType.includes('pdf'))) {
+            const currentCompany = (orderRow?.company || '').toLowerCase()
+            if (!orderRow?.company || currentCompany === 'unknown' || currentCompany === companyName.toLowerCase()) {
+              console.log(`[PROCESS] Buyer needs correction for ${matchedOrderId} (currently "${orderRow?.company}") — extracting from PO`)
+              const buyerData = await extractPODataFromImage(poAttachment.base64, poAttachment.mimeType, orderRow?.company || '', orderRow?.supplier || '', orgRoleDesc, orgType)
+              if (buyerData?.buyer && buyerData.buyer !== 'Unknown' && buyerData.buyer !== companyName) {
+                const newBuyer = normalizeCompanyName(buyerData.buyer)
+                await supabase.from('orders').update({ company: newBuyer }).eq('id', orderUuid)
+                console.log(`[PROCESS] Fixed buyer for ${matchedOrderId}: "${orderRow?.company}" → "${newBuyer}"`)
+              } else {
+                console.log(`[PROCESS] Could not extract buyer from PO for ${matchedOrderId} — AI returned: "${buyerData?.buyer || 'null'}"`)
+              }
+            }
+          }
         } else {
         let extractedData: any = null
         // Try vision extraction for both images AND PDFs (not just images)
@@ -3583,7 +3598,22 @@ If truly unknown, return "Unknown" for that field.` }],
                   const { count: existPdfCount } = await supabase.from('order_line_items')
                     .select('id', { count: 'exact', head: true }).eq('order_id', order.id)
                   if (existPdfCount && existPdfCount > 0) {
-                    console.log(`[RECOVER] Skipping stored PDF extraction for ${order.order_id} — already has ${existPdfCount} line items`)
+                    console.log(`[RECOVER] Skipping line item extraction for ${order.order_id} — already has ${existPdfCount} line items`)
+                    // Still check if buyer needs correction
+                    if (orgType === 'intermediary') {
+                      const curComp = (order.company || '').toLowerCase()
+                      if (!order.company || curComp === 'unknown' || curComp === companyName.toLowerCase()) {
+                        console.log(`[RECOVER] Buyer needs correction for ${order.order_id} — extracting from stored PDF`)
+                        const buyerData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '', orgRoleDesc, orgType)
+                        if (buyerData?.buyer && buyerData.buyer !== 'Unknown' && buyerData.buyer !== companyName) {
+                          const newBuyer = normalizeCompanyName(buyerData.buyer)
+                          await supabase.from('orders').update({ company: newBuyer }).eq('id', order.id)
+                          console.log(`[RECOVER] Fixed buyer for ${order.order_id}: "${order.company}" → "${newBuyer}"`)
+                          recRecovered++
+                          recResults.push({ order: order.order_id, status: 'ok', source: 'buyer_fix', emailsSynced: syncedCount })
+                        }
+                      }
+                    }
                   } else {
                   let extractedData = await extractPODataFromImage(base64, mimeType, order.company || '', order.supplier || '', orgRoleDesc, orgType)
                   // Validate — reject label/artwork data
@@ -3641,40 +3671,6 @@ If truly unknown, return "Unknown" for that field.` }],
                   } // end else (no existing line items for PDF extraction)
               } catch (pdfErr) {
                 console.log(`[RECOVER] Stored PDF extraction failed for ${order.order_id}: ${pdfErr}`)
-              }
-            }
-          }
-
-          // Fallback: if buyer is still companyName for intermediary orgs, try to detect from email senders
-          if (orgType === 'intermediary') {
-            const { data: currentOrder } = await supabase.from('orders').select('company').eq('id', order.id).single()
-            const curCompany = (currentOrder?.company || '').toLowerCase()
-            if (!currentOrder?.company || curCompany === 'unknown' || curCompany === companyName.toLowerCase()) {
-              // Look through emails for this order — find senders that aren't our company or the supplier
-              const { data: orderEmailsForBuyer } = await supabase
-                .from('synced_emails')
-                .select('from_name, from_email')
-                .eq('matched_order_id', order.order_id)
-                .eq('organization_id', organization_id)
-                .limit(20)
-              if (orderEmailsForBuyer) {
-                const supplierLower = (order.supplier || '').toLowerCase()
-                const companyLower = companyName.toLowerCase()
-                const companyFirst = companyLower.split(' ')[0]
-                for (const em of orderEmailsForBuyer) {
-                  const senderName = (em.from_name || '').trim()
-                  const senderLower = senderName.toLowerCase()
-                  if (!senderName || senderLower.includes(companyFirst) || senderLower.includes(supplierLower.split(' ')[0])) continue
-                  // Skip generic senders
-                  if (senderLower.includes('noreply') || senderLower.includes('mailer') || senderName.length < 3) continue
-                  // This sender is likely the buyer
-                  const buyerName = normalizeCompanyName(senderName)
-                  if (buyerName && buyerName !== 'Unknown') {
-                    await supabase.from('orders').update({ company: buyerName }).eq('id', order.id)
-                    console.log(`[RECOVER] Set buyer from email sender for ${order.order_id}: "${currentOrder?.company}" → "${buyerName}"`)
-                    break
-                  }
-                }
               }
             }
           }
