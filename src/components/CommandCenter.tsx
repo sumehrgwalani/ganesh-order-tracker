@@ -6,7 +6,7 @@ import { apiCall } from '../utils/api'
 
 interface Props {
   orgId: string
-  onComposeEmail?: (draft: { subject: string; body: string; recipients: string[] }) => void
+  onComposeEmail?: (draft: { subject: string; body: string; recipients: string[]; orderId?: string }) => void
 }
 
 /* ── Recent-changes types ── */
@@ -309,7 +309,7 @@ export default function CommandCenter({ orgId, onComposeEmail }: Props) {
                       <p style={{ fontSize: '11px', color: '#94a3b8', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{item.body}</p>
                       <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                         {item.action_type === 'send_email' && item.action_data?.draft_subject && (
-                          <button onClick={(e) => { e.stopPropagation(); if (onComposeEmail) onComposeEmail({ subject: item.action_data.draft_subject, body: item.action_data.draft_body, recipients: item.action_data.recipients || [] }) }}
+                          <button onClick={(e) => { e.stopPropagation(); if (onComposeEmail) onComposeEmail({ subject: item.action_data.draft_subject, body: item.action_data.draft_body, recipients: item.action_data.recipients || [], orderId: item.order_id || undefined }) }}
                             style={{ padding: '4px 10px', fontSize: '10px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', color: '#38bdf8', cursor: 'pointer' }}>
                             Send Email
                           </button>

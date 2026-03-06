@@ -14,6 +14,7 @@ import { buildPOHtml, buildPIHtml, orderToPdfData } from '../utils/pdfBuilders';
 import type { CatalogProduct } from '../hooks/useProducts';
 import ArtworkCompare from '../components/ArtworkCompare';
 import DocumentChecklist from '../components/DocumentChecklist';
+import ComposeEmailModal from '../components/ComposeEmailModal';
 import { apiCall } from '../utils/api';
 
 interface Props {
@@ -46,6 +47,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
   const artworkFileRef = useRef<HTMLInputElement>(null);
   const [recovering, setRecovering] = useState(false);
   const [recoverResult, setRecoverResult] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   // Compute dropdown options from contacts and products
   const buyerOptions = useMemo(() => {
@@ -1179,6 +1181,16 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           )}
+          {orgId && (
+            <button
+              onClick={() => setComposeOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              title="Compose email for this order"
+            >
+              <Icon name="Send" size={14} />
+              Compose
+            </button>
+          )}
           {orgId && userId && (
             <button
               onClick={handleRecoverData}
@@ -1750,6 +1762,17 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           newUrl={artworkCompareModal.newUrl}
           newLabel={artworkCompareModal.newLabel}
           onClose={() => setArtworkCompareModal(null)}
+        />
+      )}
+
+      {/* Compose Email Modal with AI Draft */}
+      {orgId && (
+        <ComposeEmailModal
+          isOpen={composeOpen}
+          onClose={() => setComposeOpen(false)}
+          orgId={orgId}
+          contacts={contacts}
+          orderId={order.id}
         />
       )}
     </div>

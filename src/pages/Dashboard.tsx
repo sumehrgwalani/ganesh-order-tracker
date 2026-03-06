@@ -13,7 +13,7 @@ interface Props {
 
 function DashboardContent({ stats, orgId }: Props) {
   const navigate = useNavigate();
-  const [composeDraft, setComposeDraft] = useState<{ subject: string; body: string; recipients: string[] } | null>(null);
+  const [composeDraft, setComposeDraft] = useState<{ subject: string; body: string; recipients: string[]; orderId?: string } | null>(null);
 
   return (
     <>
@@ -44,6 +44,7 @@ function DashboardContent({ stats, orgId }: Props) {
           prefillTo={composeDraft?.recipients}
           prefillSubject={composeDraft?.subject}
           prefillBody={composeDraft?.body}
+          orderId={composeDraft?.orderId}
         />
       )}
     </>
