@@ -18,9 +18,19 @@ const STAGE_NAMES: Record<number, string> = {
   9: 'DHL Number',
 }
 
-// Strip markdown code blocks from AI response before JSON parsing
-function stripMarkdown(text: string): string {
-  return text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '')
+// Extract JSON array from AI response (handles markdown code blocks, preamble text, etc.)
+function extractJSONArray(text: string): any[] | null {
+  // Strip markdown code fences
+  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim()
+  // Find the first [ and last ] to extract the JSON array
+  const start = cleaned.indexOf('[')
+  const end = cleaned.lastIndexOf(']')
+  if (start === -1 || end <= start) return null
+  try {
+    return JSON.parse(cleaned.substring(start, end + 1))
+  } catch {
+    return null
+  }
 }
 
 function setCors(res: VercelResponse) {
@@ -151,16 +161,11 @@ Keep draft emails concise (3-5 sentences), professional, and specific to the ord
 
   // Parse AI response
   let insights: any[] = []
-  try {
-    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      insights = JSON.parse(jsonMatch[0])
-    } else {
-      console.log('[AGENTS] No JSON array found in AI response. Response preview:', aiResponse.substring(0, 500))
-    }
-  } catch (e) {
-    console.error('[AGENTS] Failed to parse follow-up response:', e, 'Response preview:', aiResponse.substring(0, 500))
-    return { processed: 0, error: 'parse_failed' }
+  const parsed = extractJSONArray(aiResponse)
+  if (parsed) {
+    insights = parsed
+  } else {
+    console.log('[AGENTS] Follow-up: Could not extract JSON array. Raw response (first 800 chars):', aiResponse.substring(0, 800))
   }
 
   console.log(`[AGENTS] Parsed ${insights.length} insights from AI. PO numbers:`, insights.map((i: any) => i.po_number))
@@ -375,16 +380,11 @@ If no payment concerns, return empty array [].`
   const aiResponse = await callAI(apiKey, prompt, systemPrompt, 1500)
 
   let insights: any[] = []
-  try {
-    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      insights = JSON.parse(jsonMatch[0])
-    } else {
-      console.log('[AGENTS] Payment: No JSON array found. Response preview:', aiResponse.substring(0, 500))
-    }
-  } catch (e) {
-    console.error('[AGENTS] Failed to parse payment response:', e, 'Preview:', aiResponse.substring(0, 500))
-    return { processed: 0, error: 'parse_failed' }
+  const parsedPayment = extractJSONArray(aiResponse)
+  if (parsedPayment) {
+    insights = parsedPayment
+  } else {
+    console.log('[AGENTS] Payment: Could not extract JSON array. Raw response (first 800 chars):', aiResponse.substring(0, 800))
   }
 
   console.log(`[AGENTS] Payment: Parsed ${insights.length} insights. POs:`, insights.map((i: any) => i.po_number))
@@ -516,16 +516,11 @@ Respond as JSON array:
   const aiResponse = await callAI(apiKey, prompt, systemPrompt, 1500)
 
   let scores: any[] = []
-  try {
-    const jsonMatch = stripMarkdown(aiResponse).match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      scores = JSON.parse(jsonMatch[0])
-    } else {
-      console.log('[AGENTS] Supplier: No JSON array found. Response preview:', aiResponse.substring(0, 500))
-    }
-  } catch (e) {
-    console.error('[AGENTS] Failed to parse supplier score response:', e, 'Preview:', aiResponse.substring(0, 500))
-    return { processed: 0, error: 'parse_failed' }
+  const parsedScores = extractJSONArray(aiResponse)
+  if (parsedScores) {
+    scores = parsedScores
+  } else {
+    console.log('[AGENTS] Supplier: Could not extract JSON array. Raw response (first 800 chars):', aiResponse.substring(0, 800))
   }
 
   console.log(`[AGENTS] Supplier: Parsed ${scores.length} scores for suppliers:`, scores.map((s: any) => s.supplier))
