@@ -136,7 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (o.supplier && o.supplier !== 'Unknown') fields.push('supplier')
       if (o.commission) fields.push('commission')
       if (fields.length > 0) {
-        detailsUpdated.push({ po: o.order_id, id: o.id, fields })
+        detailsUpdated.push({ po: o.order_id, id: o.order_id, fields })
       }
     }
 
@@ -163,7 +163,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 1. New orders
     if (newOrders.length > 0) {
-      const links = newOrders.map(o => ({ po: o.order_id, id: o.id }))
+      const links = newOrders.map(o => ({ po: o.order_id, id: o.order_id }))
       summary.push({
         icon: 'new_order',
         text: `${newOrders.length} new order${newOrders.length > 1 ? 's' : ''} created`,
@@ -178,8 +178,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stageName = STAGE_NAMES[o.current_stage] || `Stage ${o.current_stage}`
       if (!stageGroups[stageName]) stageGroups[stageName] = []
       // Avoid duplicates
-      if (!stageGroups[stageName].some(x => x.id === o.id)) {
-        stageGroups[stageName].push({ po: o.order_id, id: o.id })
+      if (!stageGroups[stageName].some(x => x.id === o.order_id)) {
+        stageGroups[stageName].push({ po: o.order_id, id: o.order_id })
       }
     }
     for (const [stage, orders] of Object.entries(stageGroups)) {
@@ -195,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const lineItemOrders = Object.keys(lineItemsByOrder)
     if (lineItemOrders.length > 0) {
       const totalItems = Object.values(lineItemsByOrder).reduce((a, b) => a + b, 0)
-      const links = lineItemOrders.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
+      const links = lineItemOrders.map(po => ({ po, id: po })).filter(l => l.id)
       summary.push({
         icon: 'line_items',
         text: `${totalItems} line item${totalItems > 1 ? 's' : ''} extracted for ${lineItemOrders.length} order${lineItemOrders.length > 1 ? 's' : ''}`,
@@ -209,7 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stage = Number(stageNum)
       const docName = DOC_STAGE_NAMES[stage] || `Stage ${stage}`
       const pos = [...poSet]
-      const links = pos.map(po => ({ po, id: poToId[po] || '' })).filter(l => l.id)
+      const links = pos.map(po => ({ po, id: po })).filter(l => l.id)
       summary.push({
         icon: 'document',
         text: `${pos.length} ${docName} document${pos.length > 1 ? 's' : ''} stored`,
