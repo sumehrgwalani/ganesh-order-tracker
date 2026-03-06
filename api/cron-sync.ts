@@ -226,6 +226,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             return {
               gmail_id: msgId,
+              thread_id: msg.threadId || null,
               from_email: extractEmail(getHeader('From')),
               from_name: extractName(getHeader('From')),
               to_email: extractEmail(getHeader('To')),
@@ -247,6 +248,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .upsert({
             organization_id,
             gmail_id: email.gmail_id,
+            thread_id: email.thread_id,
             from_email: email.from_email,
             from_name: email.from_name,
             to_email: email.to_email,
