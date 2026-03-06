@@ -5087,6 +5087,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const body = extractBody(msg.payload)
           const attachmentParts = extractAttachmentParts(msg.payload)
 
+          // Detect email type from Gmail labels
+          const labelIds: string[] = msg.labelIds || []
+          let email_type = 'inbox'
+          if (labelIds.includes('SENT')) email_type = 'sent'
+          else if (labelIds.includes('DRAFT')) email_type = 'draft'
+
           return {
             gmail_id: msgId,
             thread_id: msg.threadId || null,
@@ -5098,6 +5104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body_text: body.substring(0, 5000),
             date: getHeader(headers, 'Date'),
             has_attachment: attachmentParts.length > 0,
+            email_type,
           }
         })
       )
@@ -5122,6 +5129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body_text: email.body_text,
           date: new Date(email.date).toISOString(),
           has_attachment: email.has_attachment,
+          email_type: email.email_type || 'inbox',
           matched_order_id: null,
           detected_stage: null,
           ai_summary: null,

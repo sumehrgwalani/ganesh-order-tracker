@@ -22,6 +22,7 @@ export interface SyncedEmail {
   user_linked_at: string | null;
   dismissed: boolean;
   reviewed: boolean;
+  email_type: 'inbox' | 'sent' | 'draft';
 }
 
 export function useSyncedEmails(orgId: string | null) {
@@ -56,18 +57,21 @@ export function useSyncedEmails(orgId: string | null) {
     fetchEmails();
   }, [fetchEmails]);
 
-  // Split into matched and unmatched
+  // Folder splits by email_type
+  const inboxEmails = emails.filter(e => e.email_type !== 'sent' && e.email_type !== 'draft');
+  const sentEmails = emails.filter(e => e.email_type === 'sent');
+  const draftEmails = emails.filter(e => e.email_type === 'draft');
+
+  // Status splits (work across all folders)
   const matchedEmails = emails.filter(
     (e) => e.matched_order_id || e.user_linked_order_id
   );
   const unmatchedEmails = emails.filter(
     (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && !e.reviewed
   );
-  // Low-confidence suggestions: AI found a possible match but wasn't sure enough to link
   const suggestedEmails = emails.filter(
     (e) => !e.matched_order_id && !e.user_linked_order_id && e.ai_suggested_order_id
   );
-  // Reviewed emails: user has looked at them but doesn't need them re-parsed
   const reviewedEmails = emails.filter(
     (e) => !e.matched_order_id && !e.user_linked_order_id && !e.dismissed && e.reviewed
   );
@@ -80,7 +84,6 @@ export function useSyncedEmails(orgId: string | null) {
     note?: string,
     originalAiMatch?: string | null
   ) => {
-    // 1. Update synced_emails with user's link (and save original AI match if this is a correction)
     const updateData: Record<string, unknown> = {
       user_linked_order_id: orderId,
       user_link_note: note || null,
@@ -96,10 +99,8 @@ export function useSyncedEmails(orgId: string | null) {
 
     if (updateError) throw updateError;
 
-    // 2. Find the email data to create a history entry
     const email = emails.find((e) => e.id === emailId);
     if (email) {
-      // Create an order_history entry so it shows in the order timeline
       const { error: historyError } = await supabase
         .from('order_history')
         .insert({
@@ -118,7 +119,6 @@ export function useSyncedEmails(orgId: string | null) {
       }
     }
 
-    // 3. Update local state
     setEmails((prev) =>
       prev.map((e) =>
         e.id === emailId
@@ -133,7 +133,6 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
-  // Delink an email from its matched order (clears AI match or user link)
   const unlinkEmail = async (emailId: string) => {
     const { error: updateError } = await supabase
       .from('synced_emails')
@@ -150,7 +149,6 @@ export function useSyncedEmails(orgId: string | null) {
 
     if (updateError) throw updateError;
 
-    // Update local state
     setEmails((prev) =>
       prev.map((e) =>
         e.id === emailId
@@ -169,7 +167,6 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
-  // Mark email as reviewed (user has seen it, skip during future syncs)
   const markReviewed = async (emailId: string) => {
     const { error: updateError } = await supabase
       .from('synced_emails')
@@ -185,7 +182,6 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
-  // Move email back from reviewed to unmatched
   const unmarkReviewed = async (emailId: string) => {
     const { error: updateError } = await supabase
       .from('synced_emails')
@@ -201,7 +197,6 @@ export function useSyncedEmails(orgId: string | null) {
     );
   };
 
-  // Dismiss an email (mark as not order-related — newsletters, spam, etc.)
   const dismissEmail = async (emailId: string) => {
     const { error: updateError } = await supabase
       .from('synced_emails')
@@ -219,6 +214,9 @@ export function useSyncedEmails(orgId: string | null) {
 
   return {
     emails,
+    inboxEmails,
+    sentEmails,
+    draftEmails,
     matchedEmails,
     unmatchedEmails,
     suggestedEmails,
