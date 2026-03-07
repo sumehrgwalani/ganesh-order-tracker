@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { createCipheriv, randomBytes } from 'crypto'
 
 // ===== CORS =====
 
@@ -18,6 +19,19 @@ function isValidUUID(str: string): boolean {
 }
 
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!
+
+// Encrypt a string using AES-256-GCM. Returns "enc:iv:authTag:ciphertext" (all hex).
+// If no encryption key is set, returns plaintext (backward compatible).
+function encryptToken(plaintext: string): string {
+  const key = process.env.TOKEN_ENCRYPTION_KEY
+  if (!key || key.length < 32) return plaintext
+  const keyBuf = Buffer.from(key.slice(0, 32), 'utf-8')
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', keyBuf, iv)
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+  return `enc:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res)
@@ -97,11 +111,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const profileData = await profileResponse.json()
     const gmailEmail = profileData.emailAddress
 
-    // Store refresh token and email
+    // Encrypt and store refresh token
+    const encryptedToken = encryptToken(refresh_token)
     const { error: updateError } = await supabase
       .from('organization_members')
       .update({
-        gmail_refresh_token: refresh_token,
+        gmail_refresh_token: encryptedToken,
         gmail_email: gmailEmail,
       })
       .eq('user_id', user_id)

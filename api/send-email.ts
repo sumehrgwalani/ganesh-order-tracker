@@ -1,5 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { createDecipheriv } from 'crypto'
+
+// Decrypt token encrypted with AES-256-GCM. Format: "enc:iv:authTag:ciphertext" (hex).
+// If token is not encrypted (no "enc:" prefix), returns as-is for backward compatibility.
+function decryptToken(token: string): string {
+  if (!token.startsWith('enc:')) return token
+  const key = process.env.TOKEN_ENCRYPTION_KEY
+  if (!key || key.length < 32) return token
+  const parts = token.split(':')
+  if (parts.length !== 4) return token
+  const keyBuf = Buffer.from(key.slice(0, 32), 'utf-8')
+  const iv = Buffer.from(parts[1], 'hex')
+  const authTag = Buffer.from(parts[2], 'hex')
+  const encrypted = Buffer.from(parts[3], 'hex')
+  const decipher = createDecipheriv('aes-256-gcm', keyBuf, iv)
+  decipher.setAuthTag(authTag)
+  return decipher.update(encrypted) + decipher.final('utf-8')
+}
 
 // ===== VALIDATION =====
 
@@ -157,7 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        refresh_token: member.gmail_refresh_token,
+        refresh_token: decryptToken(member.gmail_refresh_token),
         client_id: settings.gmail_client_id,
         client_secret: GOOGLE_CLIENT_SECRET,
         grant_type: 'refresh_token',

@@ -77,6 +77,16 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (!code || !orgId || !gmailClientId) return;
+    // Verify OAuth state parameter to prevent CSRF attacks
+    const returnedState = params.get('state');
+    const savedState = sessionStorage.getItem('gmail_oauth_state');
+    sessionStorage.removeItem('gmail_oauth_state');
+    if (!returnedState || returnedState !== savedState) {
+      setSaveStatus({ type: 'error', message: 'Gmail connection failed: invalid OAuth state. Please try again.' });
+      const cleanUrl = window.location.href.split('?')[0] + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+      return;
+    }
     // Clean the URL
     const cleanUrl = window.location.href.split('?')[0] + window.location.hash;
     window.history.replaceState({}, '', cleanUrl);
@@ -104,7 +114,10 @@ export default function SettingsPage({ orgId, userRole, currentUserEmail, signOu
     if (!gmailClientId) return;
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${gmailClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+    // Generate random state to prevent CSRF attacks
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('gmail_oauth_state', state);
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${gmailClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
     window.location.href = url;
   };
 

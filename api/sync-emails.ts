@@ -1,5 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { createDecipheriv } from 'crypto'
+
+// Decrypt token encrypted with AES-256-GCM. Format: "enc:iv:authTag:ciphertext" (hex).
+// If token is not encrypted (no "enc:" prefix), returns as-is for backward compatibility.
+function decryptToken(token: string): string {
+  if (!token.startsWith('enc:')) return token
+  const key = process.env.TOKEN_ENCRYPTION_KEY
+  if (!key || key.length < 32) return token
+  const parts = token.split(':')
+  if (parts.length !== 4) return token
+  const keyBuf = Buffer.from(key.slice(0, 32), 'utf-8')
+  const iv = Buffer.from(parts[1], 'hex')
+  const authTag = Buffer.from(parts[2], 'hex')
+  const encrypted = Buffer.from(parts[3], 'hex')
+  const decipher = createDecipheriv('aes-256-gcm', keyBuf, iv)
+  decipher.setAuthTag(authTag)
+  return decipher.update(encrypted) + decipher.final('utf-8')
+}
 
 // ===== CORS =====
 
@@ -3814,7 +3832,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     .single()
                   const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
                   if (settings?.gmail_client_id && clientSecret) {
-                    gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+                    gmailAccessToken = await refreshGmailToken(decryptToken(member.gmail_refresh_token), settings.gmail_client_id, clientSecret)
                   }
                 }
                 if (gmailAccessToken) {
@@ -3849,7 +3867,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   .single()
                 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
                 if (settings?.gmail_client_id && clientSecret) {
-                  gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+                  gmailAccessToken = await refreshGmailToken(decryptToken(member.gmail_refresh_token), settings.gmail_client_id, clientSecret)
                 }
               }
               if (gmailAccessToken) {
@@ -4139,7 +4157,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const { data: settings } = await supabase.from('organization_settings').select('gmail_client_id').eq('organization_id', organization_id).single()
           const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
           if (settings?.gmail_client_id && clientSecret) {
-            gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+            gmailAccessToken = await refreshGmailToken(decryptToken(member.gmail_refresh_token), settings.gmail_client_id, clientSecret)
           }
         }
       } catch { /* Gmail setup failed, will skip attachment extraction */ }
@@ -4424,7 +4442,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single()
       const recClientSecret = process.env.GOOGLE_CLIENT_SECRET!
       if (!recSettings?.gmail_client_id || !recClientSecret) throw new Error('Gmail not configured')
-      const recAccessToken = await refreshGmailToken(member.gmail_refresh_token, recSettings.gmail_client_id, recClientSecret)
+      const recAccessToken = await refreshGmailToken(decryptToken(member.gmail_refresh_token), recSettings.gmail_client_id, recClientSecret)
       if (!recAccessToken) throw new Error('Failed to refresh Gmail token')
 
       // Find orders that need recovery
@@ -4917,7 +4935,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single()
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
       if (!settings?.gmail_client_id || !clientSecret) throw new Error('Gmail not configured')
-      const gmailAccessToken = await refreshGmailToken(member.gmail_refresh_token, settings.gmail_client_id, clientSecret)
+      const gmailAccessToken = await refreshGmailToken(decryptToken(member.gmail_refresh_token), settings.gmail_client_id, clientSecret)
       if (!gmailAccessToken) throw new Error('Failed to refresh Gmail token')
 
       // Process up to 5 emails per call (300s timeout with Fluid Compute)
@@ -5029,7 +5047,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        refresh_token: member.gmail_refresh_token,
+        refresh_token: decryptToken(member.gmail_refresh_token),
         client_id: settings.gmail_client_id,
         client_secret: clientSecret,
         grant_type: 'refresh_token',
