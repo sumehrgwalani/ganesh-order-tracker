@@ -46,13 +46,16 @@ const theme = {
 // Renders HTML email content in a sandboxed iframe using srcdoc
 function EmailHtmlRenderer({ html }: { html: string }) {
   // Sanitize the HTML to prevent XSS attacks
-  const clean = useMemo(() => DOMPurify.sanitize(html, {
+  // Strip cid: image references (embedded MIME images that can't be resolved in browser)
+  const strippedHtml = useMemo(() => html.replace(/<img[^>]*src="cid:[^"]*"[^>]*\/?>/gi, ''), [html]);
+
+  const clean = useMemo(() => DOMPurify.sanitize(strippedHtml, {
     ALLOWED_TAGS: ['b','i','em','strong','u','a','p','br','table','tr','td','th','thead','tbody','div','span','pre','code','blockquote','hr','img','ul','ol','li','h1','h2','h3','h4','h5','h6','font','center','small'],
     ALLOWED_ATTR: ['href','src','alt','title','width','height','style','class','colspan','rowspan','align','valign','color','bgcolor','border','cellpadding','cellspacing'],
     ALLOW_DATA_ATTR: false,
     FORBID_TAGS: ['script','iframe','object','embed','form','input','button','select','textarea','link','meta'],
     FORBID_ATTR: ['onerror','onload','onclick','onmouseover','onfocus','onblur'],
-  }), [html]);
+  }), [strippedHtml]);
 
   // Build the full HTML document for srcdoc
   const srcdoc = useMemo(() => `<!DOCTYPE html>
