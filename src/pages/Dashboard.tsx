@@ -19,7 +19,7 @@ function DashboardContent({ stats, orgId }: Props) {
     <>
       <div className="mb-6"><h1 className="text-2xl font-bold text-gray-800">Welcome back</h1><p className="text-gray-500 mt-1">Track your seafood export orders with real-time email updates</p></div>
       {orgId && (
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6" style={{ height: 520 }}>
           <AIChatBox orgId={orgId} />
           <CommandCenter
             orgId={orgId}
