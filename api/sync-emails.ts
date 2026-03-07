@@ -265,7 +265,7 @@ Stage 4 (Artwork Confirmed): Email confirms artwork/label approval by the buyer.
 
 Stage 5 (Quality Check Done): Email contains QC/inspection results. Keywords: "quality check", "inspection report", "QC certificate", "inspection certificate", "pre-shipment inspection". Often from inspectors like Hansel Fernandez or J B Boda.
 
-Stage 6 (Schedule Confirmed): Email confirms vessel/shipping schedule. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked", "sailing schedule".
+Stage 6 (Schedule Confirmed): Email confirms vessel/shipping schedule OR contains shipment advice/details. Keywords: "vessel schedule", "booking confirmed", "ETD", "shipping schedule", "vessel booking", "container booked", "sailing schedule", "shipment details", "shipment advice", "shipping advice", "routing via". IMPORTANT: If the subject contains "SHIPMENT DETAILS" or "SHIPMENT ADVICE", this is ALWAYS stage 6, even if the subject also mentions "PURCHASE ORDER".
 
 Stage 7 (Draft Documents): Email contains draft shipping documents for review. Keywords: "draft BL", "draft documents", "draft bill of lading", "documents for review", "please check documents".
 
@@ -325,7 +325,7 @@ Return this JSON structure:
       "glaze": "string - glaze percentage (e.g. '25% Glaze') or empty string",
       "glazeMarked": "string - marked/declared glaze if different, or empty string",
       "packing": "string - packing format (e.g. '6 X 1 KG Bag', '10 KG Bulk') or empty string",
-      "brand": "string - brand name or empty string",
+      "brand": "string - brand/label name or empty string. IMPORTANT: delivery terms like CFR, CIF, FOB, CNF, FCA are NOT brands. Leave empty if no brand specified.",
       "freezing": "string - 'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
       "cases": 2133,
       "kilos": 12798,
@@ -526,7 +526,7 @@ Return this JSON structure:
       "glaze": "glaze percentage or empty string",
       "glazeMarked": "marked/declared glaze if different, or empty string",
       "packing": "packing format or empty string",
-      "brand": "brand name or empty string",
+      "brand": "brand/label name or empty string. IMPORTANT: delivery terms like CFR, CIF, FOB, CNF, FCA are NOT brands.",
       "freezing": "'IQF', 'Semi IQF', 'Blast', 'Block', or 'Plate'. Default 'IQF'",
       "cases": 2133,
       "kilos": 12798,
@@ -1960,13 +1960,13 @@ function classificationToStage(classification: string): number | null {
     case 'po': return 1
     case 'pi': return 2
     case 'artwork': return 3
-    case 'shipping': return 6
+    case 'shipping': case 'shipment_details': return 6
     // All specific document types go to stage 7 (draft docs) by default
     // The processEmailAttachments function may upgrade to stage 8 (final) based on email context
     case 'bl': case 'health_cert': case 'test_report': case 'invoice':
     case 'packing_list': case 'catch_cert': case 'loading_chart':
     case 'additives_letter': case 'beneficiary_letter': case 'catch_declaration':
-    case 'code_list': case 'bills_of_exchange': case 'shipment_details':
+    case 'code_list': case 'bills_of_exchange':
     case 'plastics_declaration': case 'box_declaration': case 'freetime_letter':
     case 'certificate_of_origin': case 'fumigation_cert': case 'insurance':
       return 7  // draft docs by default — upgraded to 8 if email says "final" or "original"
