@@ -2146,7 +2146,7 @@ async function processEmailAttachments(
         if (classification === 'po') {
           poAttachment = { url: publicUrl, filename: part.filename, base64: result.base64, mimeType: part.mimeType }
         }
-        if (classification === 'shipping') {
+        if (classification === 'shipping' || classification === 'shipment_details') {
           shippingAttachment = { url: publicUrl, filename: part.filename, base64: result.base64, mimeType: part.mimeType }
         }
         if (classification === 'pi') {
