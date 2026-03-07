@@ -98,6 +98,7 @@ function OrderRow({ order, onClick, onDelete }: Props) {
           {/* Route */}
           <div className="col-span-2 text-right">
             <p className="text-xs text-gray-500 truncate">{order.from} → {order.to}</p>
+            {order.containerNumber && <p className="text-xs text-blue-600 font-mono mt-0.5">Container: {order.containerNumber}</p>}
             {order.awbNumber && <p className="text-xs text-blue-600 font-mono mt-0.5">DHL: {order.awbNumber}</p>}
           </div>
           {/* Progress */}

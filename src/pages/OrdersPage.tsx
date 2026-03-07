@@ -57,7 +57,8 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
     const matchesSearch = !searchTerm ||
       order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.product.toLowerCase().includes(searchTerm.toLowerCase());
+      order.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (order.containerNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStage = filterStage === null || order.currentStage === filterStage;
     const matchesCompany = filterCompany === 'all' || order.company === filterCompany;
     return matchesSearch && matchesStage && matchesCompany;
@@ -188,7 +189,7 @@ function OrdersPage({ orders, onDeleteOrder }: Props) {
             <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="Search by PO number, company, or product..."
+              placeholder="Search by PO number, container, company, or product..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

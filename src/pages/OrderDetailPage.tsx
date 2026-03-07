@@ -445,9 +445,28 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           </div>
         );
 
-      case 'schedule':
+      case 'schedule': {
+        const container = order.containerNumber;
         return (
           <div className="space-y-4">
+            {container ? (
+              <div className="text-center space-y-3">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Container Number</p>
+                <p className="font-mono text-2xl font-bold text-gray-900">{container}</p>
+                {order.sealNumber && <p className="text-xs text-gray-500">Seal: {order.sealNumber}</p>}
+                <a
+                  href={`https://www.searates.com/container/tracking/?number=${container}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors"
+                >
+                  <Icon name="ExternalLink" size={16} />
+                  Track Container
+                </a>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center">No container number found yet</p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Route</p>
@@ -457,10 +476,31 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Quantity</p>
                 <p className="font-medium text-gray-800">{order.totalKilos ? `${Number(order.totalKilos).toLocaleString()} Kg` : '-'}</p>
               </div>
+              {order.vesselName && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vessel</p>
+                  <p className="font-medium text-gray-800">{order.vesselName}</p>
+                  {order.shippingLine && <p className="text-xs text-gray-500 mt-0.5">{order.shippingLine}</p>}
+                </div>
+              )}
+              {order.blNumber && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">B/L Number</p>
+                  <p className="font-mono text-sm font-medium text-gray-800">{order.blNumber}</p>
+                </div>
+              )}
+              {(order.etd || order.eta) && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Schedule</p>
+                  {order.etd && <p className="text-sm text-gray-800">ETD: <span className="font-medium">{new Date(order.etd).toLocaleDateString()}</span></p>}
+                  {order.eta && <p className="text-sm text-gray-800">ETA: <span className="font-medium">{new Date(order.eta).toLocaleDateString()}</span></p>}
+                </div>
+              )}
             </div>
             {renderAttachments(6)}
           </div>
         );
+      }
 
       case 'draftDocuments':
         return (
@@ -1156,6 +1196,7 @@ function OrderDetailPage({ orders, contacts, products, orgId, userId, onUpdateSt
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{order.id}</h1>
+            {order.containerNumber && <p className="text-sm font-mono text-blue-600">Container: {order.containerNumber}</p>}
             <p className="text-gray-500">{order.company} • {order.supplier}</p>
           </div>
         </div>
